@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =========================
+// ENUMS
+// =========================
+
+enum UserType {
+  OWNER
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
+}
+
+enum AppType {
+  PUBLIC
+  PRIVATE
+}
+
+// =========================
+// MODELS
+// =========================
+
+// المستخدمون (المالك + مدراء المدارس + بقية الأنواع مستقبلاً)
+model User {
+  id       Int     @id @default(autoincrement())
+  uuid     String  @unique @default(uuid())
+  schoolId Int?
+  school   School? @relation(fields: [schoolId], references: [id])
+
+  userType     UserType
+  code         Int? // كود المستخدم داخل المدرسة (للأدمن/المعلم/الطالب)
+  name         String
+  phone        String?
+  email        String?
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  devices UserDevice[]
+}
+
+// المدارس
+model School {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  name       String
+  schoolCode Int     @unique
+  appType    AppType
+
+  phone         String?
+  email         String?
+  logoUrl       String?
+  address       String?
+  province      String?
+  educationType String? // حكومي / أهلي
+
+  ownerNotes String? // تفاصيل خاصة يراها المالك فقط
+
+  primaryColor    String?
+  secondaryColor  String?
+  backgroundColor String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users User[]
+}
+
+// قاموس الصفوف الموحد
+model GradeDictionary {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  code        String  @unique // مثل G01
+  defaultName String // مثل "الصف الأول الأساسي"
+  stage       String? // تمهيدي/أساسي/ثانوي...
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+}
+
+// أجهزة المستخدمين (لـ FCM لاحقاً)
+model UserDevice {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  deviceToken String    @unique
+  deviceType  String // ANDROID / IOS / WEB
+  lastSeenAt  DateTime?
+  isActive    Boolean   @default(true)
+}
