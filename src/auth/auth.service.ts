@@ -1,10 +1,15 @@
 // src/auth/auth.service.ts
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { OwnerLoginDto } from './dto/owner-login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +18,7 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
+  // ✅ تسجيل دخول المالك
   async loginOwner(dto: OwnerLoginDto) {
     const { email, password } = dto;
 
@@ -34,7 +40,7 @@ export class AuthService {
 
     // 4) نحضّر الـ payload الذي سيكون داخل JWT
     const payload = {
-      sub: user.id,        // subject = id
+      sub: user.id, // subject = id
       role: user.userType, // OWNER
     };
 
@@ -50,6 +56,41 @@ export class AuthService {
         email: user.email,
         role: user.userType,
       },
+    };
+  }
+
+  // ✅ تغيير كلمة المرور
+  async changePassword(userId: number, dto: ChangePasswordDto) {
+    if (!userId) {
+      throw new UnauthorizedException('المستخدم غير مصرح');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('المستخدم غير موجود');
+    }
+
+    // التحقق من كلمة المرور القديمة
+    const isMatch = await bcrypt.compare(dto.oldPassword, user.passwordHash);
+    if (!isMatch) {
+      throw new UnauthorizedException('كلمة المرور الحالية غير صحيحة');
+    }
+
+    // توليد هاش جديد لكلمة المرور
+    const newHash = await bcrypt.hash(dto.newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: newHash,
+      },
+    });
+
+    return {
+      message: 'تم تحديث كلمة المرور بنجاح',
     };
   }
 }
