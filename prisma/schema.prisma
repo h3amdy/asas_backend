@@ -41,6 +41,7 @@ model User {
   phone        String?
  email        String?   @unique 
   passwordHash String
+ 
   isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())
 
@@ -68,7 +69,8 @@ model School {
   primaryColor     String?
   secondaryColor   String?
   backgroundColor  String?
-
+  // 👈 عدّاد عام لجميع المستخدمين في المدرسة
+  nextUserCode     Int       @default(1)
   isActive         Boolean   @default(true)
   createdAt        DateTime  @default(now())
 

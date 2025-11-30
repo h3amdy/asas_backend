@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "School" ADD COLUMN     "nextStaffCode" INTEGER NOT NULL DEFAULT 21,
+ADD COLUMN     "nextStudentCode" INTEGER NOT NULL DEFAULT 11;

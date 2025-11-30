@@ -6,15 +6,24 @@ import {
   Param,
   Patch,
   Post,
+  Delete,
 } from '@nestjs/common';
 import { SchoolsService } from './schools.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { UpdateSchoolDto } from './dto/update-school.dto';
 import { UpdateSchoolStatusDto } from './dto/update-school-status.dto';
+import { CreateSchoolManagerDto } from './dto/create-school-manager.dto';
 
 @Controller('schools')
 export class SchoolsController {
   constructor(private readonly schoolsService: SchoolsService) {}
+
+  // ✅ إحصائيات للمالك (تقدر تستخدمها في الـ Dashboard لاحقاً)
+  // GET /schools/stats
+  @Get('stats')
+  getStats() {
+    return this.schoolsService.getStats();
+  }
 
   // GET /schools
   @Get()
@@ -48,4 +57,24 @@ export class SchoolsController {
   ) {
     return this.schoolsService.updateStatus(uuid, dto.isActive);
   }
+  // DELETE /schools/:uuid
+  @Delete(':uuid')
+  remove(@Param('uuid') uuid: string) {
+    return this.schoolsService.delete(uuid);
+  }
+  // ✅ إنشاء أو تحديث مدير المدرسة
+  // POST /schools/:uuid/manager
+  @Post(':uuid/manager')
+  createOrUpdateManager(
+    @Param('uuid') uuid: string,
+    @Body() dto: CreateSchoolManagerDto,
+  ) {
+    return this.schoolsService.createOrUpdateManagerForSchool(uuid, dto);
+  }
+  // ✅  POST /schools/:uuid/manager/reset-password
+  @Post(':uuid/manager/reset-password')
+  resetManagerPassword(@Param('uuid') uuid: string) {
+    return this.schoolsService.resetManagerPasswordForSchool(uuid);
+  }
+
 }
