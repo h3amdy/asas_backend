@@ -77,18 +77,18 @@ model School {
   users            User[]
 }
 
-// قاموس الصفوف الموحد
+
 model GradeDictionary {
   id           Int      @id @default(autoincrement())
   uuid         String   @unique @default(uuid())
 
   code         String   @unique   // مثل G01
   defaultName  String   // مثل "الصف الأول الأساسي"
+  shortName    String?  // مثل "أ.أ" أو "أ.ث"   👈 NEW
   stage        String?  // تمهيدي/أساسي/ثانوي...
   sortOrder    Int      @default(0)
   isActive     Boolean  @default(true)
 }
-
 // أجهزة المستخدمين (لـ FCM لاحقاً)
 model UserDevice {
   id           Int      @id @default(autoincrement())

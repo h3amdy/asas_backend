@@ -9,7 +9,6 @@ import { UpdateGradeDto } from './dto/update-grade.dto';
 export class GradesService {
   constructor(private prisma: PrismaService) {}
 
-  // جلب كل الصفوف (مع فلترة اختيارية لاحقاً)
   async findAll() {
     return this.prisma.gradeDictionary.findMany({
       orderBy: {
@@ -18,7 +17,6 @@ export class GradesService {
     });
   }
 
-  // جلب صف واحد بالـ uuid
   async findByUuid(uuid: string) {
     const grade = await this.prisma.gradeDictionary.findUnique({
       where: { uuid },
@@ -31,27 +29,25 @@ export class GradesService {
     return grade;
   }
 
-  // إنشاء صف جديد في القاموس
   async create(dto: CreateGradeDto) {
     const data: Prisma.GradeDictionaryCreateInput = {
       code: dto.code,
       defaultName: dto.defaultName,
+      shortName: dto.shortName ?? null,   // 👈 NEW
       stage: dto.stage ?? null,
       sortOrder: dto.sortOrder ?? 0,
-      // isActive و createdAt لهم قيم افتراضية
     };
 
-    const grade = await this.prisma.gradeDictionary.create({ data });
-    return grade;
+    return this.prisma.gradeDictionary.create({ data });
   }
 
-  // تحديث صف
   async update(uuid: string, dto: UpdateGradeDto) {
     await this.ensureExists(uuid);
 
     const data: Prisma.GradeDictionaryUpdateInput = {
       code: dto.code,
       defaultName: dto.defaultName,
+      shortName: dto.shortName,           // 👈 NEW
       stage: dto.stage,
       sortOrder: dto.sortOrder,
     };
@@ -62,7 +58,6 @@ export class GradesService {
     });
   }
 
-  // تفعيل/إيقاف صف
   async updateStatus(uuid: string, isActive: boolean) {
     await this.ensureExists(uuid);
 
@@ -72,7 +67,6 @@ export class GradesService {
     });
   }
 
-  // مساعد للتأكد من وجود الصف
   private async ensureExists(uuid: string) {
     const exists = await this.prisma.gradeDictionary.findUnique({
       where: { uuid },

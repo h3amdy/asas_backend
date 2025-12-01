@@ -12,6 +12,11 @@ export class CreateGradeDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
+  shortName?: string; // مثال: "أ.أ" أو "أ.ث"  👈 NEW
+
+  @IsOptional()
+  @IsString()
   @MaxLength(50)
   stage?: string; // تمهيدي / أساسي / ثانوي ...
 
