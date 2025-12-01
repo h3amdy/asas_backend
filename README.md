@@ -1,3 +1,128 @@
+
+1. README.md
+
+
+2. DEPLOY.md (أو deploy_instructions.md)
+
+
+
+
+
+# Asas Backend (NestJS + Prisma + PostgreSQL)
+
+هذا المشروع هو الخادم الخلفي (Backend) الخاص بمنصة إدارة المدارس **Asas**.  
+يعتمد المشروع على NestJS، Prisma ORM، PostgreSQL، ويعمل في بيئة إنتاج باستخدام PM2 على سيرفر Hostinger (Ubuntu) مع لوحة aaPanel.
+
+---
+
+## 🚀 المتطلبات (Requirements)
+
+- Node.js 18+
+- npm
+- PostgreSQL
+- Prisma 5+
+- PM2 (للإنتاج)
+- Git (لإدارة الإصدارات)
+
+---
+
+## 📁 هيكل المشروع
+
+/src /auth /users /schools /grades /prisma prisma/schema.prisma package.json tsconfig.json
+
+---
+
+## ⚙️ إعداد المشروع (Development)
+
+### 1) تثبيت الحزم
+
+```bash
+npm install
+
+2) تحديث Prisma
+
+npx prisma generate
+
+3) تشغيل بيئة التطوير
+
+npm run start:dev
+
+
+---
+
+🗄️ قاعدة البيانات (Database)
+
+تشغيل مهاجرات (Migrations)
+
+npx prisma migrate dev
+
+فحص قاعدة البيانات
+
+npx prisma studio
+
+
+---
+
+🏭 البناء للإنتاج
+
+npm run build
+
+
+---
+
+🚀 تشغيل السيرفر في الإنتاج باستخدام PM2
+
+تشغيل لأول مرة
+
+pm2 start dist/main.js --name asas_backend
+
+إعادة التشغيل بعد نشر التغييرات
+
+pm2 restart asas_backend
+
+عرض السجلات (Logs)
+
+pm2 logs asas_backend
+
+
+---
+
+🌐 المسارات (API Endpoints)
+
+/schools
+
+إنشاء مدارس – تحديث – تعطيل – إنشاء مدير – إعادة تعيين كلمة المرور.
+
+/grades
+
+إدارة قاموس الصفوف.
+
+
+---
+
+📌 ملاحظات
+
+يتم تشغيل المشروع من المسار:
+/www/node-projects/asas_backend
+
+إعدادات البيئة مخزنة في ملف .env
+
+عند كل تحديث يتم سحب الكود من GitHub ثم Build ثم Restart
+
+
+
+---
+
+🤝 المساهمون (Contributors)
+
+Owner
+
+Developer
+
+Frontend Flutter Developer
+
+
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>

@@ -76,5 +76,9 @@ export class SchoolsController {
   resetManagerPassword(@Param('uuid') uuid: string) {
     return this.schoolsService.resetManagerPasswordForSchool(uuid);
   }
-
+  // ✅ جديد: جلب بيانات المدير
+  @Get(':uuid/manager')
+  getManager(@Param('uuid') uuid: string) {
+    return this.schoolsService.getManagerForSchool(uuid);
+  }
 }

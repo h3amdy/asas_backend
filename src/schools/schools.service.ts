@@ -265,4 +265,57 @@ async resetManagerPasswordForSchool(uuid: string) {
     newPassword, // 👈 نرجّعها مرة واحدة للمالك
   };
 }
+
+  // ✅ جديد: جلب مدير مدرسة بشكل مستقل
+  async getManagerForSchool(uuid: string) {
+    const school = await this.prisma.school.findUnique({
+      where: { uuid },
+      select: {
+        id: true,
+        name: true,
+        schoolCode: true,
+        appType: true,
+      },
+    });
+
+    if (!school) {
+      throw new NotFoundException('لم يتم العثور على المدرسة');
+    }
+
+    const manager = await this.prisma.user.findFirst({
+      where: {
+        schoolId: school.id,
+        userType: UserType.ADMIN,
+      },
+      select: {
+        name: true,
+        phone: true,
+        code: true,
+        isActive: true,
+      },
+    });
+
+    if (!manager) {
+      return {
+        hasManager: false,
+        schoolName: school.name,
+        schoolCode: school.schoolCode,
+        appType: school.appType,
+      };
+    }
+
+    return {
+      hasManager: true,
+      schoolName: school.name,
+      schoolCode: school.schoolCode,
+      appType: school.appType,
+      manager: {
+        name: manager.name,
+        phone: manager.phone,
+        code: manager.code,
+        isActive: manager.isActive,
+      },
+    };
+  }
 }
+
