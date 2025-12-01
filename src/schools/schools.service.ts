@@ -1,5 +1,5 @@
 // src/schools/schools.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, AppType, UserType } from '@prisma/client'; // ✅ أضف UserType
 import * as bcrypt from 'bcrypt';                             // ✅ أضف bcrypt
@@ -176,20 +176,15 @@ async createOrUpdateManagerForSchool(
     },
   });
 
-  const passwordHash = await bcrypt.hash(dto.password, 10);
+  // إذا لم يكن هناك مدير → إنشاء جديد (الباسورد هنا إلزامي)
+  if (!manager) {
+    if (!dto.password || dto.password.trim().length < 6) {
+      throw new BadRequestException(
+        'كلمة المرور مطلوبة عند إنشاء مدير جديد وبطول لا يقل عن 6 أحرف',
+      );
+    }
 
-  if (manager) {
-    // تحديث مدير موجود
-    manager = await this.prisma.user.update({
-      where: { id: manager.id },
-      data: {
-        name: dto.name,
-        phone: dto.phone,
-        passwordHash,
-      },
-    });
-  } else {
-    // إنشاء مدير جديد مع كود متسلسل عام داخل المدرسة
+    const passwordHash = await bcrypt.hash(dto.password, 10);
     const code = await this.getNextUserCodeForSchool(school.id);
 
     manager = await this.prisma.user.create({
@@ -204,12 +199,28 @@ async createOrUpdateManagerForSchool(
         isActive: true,
       },
     });
+  } else {
+    // يوجد مدير مسبقاً → تعديل فقط
+    const updateData: Prisma.UserUpdateInput = {
+      name: dto.name,
+      phone: dto.phone,
+    };
+
+    // إذا أرسل باسورد جديد ويتم احترامه
+    if (dto.password && dto.password.trim().length >= 6) {
+      updateData.passwordHash = await bcrypt.hash(dto.password, 10);
+    }
+
+    manager = await this.prisma.user.update({
+      where: { id: manager.id },
+      data: updateData,
+    });
   }
 
   return {
     schoolName: school.name,
     schoolCode: school.schoolCode,
-    appType: school.appType, // PUBLIC / PRIVATE
+    appType: school.appType,
     managerCode: manager.code,
     managerName: manager.name,
   };
