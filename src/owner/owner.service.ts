@@ -1,35 +1,44 @@
-// src/owner/owner.service.ts
-import { Injectable } from '@nestjs/common';
-import { SchoolsService } from '../schools/schools.service';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
+import { UpdateOwnerDto } from './dto/update-owner.dto';
 
 @Injectable()
 export class OwnerService {
-  constructor(private readonly schoolsService: SchoolsService) {}
+  constructor(private prisma: PrismaService) {}
 
-  // لوحة التحكم: ملخص + قائمة مبسطة للمدارس
- async getDashboardSummary(){
-    const stats = await this.schoolsService.getStats();
-    const schools =await this.schoolsService.findAll();
+  async updateOwnerProfile(dto: UpdateOwnerDto) {
+    // هنا نفترض دائماً أن المالك هو أول مستخدم userType = OWNER
+    const owner = await this.prisma.user.findFirst({
+      where: { userType: 'OWNER' },
+    });
 
-    // نرجع نسخة مبسطة من بيانات المدارس (بدون كل التفاصيل)
-    const schoolList = schools.map((s) => ({
-      uuid: s.uuid,
-      name: s.name,
-      schoolCode: s.schoolCode,
-      appType: s.appType,
-      province: s.province,
-      phone: s.phone,
-      isActive: s.isActive,
-      createdAt: s.createdAt,
-    }));
+    if (!owner) throw new NotFoundException('No owner found');
 
-    return {
-      summary: {
-        total_schools: stats.totalSchools,
-        active_schools: stats.activeSchools,
-        inactive_schools: stats.inactiveSchools,
+    const data: any = {};
+
+    if (dto.name) data.name = dto.name;
+    if (dto.email) data.email = dto.email;
+    if (dto.phone) data.phone = dto.phone;
+
+    if (dto.newPassword) {
+      data.passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    }
+
+    return this.prisma.user.update({
+      where: { id: owner.id },
+      data,
+    });
+  }
+
+  async getOwner() {
+    return this.prisma.user.findFirst({
+      where: { userType: 'OWNER' },
+      select: {
+        name: true,
+        email: true,
+        phone: true,
       },
-      schools: schoolList,
-    };
+    });
   }
 }
