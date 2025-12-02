@@ -44,6 +44,7 @@ model User {
  
   isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt   // 👈 جديد
 
   devices      UserDevice[]
 }
@@ -73,6 +74,7 @@ model School {
   nextUserCode     Int       @default(1)
   isActive         Boolean   @default(true)
   createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt   // 👈 جديد
 
   users            User[]
 }
@@ -88,6 +90,10 @@ model GradeDictionary {
   stage        String?  // تمهيدي/أساسي/ثانوي...
   sortOrder    Int      @default(0)
   isActive     Boolean  @default(true)
+
+  createdAt    DateTime @default(now())  // 👈 جديد
+  updatedAt    DateTime @updatedAt       // 👈 جديد
+
 }
 // أجهزة المستخدمين (لـ FCM لاحقاً)
 model UserDevice {
