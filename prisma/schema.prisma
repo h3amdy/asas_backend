@@ -43,8 +43,13 @@ model User {
   passwordHash String
 
   isActive  Boolean  @default(true)
+
+  /// 🔄 من أجل المزامنة والحذف المنطقي
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt // 👈 جديد
+  updatedAt DateTime @updatedAt
 
   devices UserDevice[]
 }
@@ -70,28 +75,40 @@ model School {
   primaryColor    String?
   secondaryColor  String?
   backgroundColor String?
+
   // 👈 عدّاد عام لجميع المستخدمين في المدرسة
-  nextUserCode    Int      @default(1)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt // 👈 جديد
+  nextUserCode Int     @default(1)
+
+  isActive  Boolean  @default(true)
+
+  /// 🔄 من أجل المزامنة والحذف المنطقي
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   users User[]
 }
 
+// قاموس الصفوف العام
 model GradeDictionary {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
   code        String  @unique // مثل G01
-  defaultName String // مثل "الصف الأول الأساسي"
-  shortName   String? // مثل "أ.أ" أو "أ.ث"   👈 NEW
+  defaultName String  // مثل "الصف الأول الأساسي"
+  shortName   String? // مثل "أ.أ" أو "أ.ث"
   stage       String? // تمهيدي/أساسي/ثانوي...
   sortOrder   Int     @default(0)
   isActive    Boolean @default(true)
 
-  createdAt DateTime @default(now()) // 👈 جديد
-  updatedAt DateTime @updatedAt // 👈 جديد
+  /// 🔄 حذف منطقي + دعم المزامنة
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // أجهزة المستخدمين (لـ FCM لاحقاً)
@@ -100,8 +117,15 @@ model UserDevice {
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
-  deviceToken String    @unique
+  deviceToken String @unique
   deviceType  String // ANDROID / IOS / WEB
   lastSeenAt  DateTime?
-  isActive    Boolean   @default(true)
+  isActive    Boolean  @default(true)
+
+  /// 🔄 حذف منطقي
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

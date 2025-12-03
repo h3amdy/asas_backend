@@ -1,62 +1,74 @@
-// src/grades/dto/grade-sync.dto.ts
 import {
-    IsArray,
-    IsBoolean,
-    IsDateString,
-    IsInt,
-    IsOptional,
-    IsString,
-    ValidateNested,
-  } from 'class-validator';
-  import { Type } from 'class-transformer';
-  
-  export class GradeSyncItemDto {
-    @IsOptional()
-    @IsString()
-    uuid?: string; // ممكن يكون null لو إنشئ محلياً بدون uuid من السيرفر
-  
-    @IsString()
-    code: string; // نفترض أنك تضمن uniqueness في التطبيق
-  
-    @IsString()
-    defaultName: string;
-  
-    @IsOptional()
-    @IsString()
-    shortName?: string;
-  
-    @IsOptional()
-    @IsString()
-    stage?: string;
-  
-    @IsOptional()
-    @IsInt()
-    sortOrder?: number;
-  
-    @IsOptional()
-    @IsBoolean()
-    isActive?: boolean;
-  
-    // من الجهاز (اختياري، نقدر نستخدمه للمستقبل لو حبينا حل تعارض متقدم)
-    @IsOptional()
-    @IsDateString()
-    updatedAtDevice?: string;
-  
-    // action بسيطة (UPSERT فقط حالياً، ممكن نضيف DELETE لاحقاً)
-    @IsOptional()
-    @IsString()
-    action?: 'UPSERT' | 'DELETE';
-  }
-  
-  export class PushGradesDto {
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => GradeSyncItemDto)
-    changes: GradeSyncItemDto[];
-  }
-  
-  export class PullGradesQueryDto {
-    @IsOptional()
-    @IsDateString()
-    since?: string;
-  }
+  IsArray,
+  IsBoolean,
+  IsBooleanString,
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export type GradeSyncAction = 'UPSERT' | 'DELETE';
+
+export class GradeSyncItemDto {
+  @IsString()
+  uuid: string;
+
+  @IsString()
+  @MaxLength(10)
+  code: string;
+
+  @IsString()
+  @MaxLength(100)
+  defaultName: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  shortName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  stage?: string;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  /// 👇 هذا كان ناقص
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  localVersion?: number;
+
+  @IsOptional()
+  @IsDateString()
+  updatedAtDevice?: string;
+
+  @IsOptional()
+  @IsString()
+  action?: GradeSyncAction;
+}
+export class GradesSyncPushDto {
+  @IsArray()
+  @ValidateNested({ each: true }) // ضروري للتحقق من صحة العناصر داخل المصفوفة
+  @Type(() => GradeSyncItemDto)   // ضروري لتحويل JSON إلى كلاس GradeSyncItemDto
+  changes: GradeSyncItemDto[];
+}
+
+export class GradesSyncPullQueryDto {
+  @IsOptional()
+  @IsDateString()
+  since?: string;
+
+  @IsOptional()
+  @IsBooleanString() // لأن الـ Query Params تأتي كنص عادة
+  full?: string;
+}

@@ -1,13 +1,5 @@
 // src/schools/dto/create-school.dto.ts
-import {
-  IsString,
-  IsOptional,
-  IsEnum,
-  IsBoolean,
-  IsInt,
-  IsPhoneNumber,
-  IsEmail,
-} from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsEmail } from 'class-validator';
 import { AppType } from '@prisma/client';
 
 export class CreateSchoolDto {
@@ -19,6 +11,7 @@ export class CreateSchoolDto {
   appType: AppType;
 
   @IsOptional()
+  @IsString()
   phone?: string;
 
   @IsOptional()
@@ -37,7 +30,6 @@ export class CreateSchoolDto {
   @IsString()
   educationType?: string; // حكومي / أهلي
 
-  // 🔹 الحقول التي كانت تسبب الخطأ:
   @IsOptional()
   @IsString()
   ownerNotes?: string;

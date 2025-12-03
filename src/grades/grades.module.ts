@@ -1,13 +1,14 @@
-// src/grades/grades.module.ts
 import { Module } from '@nestjs/common';
-import { GradesController } from './grades.controller';
-import { GradesService } from './grades.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { GradesController } from './grades.controller';
+import { GradesSyncController } from './grades-sync.controller';
+import { GradesService } from './grades.service';
+import { GradesSyncService } from './grades-sync.service';
 
 @Module({
   imports: [PrismaModule],
-  controllers: [GradesController],
-  providers: [GradesService],
-  exports: [GradesService],
+  controllers: [GradesController, GradesSyncController],
+  providers: [GradesService, GradesSyncService],
+  exports: [GradesService, GradesSyncService],
 })
 export class GradesModule {}

@@ -1,51 +1,61 @@
 // src/schools/schools.service.ts
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, AppType, UserType } from '@prisma/client'; // ✅ أضف UserType
-import * as bcrypt from 'bcrypt';                             // ✅ أضف bcrypt
+import { Prisma, AppType, UserType } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { UpdateSchoolDto } from './dto/update-school.dto';
-import { CreateSchoolManagerDto } from './dto/create-school-manager.dto'; 
+import { CreateSchoolManagerDto } from './dto/create-school-manager.dto';
 
 @Injectable()
 export class SchoolsService {
   constructor(private prisma: PrismaService) {}
-// ✅ دالة الإحصائيات (يستخدمها المالك في الـ Dashboard)
-async getStats() {
-  const [total, active, inactive] = await Promise.all([
-    this.prisma.school.count(),
-    this.prisma.school.count({ where: { isActive: true } }),
-    this.prisma.school.count({ where: { isActive: false } }),
-  ]);
 
-  return {
-    totalSchools: total,
-    activeSchools: active,
-    inactiveSchools: inactive,
-  };
-}
-  // قائمة المدارس (للوحة المالك)
+  // ✅ (1) تم التعديل: حساب الإحصائيات للمدارس غير المحذوفة فقط
+  async getStats() {
+    const [total, active, inactive] = await Promise.all([
+      this.prisma.school.count({
+        where: { isDeleted: false }, // كان يحسب المحذوف أيضاً سابقاً
+      }),
+      this.prisma.school.count({
+        where: { isActive: true, isDeleted: false },
+      }),
+      this.prisma.school.count({
+        where: { isActive: false, isDeleted: false },
+      }),
+    ]);
+
+    return {
+      totalSchools: total,
+      activeSchools: active,
+      inactiveSchools: inactive,
+    };
+  }
+
   async findAll() {
     return this.prisma.school.findMany({
+      where: { isDeleted: false },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  // مدرسة واحدة بالـ uuid
   async findByUuid(uuid: string) {
     const school = await this.prisma.school.findUnique({
       where: { uuid },
     });
 
-    if (!school) {
+    if (!school || school.isDeleted) {
       throw new NotFoundException('لم يتم العثور على المدرسة');
     }
 
     return school;
   }
 
-  // توليد كود مدرسة جديد (schoolCode)
   private async generateNextSchoolCode(): Promise<number> {
     const last = await this.prisma.school.findFirst({
       orderBy: { schoolCode: 'desc' },
@@ -56,13 +66,12 @@ async getStats() {
     return base + 1;
   }
 
-  // إنشاء مدرسة جديدة
   async create(dto: CreateSchoolDto) {
     const nextCode = await this.generateNextSchoolCode();
 
     const data: Prisma.SchoolCreateInput = {
       name: dto.name,
-      appType: dto.appType as AppType, // "PUBLIC" أو "PRIVATE"
+      appType: dto.appType as AppType,
       schoolCode: nextCode,
       phone: dto.phone ?? null,
       email: dto.email ?? null,
@@ -73,16 +82,13 @@ async getStats() {
       primaryColor: dto.primaryColor ?? null,
       secondaryColor: dto.secondaryColor ?? null,
       backgroundColor: dto.backgroundColor ?? null,
-      // isActive و createdAt لهم قيم افتراضية من Prisma
     };
 
     const school = await this.prisma.school.create({ data });
     return school;
   }
 
-  // تحديث بيانات مدرسة
   async update(uuid: string, dto: UpdateSchoolDto) {
-    // نتأكد أنها موجودة
     await this.ensureExists(uuid);
 
     const data: Prisma.SchoolUpdateInput = {
@@ -105,7 +111,6 @@ async getStats() {
     });
   }
 
-  // تفعيل/إيقاف مدرسة
   async updateStatus(uuid: string, isActive: boolean) {
     await this.ensureExists(uuid);
 
@@ -118,166 +123,181 @@ async getStats() {
   private async ensureExists(uuid: string) {
     const exists = await this.prisma.school.findUnique({
       where: { uuid },
-      select: { id: true },
+      select: { id: true, isDeleted: true },
     });
 
-    if (!exists) {
+    if (!exists || exists.isDeleted) {
       throw new NotFoundException('لم يتم العثور على المدرسة');
     }
   }
-  // حذف مدرسة
-async delete(uuid: string) {
-  await this.ensureExists(uuid);
 
-  await this.prisma.school.delete({
-    where: { uuid },
-  });
+  async delete(uuid: string) {
+    const school = await this.prisma.school.findUnique({
+      where: { uuid },
+    });
 
-  return { success: true };
-}
-/**
-   * توليد كود مستخدم جديد داخل مدرسة معينة
-   * prefixDigit:
-   *  1 للطلاب
-   *  2 للموظفين (مدير، معلم، مشرف)
-   */
-// داخل class SchoolsService
-
-private async getNextUserCodeForSchool(schoolId: number): Promise<number> {
-  const updated = await this.prisma.school.update({
-    where: { id: schoolId },
-    data: {
-      nextUserCode: { increment: 1 },
-    },
-    select: { nextUserCode: true },
-  });
-
-  // بما أن default = 1
-  // أول استدعاء يرجّع 1، ثم 2، ثم 3...
-  return updated.nextUserCode;
-}
-// إنشاء أو تحديث مدير مدرسة
-async createOrUpdateManagerForSchool(
-  uuid: string,
-  dto: CreateSchoolManagerDto,
-) {
-  const school = await this.prisma.school.findUnique({
-    where: { uuid },
-  });
-
-  if (!school) {
-    throw new NotFoundException('لم يتم العثور على المدرسة');
-  }
-
-  let manager = await this.prisma.user.findFirst({
-    where: {
-      schoolId: school.id,
-      userType: UserType.ADMIN,
-    },
-  });
-
-  // إذا لم يكن هناك مدير → إنشاء جديد (الباسورد هنا إلزامي)
-  if (!manager) {
-    if (!dto.password || dto.password.trim().length < 6) {
-      throw new BadRequestException(
-        'كلمة المرور مطلوبة عند إنشاء مدير جديد وبطول لا يقل عن 6 أحرف',
-      );
+    if (!school || school.isDeleted) {
+      throw new NotFoundException('لم يتم العثور على المدرسة');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-    const code = await this.getNextUserCodeForSchool(school.id);
+    const now = new Date();
 
-    manager = await this.prisma.user.create({
+    await this.prisma.school.update({
+      where: { uuid },
       data: {
-        schoolId: school.id,
-        userType: UserType.ADMIN,
-        code, // 1، 2، 3… داخل المدرسة
-        name: dto.name,
-        phone: dto.phone,
-        email: null,
-        passwordHash,
-        isActive: true,
+        isDeleted: true,
+        isActive: false,
+        deletedAt: now,
+        users: {
+          updateMany: {
+            where: {
+              schoolId: school.id,
+              isDeleted: false,
+            },
+            data: {
+              isActive: false,
+              isDeleted: true,
+              deletedAt: now,
+            },
+          },
+        },
       },
     });
-  } else {
-    // يوجد مدير مسبقاً → تعديل فقط
-    const updateData: Prisma.UserUpdateInput = {
-      name: dto.name,
-      phone: dto.phone,
-    };
 
-    // إذا أرسل باسورد جديد ويتم احترامه
-    if (dto.password && dto.password.trim().length >= 6) {
-      updateData.passwordHash = await bcrypt.hash(dto.password, 10);
+    return { success: true };
+  }
+
+  private async getNextUserCodeForSchool(schoolId: number): Promise<number> {
+    const updated = await this.prisma.school.update({
+      where: { id: schoolId },
+      data: {
+        nextUserCode: { increment: 1 },
+      },
+      select: { nextUserCode: true },
+    });
+
+    return updated.nextUserCode;
+  }
+
+  async createOrUpdateManagerForSchool(
+    uuid: string,
+    dto: CreateSchoolManagerDto,
+  ) {
+    const school = await this.prisma.school.findUnique({
+      where: { uuid },
+    });
+
+    if (!school || school.isDeleted) {
+      throw new NotFoundException('لم يتم العثور على المدرسة');
     }
 
-    manager = await this.prisma.user.update({
-      where: { id: manager.id },
-      data: updateData,
+    let manager = await this.prisma.user.findFirst({
+      where: {
+        schoolId: school.id,
+        userType: UserType.ADMIN,
+        isDeleted: false,
+      },
     });
+
+    if (!manager) {
+      if (!dto.password || dto.password.trim().length < 6) {
+        throw new BadRequestException(
+          'كلمة المرور مطلوبة عند إنشاء مدير جديد وبطول لا يقل عن 6 أحرف',
+        );
+      }
+
+      const passwordHash = await bcrypt.hash(dto.password, 10);
+      const code = await this.getNextUserCodeForSchool(school.id);
+
+      manager = await this.prisma.user.create({
+        data: {
+          schoolId: school.id,
+          userType: UserType.ADMIN,
+          code,
+          name: dto.name,
+          phone: dto.phone,
+          email: null,
+          passwordHash,
+          isActive: true,
+        },
+      });
+    } else {
+      const updateData: Prisma.UserUpdateInput = {
+        name: dto.name,
+        phone: dto.phone,
+      };
+
+      if (dto.password && dto.password.trim().length >= 6) {
+        updateData.passwordHash = await bcrypt.hash(dto.password, 10);
+      }
+
+      manager = await this.prisma.user.update({
+        where: { id: manager.id },
+        data: updateData,
+      });
+    }
+
+    return {
+      schoolName: school.name,
+      schoolCode: school.schoolCode,
+      appType: school.appType,
+      managerCode: manager.code,
+      managerName: manager.name,
+    };
   }
 
-  return {
-    schoolName: school.name,
-    schoolCode: school.schoolCode,
-    appType: school.appType,
-    managerCode: manager.code,
-    managerName: manager.name,
-  };
-}
-
-private generateRandomPassword(length = 8): string {
-  // توليد باسورد بسيط من أرقام وحروف (ممكن تخليه أرقام فقط لو تحب)
-  const chars = '23456789';
-  let result = '';
-  const bytes = randomBytes(length);
-  for (let i = 0; i < length; i++) {
-    result += chars[bytes[i] % chars.length];
-  }
-  return result;
-}
-
-async resetManagerPasswordForSchool(uuid: string) {
-  const school = await this.prisma.school.findUnique({
-    where: { uuid },
-  });
-
-  if (!school) {
-    throw new NotFoundException('لم يتم العثور على المدرسة');
+  private generateRandomPassword(length = 8): string {
+    const chars = '23456789';
+    let result = '';
+    const bytes = randomBytes(length);
+    for (let i = 0; i < length; i++) {
+      result += chars[bytes[i] % chars.length];
+    }
+    return result;
   }
 
-  const manager = await this.prisma.user.findFirst({
-    where: {
-      schoolId: school.id,
-      userType: UserType.ADMIN,
-    },
-  });
+  async resetManagerPasswordForSchool(uuid: string) {
+    const school = await this.prisma.school.findUnique({
+      where: { uuid },
+    });
 
-  if (!manager) {
-    throw new NotFoundException('لا يوجد مدير معين لهذه المدرسة');
+    if (!school || school.isDeleted) {
+      throw new NotFoundException('لم يتم العثور على المدرسة');
+    }
+
+    const manager = await this.prisma.user.findFirst({
+      where: {
+        schoolId: school.id,
+        userType: UserType.ADMIN,
+        isDeleted: false,
+      },
+    });
+
+    if (!manager) {
+      throw new NotFoundException('لا يوجد مدير معين لهذه المدرسة');
+    }
+
+    const newPassword = this.generateRandomPassword(8);
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    const updated = await this.prisma.user.update({
+      where: { id: manager.id },
+      data: {
+        passwordHash,
+      },
+    });
+
+    return {
+      schoolName: school.name,
+      schoolCode: school.schoolCode,
+      appType: school.appType,
+      managerCode: updated.code,
+      managerName: updated.name,
+      newPassword,
+    };
   }
 
-  const newPassword = this.generateRandomPassword(8);
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-
-  const updated = await this.prisma.user.update({
-    where: { id: manager.id },
-    data: {
-      passwordHash,
-    },
-  });
-
-  return {
-    schoolName: school.name,
-    schoolCode: school.schoolCode,
-    appType: school.appType,
-    managerCode: updated.code,
-    managerName: updated.name,
-    newPassword, // 👈 نرجّعها مرة واحدة للمالك
-  };
-}
-
-  // ✅ جديد: جلب مدير مدرسة بشكل مستقل
+  // ✅ (2) & (3) تم التعديل: التحقق من حذف المدرسة ومن حذف المدير
   async getManagerForSchool(uuid: string) {
     const school = await this.prisma.school.findUnique({
       where: { uuid },
@@ -286,10 +306,11 @@ async resetManagerPasswordForSchool(uuid: string) {
         name: true,
         schoolCode: true,
         appType: true,
+        isDeleted: true, // جلب حالة الحذف
       },
     });
 
-    if (!school) {
+    if (!school || school.isDeleted) {
       throw new NotFoundException('لم يتم العثور على المدرسة');
     }
 
@@ -297,6 +318,7 @@ async resetManagerPasswordForSchool(uuid: string) {
       where: {
         schoolId: school.id,
         userType: UserType.ADMIN,
+        isDeleted: false, // التأكد أن المدير غير محذوف
       },
       select: {
         name: true,
@@ -329,4 +351,3 @@ async resetManagerPasswordForSchool(uuid: string) {
     };
   }
 }
-
