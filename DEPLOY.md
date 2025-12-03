@@ -12,7 +12,7 @@
 ## 📁 1) الدخول إلى مجلد المشروع
 
 ```bash
-cd /www/node-projects/asas_backend
+cd /www/node-projects/asas-backend
 
 
 ---
@@ -52,7 +52,7 @@ npm run build
 
 🚀 6) إعادة تشغيل PM2
 
-pm2 restart asas_backend
+pm2 restart asas-backend
 
 للتحقق:
 

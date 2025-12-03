@@ -6,7 +6,7 @@ import {
   SchoolsSyncPushDto,
 } from './dto/school-sync.dto';
 
-@Controller('schools/sync')
+@Controller('schools-sync')
 export class SchoolsSyncController {
   constructor(private readonly syncService: SchoolsSyncService) {}
 
