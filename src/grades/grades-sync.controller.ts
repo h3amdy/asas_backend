@@ -11,7 +11,7 @@ import {
     GradesSyncPushDto,
   } from './dto/grade-sync.dto';
   
-  @Controller('grades/sync')
+  @Controller('grades-sync')
   export class GradesSyncController {
     constructor(private readonly syncService: GradesSyncService) {}
   
