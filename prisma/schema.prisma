@@ -23,65 +23,101 @@ enum AppType {
   PUBLIC
   PRIVATE
 }
+enum DeviceType {
+  ANDROID
+  IOS
+  WEB
+}
 
+enum RevokeReason {
+  LOGOUT
+  PASSWORD_CHANGED
+  ADMIN_REVOKE
+}
+enum DeliveryPolicy {
+  OPEN
+  SCHEDULED
+  MANUAL
+}
 // =========================
 // MODELS
 // =========================
 
 // المستخدمون (المالك + مدراء المدارس + بقية الأنواع مستقبلاً)
 model User {
-  id       Int     @id @default(autoincrement())
-  uuid     String  @unique @default(uuid())
-  schoolId Int?
-  school   School? @relation(fields: [schoolId], references: [id])
+  id           Int      @id @default(autoincrement())
+  uuid         String   @unique @default(uuid())
 
-  userType     UserType
-  code         Int? // كود المستخدم داخل المدرسة (للأدمن/المعلم/الطالب)
+  schoolId     Int?     @map("school_id")
+  school       School?  @relation(fields: [schoolId], references: [id])
+
+  userType     UserType @map("user_type")
+  code         Int?     // (في V9.3 مكتوب code int unique per school — الأفضل enforce لاحقًا بمؤشر)
   name         String
+  displayName  String?  @map("display_name")
+  gender       String?
+
   phone        String?
-  email        String?  @unique
-  passwordHash String
+  email        String?
 
-  isActive  Boolean  @default(true)
+  province        String?
+  district        String?
+  addressArea     String? @map("address_area")
+  addressDetails  String? @map("address_details")
 
-  /// 🔄 من أجل المزامنة والحذف المنطقي
-  isDeleted Boolean  @default(false)
-  deletedAt DateTime?
+  passwordHash String @map("password_hash")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive     Boolean @map("is_active")
 
-  devices UserDevice[]
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+  deletedAt    DateTime? @map("deleted_at")
+
+  devices      UserDevice[]
+  sessions     AuthSession[]
+
+  @@index([schoolId], map: "users_school_id_idx")
+  @@index([userType], map: "users_user_type_idx")
+  @@index([phone], map: "users_phone_idx")
+
+  @@map("users")
 }
 
-// المدارس
+
+
 model School {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
-  name       String
-  schoolCode Int     @unique
-  appType    AppType
+  name        String
+  displayName String?  // NEW (DBML: display_name)
+  schoolCode  Int      @unique
+  appType     AppType
 
   phone         String?
   email         String?
-  logoUrl       String?
+  // OLD: logoUrl String?
+  logoMediaAssetId Int? // NEW (FK لاحقًا على media_assets)
+
   address       String?
   province      String?
-  educationType String? // حكومي / أهلي
+  district      String?
+  addressArea   String?
+  educationType String?
 
-  ownerNotes String? // تفاصيل خاصة يراها المالك فقط
+  ownerNotes String?
+
+  nextUserCode Int @default(1)
 
   primaryColor    String?
   secondaryColor  String?
   backgroundColor String?
 
-  // 👈 عدّاد عام لجميع المستخدمين في المدرسة
-  nextUserCode Int     @default(1)
+  deliveryPolicy DeliveryPolicy @default(OPEN)
 
   isActive  Boolean  @default(true)
-
-  /// 🔄 من أجل المزامنة والحذف المنطقي
   isDeleted Boolean  @default(false)
   deletedAt DateTime?
 
@@ -89,7 +125,9 @@ model School {
   updatedAt DateTime @updatedAt
 
   users User[]
+  authSessions AuthSession[]
 }
+
 
 // قاموس الصفوف العام
 model GradeDictionary {
@@ -113,19 +151,56 @@ model GradeDictionary {
 
 // أجهزة المستخدمين (لـ FCM لاحقاً)
 model UserDevice {
-  id     Int  @id @default(autoincrement())
-  userId Int
-  user   User @relation(fields: [userId], references: [id])
+  id                Int      @id @default(autoincrement())
+  uuid              String   @unique @default(uuid())
 
-  deviceToken String @unique
-  deviceType  String // ANDROID / IOS / WEB
-  lastSeenAt  DateTime?
-  isActive    Boolean  @default(true)
+  userId            Int      @map("user_id")
+  user              User     @relation(fields: [userId], references: [id])
 
-  /// 🔄 حذف منطقي
-  isDeleted Boolean  @default(false)
-  deletedAt DateTime?
+  deviceFingerprint String   @map("device_fingerprint")
+  pushToken         String?  @map("push_token")
+  deviceType        DeviceType @map("device_type")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  lastSeenAt        DateTime @map("last_seen_at")
+  isActive          Boolean  @map("is_active")
+
+  sessions          AuthSession[]
+
+  @@unique([deviceFingerprint], map: "user_devices_device_fingerprint_key") // يطابق unique
+  @@unique([pushToken], map: "user_devices_push_token_key")                // يطابق unique (قد تحتاج لاحقًا تغييره)
+  @@index([userId], map: "user_devices_user_id_idx")
+
+  @@map("user_devices")
+}
+
+
+model AuthSession {
+  id               Int       @id @default(autoincrement())
+  uuid             String    @unique @default(uuid())
+
+  userId           Int       @map("user_id")
+  user             User      @relation(fields: [userId], references: [id])
+
+  schoolId         Int?      @map("school_id")
+  school           School?   @relation(fields: [schoolId], references: [id])
+
+  deviceId         Int?      @map("device_id")
+  device           UserDevice? @relation(fields: [deviceId], references: [id])
+
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastSeenAt       DateTime? @map("last_seen_at")
+
+  expiresAt        DateTime  @map("expires_at")
+
+  revokedAt        DateTime? @map("revoked_at")
+  revokeReason     RevokeReason? @map("revoke_reason")
+
+  @@index([userId], map: "auth_sessions_user_id_idx")
+  @@index([schoolId], map: "auth_sessions_school_id_idx")
+  @@index([deviceId], map: "auth_sessions_device_id_idx")
+  @@index([revokedAt], map: "auth_sessions_revoked_at_idx")
+
+  @@map("auth_sessions")
 }

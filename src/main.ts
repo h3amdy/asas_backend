@@ -10,6 +10,9 @@ async function bootstrap() {
     origin: '*', // لاحقاً ممكن نحدد الدومينات بدلاً من النجمة
   });
 
+  // ✅ إضافة prefix لجميع الـ routes
+  app.setGlobalPrefix('api/v1');
+
   // ✅ تفعيل الـ ValidationPipe زي ما هو
   app.useGlobalPipes(
     new ValidationPipe({

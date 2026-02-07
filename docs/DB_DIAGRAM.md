@@ -123,9 +123,10 @@ updated_at datetime
 
    - يُطبّق ذلك عبر Partial Unique Index في PostgreSQL:
 
-     CREATE UNIQUE INDEX uq_parent_phone_per_school
-     ON users (school_id, phone)
-     WHERE user_type = 'PARENT';
+   CREATE UNIQUE INDEX IF NOT EXISTS uq_parent_phone_per_school
+ON "User" ("schoolId", "phone")
+WHERE "userType" = 'PARENT' AND "phone" IS NOT NULL AND "isDeleted" = false;
+
   */
 }
 
@@ -471,7 +472,8 @@ Table lesson_templates {
 
   // (اختياري) ربط بالوحدة:
   unit_id            int [null]         // FK -> units.id (لو وحدات المدرسة)
- order_index        int [default: 1]   // ✅ ترتيب الدرس داخل الوحدة
+  order_index        int [default: 1]   // ✅ ترتيب الدرس داخل الوحدة
+ 
   title              varchar
   cover_media_asset_id int [null]
   template_version   int [default: 1]   // لنسخ القالب عند التعديل (clone)
@@ -1436,5 +1438,4 @@ Ref: question_ordering_items.audio_asset_id        > media_assets.id
 Ref: media_upload_sessions.school_id > schools.id
 Ref: media_upload_sessions.uploader_user_id > users.id
 Ref: media_upload_sessions.media_asset_id > media_assets.id
-
 

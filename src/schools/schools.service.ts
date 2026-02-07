@@ -14,7 +14,7 @@ import { CreateSchoolManagerDto } from './dto/create-school-manager.dto';
 
 @Injectable()
 export class SchoolsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   // ✅ (1) تم التعديل: حساب الإحصائيات للمدارس غير المحذوفة فقط
   async getStats() {
@@ -71,6 +71,7 @@ export class SchoolsService {
 
     const data: Prisma.SchoolCreateInput = {
       name: dto.name,
+      displayName: dto.name, // ✅ displayName يأخذ نفس قيمة name عند الإنشاء
       appType: dto.appType as AppType,
       schoolCode: nextCode,
       phone: dto.phone ?? null,

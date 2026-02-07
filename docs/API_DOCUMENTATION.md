@@ -26,88 +26,543 @@
 
 ```
 asas_backend/
-├── prisma/                    # ملفات Prisma
-│   ├── schema.prisma          # تعريف قاعدة البيانات
-│   ├── migrations/            # ملفات الهجرة
-│   └── generated/             # ملفات Prisma المُولّدة
 │
-├── src/                       # الكود المصدري
-│   ├── main.ts                # نقطة الدخول الرئيسية
-│   ├── app.module.ts          # الوحدة الرئيسية
-│   ├── app.controller.ts      # المتحكم الرئيسي
-│   ├── app.service.ts         # الخدمة الرئيسية
-│   │
-│   ├── auth/                  # 🔐 المصادقة
-│   │   ├── auth.controller.ts
-│   │   ├── auth.service.ts
-│   │   ├── auth.module.ts
-│   │   ├── jwt.strategy.ts
-│   │   ├── guards/
-│   │   │   └── jwt-auth.guard.ts
-│   │   └── dto/
-│   │       ├── owner-login.dto.ts
-│   │       └── change-password.dto.ts
-│   │
-│   ├── schools/               # 🏫 المدارس
-│   │   ├── schools.controller.ts
-│   │   ├── schools.service.ts
-│   │   ├── schools.module.ts
-│   │   ├── schools-sync.controller.ts
-│   │   ├── schools-sync.service.ts
-│   │   └── dto/
-│   │       ├── create-school.dto.ts
-│   │       ├── update-school.dto.ts
-│   │       ├── update-school-status.dto.ts
-│   │       ├── create-school-manager.dto.ts
-│   │       └── school-sync.dto.ts
-│   │
-│   ├── grades/                # 📊 الصفوف الدراسية
-│   │   ├── grades.controller.ts
-│   │   ├── grades.service.ts
-│   │   ├── grades.module.ts
-│   │   ├── grades-sync.controller.ts
-│   │   ├── grades-sync.service.ts
-│   │   └── dto/
-│   │       ├── create-grade.dto.ts
-│   │       ├── update-grade.dto.ts
-│   │       ├── update-grade-status.dto.ts
-│   │       └── grade-sync.dto.ts
-│   │
-│   ├── admins/                # 👨‍💼 مدراء المدارس
-│   │   ├── admins.controller.ts
-│   │   ├── admins.service.ts
-│   │   ├── admins.module.ts
-│   │   └── dto/
-│   │       ├── create-admin.dto.ts
-│   │       ├── update-admin.dto.ts
-│   │       └── update-admin-status.dto.ts
-│   │
-│   ├── owner/                 # 👑 المالك
-│   │   ├── owner.controller.ts
-│   │   ├── owner.service.ts
-│   │   ├── owner.module.ts
-│   │   └── dto/
-│   │       └── update-owner.dto.ts
-│   │
-│   ├── prisma/                # 🔗 خدمة Prisma
-│   │   └── prisma.service.ts
-│   │
-│   ├── users/                 # 👥 المستخدمين
-│   │   └── ...
-│   │
-│   └── tools/                 # 🔧 أدوات مساعدة
-│       └── ...
+├── 📂 prisma/                              # ملفات Prisma ORM
+│   ├── schema.prisma                       # تعريف النماذج والعلاقات
+│   ├── migrations/                         # سجل هجرات قاعدة البيانات
+│   └── generated/                          # ملفات Prisma Client المُولّدة
 │
-├── test/                      # الاختبارات
-├── dist/                      # الكود المُترجم
-└── node_modules/              # المكتبات
+├── 📂 src/                                 # الكود المصدري الرئيسي
+│   │
+│   ├── main.ts                             # 🚀 نقطة الدخول: إعداد CORS, ValidationPipe, تشغيل الخادم
+│   ├── app.module.ts                       # 📦 الوحدة الجذر: تجميع كل الوحدات الفرعية
+│   ├── app.controller.ts                   # 🎮 متحكم الجذر: endpoint صحة الخادم
+│   ├── app.service.ts                      # ⚙️ خدمة الجذر: منطق عام
+│   │
+│   ├── 📂 auth/                            # 🔐 وحدة المصادقة للمالك 
+│   │   ├── auth.module.ts                  # تسجيل الوحدة مع JWT
+│   │   ├── auth.controller.ts              # endpoints: login, change-password
+│   │   ├── auth.service.ts                 # منطق تسجيل الدخول والتحقق
+│   │   ├── jwt.strategy.ts                 # استراتيجية Passport JWT
+│   │   ├── 📂 guards/
+│   │   │   └── jwt-auth.guard.ts           # حارس حماية الـ endpoints المحمية
+│   │   └── 📂 dto/
+│   │       ├── owner-login.dto.ts          # DTO: email + password للدخول
+│   │       └── change-password.dto.ts      # DTO: oldPassword + newPassword
+│   │
+│   ├── 📂 schools/                         # 🏫 وحدة المدارس للمالك
+│   │   ├── schools.module.ts               # تسجيل الوحدة
+│   │   ├── schools.controller.ts           # CRUD endpoints للمدارس
+│   │   ├── schools.service.ts              # منطق إدارة المدارس والمدراء
+│   │   ├── schools-sync.controller.ts      # endpoints المزامنة (pull/push)
+│   │   ├── schools-sync.service.ts         # منطق المزامنة التزايدية والكاملة
+│   │   └── 📂 dto/
+│   │       ├── create-school.dto.ts        # DTO: إنشاء مدرسة
+│   │       ├── update-school.dto.ts        # DTO: تحديث مدرسة (جزئي)
+│   │       ├── update-school-status.dto.ts # DTO: تفعيل/إيقاف مدرسة
+│   │       ├── create-school-manager.dto.ts# DTO: إنشاء/تحديث مدير
+│   │       └── school-sync.dto.ts          # DTOs: المزامنة (Pull Query + Push Body)
+│   │
+│   ├── 📂 grades/                          # 📊  وحدة الصفوف الدراسية الرسمية للمالك
+│   │   ├── grades.module.ts                # تسجيل الوحدة
+│   │   ├── grades.controller.ts            # CRUD endpoints للصفوف
+│   │   ├── grades.service.ts               # منطق إدارة الصفوف
+│   │   ├── grades-sync.controller.ts       # endpoints المزامنة
+│   │   ├── grades-sync.service.ts          # منطق مزامنة الصفوف
+│   │   └── 📂 dto/
+│   │       ├── create-grade.dto.ts         # DTO: إنشاء صف
+│   │       ├── update-grade.dto.ts         # DTO: تحديث صف
+│   │       ├── update-grade-status.dto.ts  # DTO: تفعيل/إيقاف صف
+│   │       └── grade-sync.dto.ts           # DTOs: المزامنة
+│   │
+│   ├── 📂 admins/                          # 👨‍💼 وحدة مدراء المدارس للمالك
+│   │   ├── admins.module.ts                # تسجيل الوحدة
+│   │   ├── admins.controller.ts            # endpoints إدارة المدراء
+│   │   ├── admins.service.ts               # منطق إنشاء وتحديث المدراء
+│   │   └── 📂 dto/
+│   │       ├── create-admin.dto.ts         # DTO: إنشاء مدير (name, email, phone, password, schoolUuid)
+│   │       ├── update-admin.dto.ts         # DTO: تحديث مدير (جزئي)
+│   │       └── update-admin-status.dto.ts  # DTO: تفعيل/إيقاف مدير
+│   │
+│   ├── 📂 owner/                           # 👑 وحدة المالك
+│   │   ├── owner.module.ts                 # تسجيل الوحدة
+│   │   ├── owner.controller.ts             # endpoints: getProfile, updateProfile
+│   │   ├── owner.service.ts                # منطق تحديث بيانات المالك
+│   │   └── 📂 dto/
+│   │       └── update-owner.dto.ts         # DTO: تحديث المالك (name, email, phone, newPassword)
+│   │
+│   ├── 📂 status/                           # 🚦 وحدة Boot Gate (حالة المدرسة)
+│   │   ├── status.module.ts                # تسجيل الوحدة
+│   │   ├── status.controller.ts            # endpoint: GET /status/schools/:uuid
+│   │   └── status.service.ts               # منطق جلب حالة المدرسة
+│   │
+│   ├── 📂 school/                          # 🆕 وحدة أدوار المدرسة (ADMIN/TEACHER/STUDENT/PARENT)
+│   │   ├── school.module.ts                # الوحدة الرئيسية: تجميع auth + sessions + common
+│   │   │
+│   │   ├── 📂 auth/                        # 🔐 مصادقة مستخدمي المدرسة
+│   │   │   ├── school-auth.module.ts       # وحدة المصادقة مع JWT
+│   │   │   ├── school-auth.controller.ts   # endpoints: login, refresh, logout
+│   │   │   ├── school-auth.service.ts      # منطق تسجيل الدخول/الخروج
+│   │   │   ├── constants.ts                # ثوابت JWT (issuer, audience, TTL)
+│   │   │   ├── 📂 strategies/
+│   │   │   │   └── school-jwt.strategy.ts  # 🔑 استراتيجية JWT للـ Passport
+│   │   │   ├── 📂 guards/
+│   │   │   │   └── school-jwt-auth.guard.ts # 🛡️ حارس JWT
+│   │   │   ├── 📂 utils/
+│   │   │   │   └── crypto.util.ts          # دوال sha256 + randomToken
+│   │   │   └── 📂 dto/
+│   │   │       ├── school-login.dto.ts     # DTO: schoolUuid + userCode/phone + password
+│   │   │       ├── refresh.dto.ts          # DTO: sessionId + refreshToken
+│   │   │       └── logout.dto.ts           # DTO: sessionId + logoutAll
+│   │   │
+│   │   ├── 📂 sessions/                    # 🔄 إدارة الجلسات والأجهزة
+│   │   │   ├── sessions.module.ts          # وحدة الجلسات
+│   │   │   └── sessions.service.ts         # خدمة auth_sessions + user_devices
+│   │   │
+│   │   └── 📂 common/                      # 🔧 مكونات مشتركة
+│   │       ├── school-common.module.ts     # وحدة المكونات المشتركة
+│   │       ├── constants.ts                # ثوابت Headers (x-school-uuid)
+│   │       ├── 📂 guards/
+│   │       │   └── school-context.guard.ts # 🛡️ حارس سياق المدرسة
+│   │       └── 📂 decorators/
+│   │           ├── current-user.decorator.ts  # @CurrentUser()
+│   │           └── school-context.decorator.ts # @SchoolCtx()
+│   │
+│   ├── 📂 public/                          # 🌍 الـ endpoints العامة (بدون مصادقة)
+│   │   ├── public.module.ts                # الوحدة الرئيسية
+│   │   └── 📂 schools/                     # 🔍 البحث عن المدارس العامة
+│   │       ├── public-schools.module.ts    # وحدة المدارس العامة
+│   │       ├── public-schools.controller.ts# endpoints: search, verify-code
+│   │       ├── public-schools.service.ts   # منطق البحث والتحقق
+│   │       └── 📂 dto/
+│   │           ├── public-school.dto.ts    # DTO: بيانات المدرسة العامة
+│   │           ├── search-schools.query.ts # Query: q + limit
+│   │           └── verify-school-code.dto.ts # DTO: schoolCode
+│   │
+│   ├── 📂 prisma/                          # 🔗 خدمة Prisma المشتركة
+│   │   ├── prisma.module.ts                # وحدة Prisma العامة
+│   │   └── prisma.service.ts               # خدمة الاتصال بقاعدة البيانات
+│   │
+│   ├── 📂 users/                           # 👥 نماذج المستخدمين
+│   │   └── user.model.ts                   # نموذج/واجهة المستخدم
+│   │
+│   └── 📂 tools/                           # 🔧 أدوات مساعدة
+│       └── hash.js                         # أداة لتوليد bcrypt hash
+│
+├── 📂 test/                                # اختبارات e2e
+├── 📂 dist/                                # الكود المُترجم للإنتاج
+├── 📂 node_modules/                        # المكتبات المُثبّتة
+│
+├── package.json                            # تعريف المشروع والمكتبات
+├── tsconfig.json                           # إعدادات TypeScript
+├── nest-cli.json                           # إعدادات NestJS CLI
+├── .env                                    # المتغيرات البيئية (DATABASE_URL, JWT_SECRET, PORT)
+└── DBDIGRAM.md                             # توثيق مخطط قاعدة البيانات
 ```
 
 ---
 
 ## 🌐 API Endpoints
 
-### 🔐 المصادقة (Auth)
+> **Base URL:** `http://localhost:3000/api/v1`
+>
+> جميع الـ endpoints تبدأ بـ `/api/v1`. الأمثلة أدناه تظهر المسار النسبي فقط.
+
+### 🚦 حالة المدرسة والحساب (Status Gates)
+
+> 📍 **Boot Gate** - عامة بدون مصادقة. للتحقق من حالة المدرسة قبل تسجيل الدخول.
+> 
+> 📍 **Account Gate** - محمية بـ JWT. للتحقق من حالة الحساب والمدرسة بعد تسجيل الدخول.
+
+| Method | Endpoint | الوصف | الحماية |
+|--------|----------|-------|---------|
+| `GET` | `/status/schools/:uuid` | Boot Gate - حالة المدرسة | ❌ |
+| `GET` | `/status/me` | Account Gate - حالة حسابي ومدرستي | ✅ JWT |
+
+---
+
+#### `GET /status/schools/:uuid` (Boot Gate)
+
+جلب معلومات خفيفة لـ Boot التطبيق (موجودة؟ مفعّلة؟ نوعها؟).
+
+**Path Parameters:**
+| المعامل | النوع | مطلوب | الوصف |
+|---------|-------|-------|-------|
+| `uuid` | `string` | ✅ | UUID المدرسة |
+
+**Request Example:**
+```
+GET /status/schools/s1s2s3s4-e5f6-7890-abcd-ef1234567890
+```
+
+**Response:** `200 OK`
+```json
+{
+  "school_uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+  "is_active": true,
+  "app_type": "PUBLIC",
+  "display_name": "مدرسة النور الأهلية",
+  "reason": null
+}
+```
+
+**Response مدرسة موقوفة:** `200 OK`
+```json
+{
+  "school_uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+  "is_active": false,
+  "app_type": "PUBLIC",
+  "display_name": "مدرسة النور الأهلية",
+  "reason": "SCHOOL_DISABLED"
+}
+```
+
+**Error Responses:**
+| الكود | الوصف |
+|-------|-------|
+| `404` | `School not found` |
+
+---
+
+#### `GET /status/me` (Account Gate)
+
+التحقق من حالة حسابي ومدرستي بعد تسجيل الدخول.
+
+**Headers:**
+| الحقل | النوع | مطلوب | الوصف |
+|-------|-------|-------|-------|
+| `Authorization` | `string` | ✅ | `Bearer <accessToken>` |
+
+**Response:** `200 OK`
+```json
+{
+  "user_uuid": "user-uuid-here",
+  "user_type": "TEACHER",
+  "user_display_name": "أحمد محمد",
+  "user_is_active": true,
+  "school_uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+  "school_display_name": "مدرسة النور الأهلية",
+  "school_is_active": true,
+  "reason": null
+}
+```
+
+**Response حساب موقوف:** `200 OK`
+```json
+{
+  "user_uuid": "user-uuid-here",
+  "user_type": "STUDENT",
+  "user_display_name": "محمد علي",
+  "user_is_active": false,
+  "school_uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+  "school_display_name": "مدرسة النور الأهلية",
+  "school_is_active": true,
+  "reason": "USER_DISABLED"
+}
+```
+
+**قيم `reason` المحتملة:**
+| القيمة | الوصف |
+|-------|-------|
+| `null` | كل شيء نشط |
+| `SCHOOL_DISABLED` | المدرسة موقوفة |
+| `USER_DISABLED` | الحساب موقوف |
+
+**Error Responses:**
+| الكود | الوصف |
+|-------|-------|
+| `401` | `Unauthorized` - توكن غير صالح |
+| `403` | `INVALID_SESSION` |
+| `404` | `USER_NOT_FOUND` / `SCHOOL_NOT_FOUND` |
+
+> 💡 **ملاحظة:** ترتيب الأسباب: المدرسة أولاً ثم المستخدم.
+
+---
+
+### 🌍 المدارس العامة (Public Schools)
+
+> ⚠️ **ملاحظة:** هذه الـ endpoints عامة ولا تتطلب مصادقة. تُستخدم لاختيار المدرسة قبل تسجيل الدخول.
+
+| Method | Endpoint | الوصف | الحماية |
+|--------|----------|-------|---------|
+| `GET` | `/public/schools/search` | البحث عن مدارس بالاسم | ❌ |
+| `POST` | `/public/schools/verify-code` | التحقق من كود المدرسة | ❌ |
+
+---
+
+#### `GET /public/schools/search`
+
+البحث عن المدارس العامة (PUBLIC) بالاسم.
+
+**Query Parameters:**
+| المعامل | النوع | مطلوب | الوصف |
+|---------|-------|-------|-------|
+| `q` | `string` | ✅ | نص البحث (حرفين على الأقل) |
+| `limit` | `number` | ❌ | عدد النتائج (1-50، افتراضي: 10) |
+
+**Request Example:**
+```
+GET /public/schools/search?q=النور&limit=5
+```
+
+**Response:** `200 OK`
+```json
+{
+  "items": [
+    {
+      "uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+      "displayName": "مدرسة النور الأهلية",
+      "schoolCode": 1001,
+      "appType": "PUBLIC",
+      "phone": "777123456",
+      "email": "school@example.com",
+      "province": "صنعاء",
+      "district": "شميلة",
+      "addressArea": "حي النور",
+      "address": "شارع الجامعة",
+      "logoMediaAssetId": 5,
+      "primaryColor": "#1976D2",
+      "secondaryColor": "#FF5722",
+      "backgroundColor": "#FFFFFF"
+    }
+  ]
+}
+```
+
+**Error Responses:**
+| الكود | الوصف |
+|-------|-------|
+| `400` | `q must be at least 2 characters` |
+
+> 💡 **ملاحظة:** يتم البحث في `displayName` و `name` باستخدام `ILIKE` (case-insensitive).
+
+---
+
+#### `POST /public/schools/verify-code`
+
+التحقق من كود المدرسة وجلب بياناتها.
+
+**Request Body:**
+| الحقل | النوع | مطلوب | الوصف |
+|-------|-------|-------|-------|
+| `schoolCode` | `number` | ✅ | كود المدرسة (رقم موجب) |
+
+**Request Example:**
+```json
+{
+  "schoolCode": 1001
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "school": {
+    "uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+    "displayName": "مدرسة النور الأهلية",
+    "schoolCode": 1001,
+    "appType": "PUBLIC",
+    "phone": "777123456",
+    "email": "school@example.com",
+    "province": "صنعاء",
+    "district": "شميلة",
+    "addressArea": "حي النور",
+    "address": "شارع الجامعة",
+    "logoMediaAssetId": 5,
+    "primaryColor": "#1976D2",
+    "secondaryColor": "#FF5722",
+    "backgroundColor": "#FFFFFF"
+  }
+}
+```
+
+**Error Responses:**
+| الكود | الوصف |
+|-------|-------|
+| `400` | `schoolCode must be a positive integer` |
+| `404` | `School not found` |
+
+> ⚠️ **ملاحظة:** يتم إرجاع فقط المدارس النشطة (`isActive=true`) وغير المحذوفة (`isDeleted=false`) ونوعها `PUBLIC`.
+
+---
+
+### 🔐 مصادقة المدرسة (School Auth)
+
+> ⚠️ **ملاحظة:** هذه الـ endpoints لمستخدمي المدرسة (ADMIN/TEACHER/STUDENT/PARENT). بدون مصادقة للدخول، مع JWT للعمليات اللاحقة.
+
+| Method | Endpoint | الوصف | الحماية |
+|--------|----------|-------|---------|
+| `POST` | `/school/auth/login` | تسجيل دخول مستخدمي المدرسة | ❌ |
+| `POST` | `/school/auth/refresh` | تجديد التوكن | ❌ |
+| `POST` | `/school/auth/logout` | تسجيل الخروج | ❌ |
+
+---
+
+#### `POST /school/auth/login`
+
+تسجيل دخول مستخدمي المدرسة. يدعم:
+- **ADMIN/TEACHER/STUDENT:** باستخدام `userCode`
+- **PARENT:** باستخدام `phone`
+
+**Request Body:**
+| الحقل | النوع | مطلوب | الوصف |
+|-------|-------|-------|-------|
+| `schoolUuid` | `string` | ✅ | UUID المدرسة |
+| `userCode` | `number` | ⚠️ | كود المستخدم (ADMIN/TEACHER/STUDENT) |
+| `phone` | `string` | ⚠️ | رقم الهاتف (PARENT فقط) |
+| `password` | `string` | ✅ | كلمة المرور |
+| `deviceFingerprint` | `string` | ✅ | معرّف الجهاز الثابت |
+| `deviceType` | `string` | ✅ | نوع الجهاز: `ANDROID` / `IOS` / `WEB` |
+| `pushToken` | `string` | ❌ | FCM Token للإشعارات |
+
+> ⚠️ يجب إرسال واحد فقط من `userCode` أو `phone`، وليس كلاهما.
+
+**Request Example (TEACHER/STUDENT/ADMIN):**
+```json
+{
+  "schoolUuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+  "userCode": 1001,
+  "password": "mypassword",
+  "deviceFingerprint": "abc123-device-id",
+  "deviceType": "ANDROID",
+  "pushToken": "fcm-token-here"
+}
+```
+
+**Request Example (PARENT):**
+```json
+{
+  "schoolUuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+  "phone": "777123456",
+  "password": "mypassword",
+  "deviceFingerprint": "abc123-device-id",
+  "deviceType": "IOS"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+  "refreshToken": "random-base64url-token",
+  "sessionId": "session-uuid-here",
+  "refreshExpiresAt": "2026-03-07T00:00:00.000Z",
+  "user": {
+    "uuid": "user-uuid-here",
+    "userType": "TEACHER",
+    "code": 1001,
+    "displayName": "أحمد محمد"
+  },
+  "school": {
+    "uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
+    "displayName": "مدرسة النور الأهلية",
+    "appType": "PUBLIC"
+  }
+}
+```
+
+**Error Responses:**
+| الكود | الوصف |
+|-------|-------|
+| `400` | `Either phone or userCode is required` |
+| `400` | `Provide only one of phone or userCode` |
+| `401` | `Invalid credentials` |
+| `403` | `School is not active` |
+| `404` | `School not found` |
+
+---
+
+#### `POST /school/auth/refresh`
+
+تجديد Access Token باستخدام Refresh Token. يتم تدوير الـ Refresh Token مع كل طلب (Rotation).
+
+**Request Body:**
+| الحقل | النوع | مطلوب | الوصف |
+|-------|-------|-------|-------|
+| `sessionId` | `string` | ✅ | UUID الجلسة |
+| `refreshToken` | `string` | ✅ | Refresh Token الحالي |
+| `deviceFingerprint` | `string` | ✅ | معرّف الجهاز |
+| `deviceType` | `string` | ✅ | نوع الجهاز |
+| `pushToken` | `string` | ❌ | FCM Token (لتحديثه) |
+
+**Request Example:**
+```json
+{
+  "sessionId": "session-uuid-here",
+  "refreshToken": "old-refresh-token",
+  "deviceFingerprint": "abc123-device-id",
+  "deviceType": "ANDROID"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...(new)",
+  "refreshToken": "new-refresh-token",
+  "sessionId": "session-uuid-here",
+  "refreshExpiresAt": "2026-03-07T00:00:00.000Z",
+  "user": { ... },
+  "school": { ... }
+}
+```
+
+**Error Responses:**
+| الكود | الوصف |
+|-------|-------|
+| `403` | `Session revoked` |
+| `403` | `Session expired` |
+| `403` | `Invalid refresh token` |
+| `403` | `User not active` |
+| `403` | `School is not active` |
+| `404` | `Session not found` |
+
+> 💡 **ملاحظة:** بعد كل refresh ناجح، يجب حفظ الـ `refreshToken` الجديد. الـ Token القديم يصبح غير صالح.
+
+---
+
+#### `POST /school/auth/logout`
+
+تسجيل الخروج وإلغاء الجلسة/الجلسات.
+
+**Request Body:**
+| الحقل | النوع | مطلوب | الوصف |
+|-------|-------|-------|-------|
+| `sessionId` | `string` | ✅ | UUID الجلسة |
+| `logoutAll` | `boolean` | ❌ | إلغاء جميع الجلسات (افتراضي: `false`) |
+| `deviceFingerprint` | `string` | ❌ | معرّف الجهاز (لتحديث lastSeen) |
+
+**Request Example (جلسة واحدة):**
+```json
+{
+  "sessionId": "session-uuid-here"
+}
+```
+
+**Request Example (جميع الجلسات):**
+```json
+{
+  "sessionId": "session-uuid-here",
+  "logoutAll": true
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "logoutAll": false
+}
+```
+
+**Error Responses:**
+| الكود | الوصف |
+|-------|-------|
+| `404` | `Session not found` |
+
+---
+
+### 🔐 المصادقة (Auth - Owner)
 
 | Method | Endpoint | الوصف | الحماية |
 |--------|----------|-------|---------|

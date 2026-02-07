@@ -7,10 +7,24 @@ import { OwnerModule } from './owner/owner.module';
 import { SchoolsModule } from './schools/schools.module';
 import { GradesModule } from './grades/grades.module';
 import { AdminsModule } from './admins/admins.module';
+import { StatusModule } from './status/status.module';
+import { PublicModule } from './public/public.module';
+import { SchoolModule } from './school/school.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, OwnerModule, SchoolsModule, GradesModule, AdminsModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    OwnerModule,
+    SchoolsModule,
+    GradesModule,
+    AdminsModule,
+    StatusModule,
+    PublicModule,
+    SchoolModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
+
