@@ -1,4 +1,4 @@
-// src/schools/schools-sync.controller.ts
+// src/owner/schools/schools-sync.controller.ts
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { SchoolsSyncService } from './schools-sync.service';
 import {

@@ -1,4 +1,4 @@
-// src/schools/dto/create-school-manager.dto.ts
+// src/owner/schools/dto/create-school-manager.dto.ts
 import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateSchoolManagerDto {

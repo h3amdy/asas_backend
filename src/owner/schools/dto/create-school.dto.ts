@@ -1,4 +1,4 @@
-// src/schools/dto/create-school.dto.ts
+// src/owner/schools/dto/create-school.dto.ts
 import { IsString, IsOptional, IsEnum, IsEmail } from 'class-validator';
 import { AppType } from '@prisma/client';
 

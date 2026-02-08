@@ -39,57 +39,57 @@ asas_backend/
 │   ├── app.controller.ts                   # 🎮 متحكم الجذر: endpoint صحة الخادم
 │   ├── app.service.ts                      # ⚙️ خدمة الجذر: منطق عام
 │   │
-│   ├── 📂 auth/                            # 🔐 وحدة المصادقة للمالك 
-│   │   ├── auth.module.ts                  # تسجيل الوحدة مع JWT
-│   │   ├── auth.controller.ts              # endpoints: login, change-password
-│   │   ├── auth.service.ts                 # منطق تسجيل الدخول والتحقق
-│   │   ├── jwt.strategy.ts                 # استراتيجية Passport JWT
-│   │   ├── 📂 guards/
-│   │   │   └── jwt-auth.guard.ts           # حارس حماية الـ endpoints المحمية
-│   │   └── 📂 dto/
-│   │       ├── owner-login.dto.ts          # DTO: email + password للدخول
-│   │       └── change-password.dto.ts      # DTO: oldPassword + newPassword
-│   │
-│   ├── 📂 schools/                         # 🏫 وحدة المدارس للمالك
-│   │   ├── schools.module.ts               # تسجيل الوحدة
-│   │   ├── schools.controller.ts           # CRUD endpoints للمدارس
-│   │   ├── schools.service.ts              # منطق إدارة المدارس والمدراء
-│   │   ├── schools-sync.controller.ts      # endpoints المزامنة (pull/push)
-│   │   ├── schools-sync.service.ts         # منطق المزامنة التزايدية والكاملة
-│   │   └── 📂 dto/
-│   │       ├── create-school.dto.ts        # DTO: إنشاء مدرسة
-│   │       ├── update-school.dto.ts        # DTO: تحديث مدرسة (جزئي)
-│   │       ├── update-school-status.dto.ts # DTO: تفعيل/إيقاف مدرسة
-│   │       ├── create-school-manager.dto.ts# DTO: إنشاء/تحديث مدير
-│   │       └── school-sync.dto.ts          # DTOs: المزامنة (Pull Query + Push Body)
-│   │
-│   ├── 📂 grades/                          # 📊  وحدة الصفوف الدراسية الرسمية للمالك
-│   │   ├── grades.module.ts                # تسجيل الوحدة
-│   │   ├── grades.controller.ts            # CRUD endpoints للصفوف
-│   │   ├── grades.service.ts               # منطق إدارة الصفوف
-│   │   ├── grades-sync.controller.ts       # endpoints المزامنة
-│   │   ├── grades-sync.service.ts          # منطق مزامنة الصفوف
-│   │   └── 📂 dto/
-│   │       ├── create-grade.dto.ts         # DTO: إنشاء صف
-│   │       ├── update-grade.dto.ts         # DTO: تحديث صف
-│   │       ├── update-grade-status.dto.ts  # DTO: تفعيل/إيقاف صف
-│   │       └── grade-sync.dto.ts           # DTOs: المزامنة
-│   │
-│   ├── 📂 admins/                          # 👨‍💼 وحدة مدراء المدارس للمالك
-│   │   ├── admins.module.ts                # تسجيل الوحدة
-│   │   ├── admins.controller.ts            # endpoints إدارة المدراء
-│   │   ├── admins.service.ts               # منطق إنشاء وتحديث المدراء
-│   │   └── 📂 dto/
-│   │       ├── create-admin.dto.ts         # DTO: إنشاء مدير (name, email, phone, password, schoolUuid)
-│   │       ├── update-admin.dto.ts         # DTO: تحديث مدير (جزئي)
-│   │       └── update-admin-status.dto.ts  # DTO: تفعيل/إيقاف مدير
-│   │
-│   ├── 📂 owner/                           # 👑 وحدة المالك
+│   ├── 📂 owner/                           # 👑 وحدة المالك (تجميع)
 │   │   ├── owner.module.ts                 # تسجيل الوحدة
 │   │   ├── owner.controller.ts             # endpoints: getProfile, updateProfile
 │   │   ├── owner.service.ts                # منطق تحديث بيانات المالك
-│   │   └── 📂 dto/
-│   │       └── update-owner.dto.ts         # DTO: تحديث المالك (name, email, phone, newPassword)
+│   │   ├── 📂 dto/
+│   │   │   └── update-owner.dto.ts         # DTO: تحديث المالك
+│   │   │
+│   │   ├── 📂 auth/                        # 🔐 وحدة المصادقة للمالك 
+│   │   │   ├── auth.module.ts              # تسجيل الوحدة مع JWT
+│   │   │   ├── auth.controller.ts          # endpoints: login, change-password
+│   │   │   ├── auth.service.ts             # منطق تسجيل الدخول والتحقق
+│   │   │   ├── jwt.strategy.ts             # استراتيجية Passport JWT
+│   │   │   ├── 📂 guards/
+│   │   │   │   └── jwt-auth.guard.ts       # حارس حماية الـ endpoints المحمية
+│   │   │   └── 📂 dto/
+│   │   │       ├── owner-login.dto.ts      # DTO: email + password للدخول
+│   │   │       └── change-password.dto.ts  # DTO: oldPassword + newPassword
+│   │   │
+│   │   ├── 📂 schools/                     # 🏫 وحدة المدارس للمالك
+│   │   │   ├── schools.module.ts           # تسجيل الوحدة
+│   │   │   ├── schools.controller.ts       # CRUD endpoints للمدارس
+│   │   │   ├── schools.service.ts          # منطق إدارة المدارس والمدراء
+│   │   │   ├── schools-sync.controller.ts  # endpoints المزامنة (pull/push)
+│   │   │   ├── schools-sync.service.ts     # منطق المزامنة التزايدية والكاملة
+│   │   │   └── 📂 dto/
+│   │   │       ├── create-school.dto.ts    # DTO: إنشاء مدرسة
+│   │   │       ├── update-school.dto.ts    # DTO: تحديث مدرسة (جزئي)
+│   │   │       ├── update-school-status.dto.ts # DTO: تفعيل/إيقاف مدرسة
+│   │   │       ├── create-school-manager.dto.ts# DTO: إنشاء/تحديث مدير
+│   │   │       └── school-sync.dto.ts      # DTOs: المزامنة (Pull Query + Push Body)
+│   │   │
+│   │   ├── 📂 grades/                      # 📊  وحدة الصفوف الدراسية الرسمية للمالك
+│   │   │   ├── grades.module.ts            # تسجيل الوحدة
+│   │   │   ├── grades.controller.ts        # CRUD endpoints للصفوف
+│   │   │   ├── grades.service.ts           # منطق إدارة الصفوف
+│   │   │   ├── grades-sync.controller.ts   # endpoints المزامنة
+│   │   │   ├── grades-sync.service.ts      # منطق مزامنة الصفوف
+│   │   │   └── 📂 dto/
+│   │   │       ├── create-grade.dto.ts     # DTO: إنشاء صف
+│   │   │       ├── update-grade.dto.ts     # DTO: تحديث صف
+│   │   │       ├── update-grade-status.dto.ts # DTO: تفعيل/إيقاف صف
+│   │   │       └── grade-sync.dto.ts       # DTOs: المزامنة
+│   │   │
+│   │   ├── 📂 admins/                      # 👨‍💼 وحدة مدراء المدارس للمالك
+│   │   │   ├── admins.module.ts            # تسجيل الوحدة
+│   │   │   ├── admins.controller.ts        # endpoints إدارة المدراء
+│   │   │   ├── admins.service.ts           # منطق إنشاء وتحديث المدراء
+│   │   │   └── 📂 dto/
+│   │   │       ├── create-admin.dto.ts     # DTO: إنشاء مدير
+│   │   │       ├── update-admin.dto.ts     # DTO: تحديث مدير
+│   │   │       └── update-admin-status.dto.ts # DTO: تفعيل/إيقاف مدير
 │   │
 │   ├── 📂 status/                           # 🚦 وحدة Boot Gate (حالة المدرسة)
 │   │   ├── status.module.ts                # تسجيل الوحدة
@@ -789,7 +789,9 @@ Content-Type: application/json
 }
 ```
 
-> ⚠️ **ملاحظة:** `schoolCode` يُولّد تلقائياً ولا يمكن تعديله.
+> ℹ️ **ملاحظة:** 
+> - `schoolCode` يُولّد تلقائياً ولا يمكن تعديله.
+> - `displayName` يأخذ نفس قيمة `name` عند الإنشاء.
 
 ---
 
@@ -831,10 +833,32 @@ Content-Type: application/json
   "id": 1,
   "uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
   "name": "مدرسة النور المتطورة",
+  "displayName": "مدرسة النور",
+  "schoolCode": 1001,
+  "appType": "PUBLIC",
   "phone": "778888888",
+  "email": "school@example.com",
+  "logoMediaAssetId": null,
+  "address": "صنعاء",
+  "province": "صنعاء",
+  "district": null,
+  "addressArea": null,
+  "educationType": "أهلي",
+  "ownerNotes": "ملاحظات خاصة",
+  "primaryColor": "#1976D2",
+  "secondaryColor": "#FF5722",
+  "backgroundColor": "#FFFFFF",
+  "deliveryPolicy": "OPEN",
+  "nextUserCode": 5,
+  "isActive": true,
+  "isDeleted": false,
+  "deletedAt": null,
+  "createdAt": "2026-01-15T10:30:00.000Z",
   "updatedAt": "2026-02-05T15:10:00.000Z"
 }
 ```
+
+> ℹ️ **ملاحظة:** يتم إرجاع كامل بيانات المدرسة بعد التحديث.
 
 **Error Responses:**
 | الكود | الوصف |
@@ -870,10 +894,32 @@ Content-Type: application/json
   "id": 1,
   "uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
   "name": "مدرسة النور",
+  "displayName": "مدرسة النور",
+  "schoolCode": 1001,
+  "appType": "PUBLIC",
+  "phone": "777123456",
+  "email": "school@example.com",
+  "logoMediaAssetId": null,
+  "address": "صنعاء",
+  "province": "صنعاء",
+  "district": null,
+  "addressArea": null,
+  "educationType": "أهلي",
+  "ownerNotes": "ملاحظات خاصة",
+  "primaryColor": "#1976D2",
+  "secondaryColor": "#FF5722",
+  "backgroundColor": "#FFFFFF",
+  "deliveryPolicy": "OPEN",
+  "nextUserCode": 5,
   "isActive": false,
+  "isDeleted": false,
+  "deletedAt": null,
+  "createdAt": "2026-01-15T10:30:00.000Z",
   "updatedAt": "2026-02-05T15:15:00.000Z"
 }
 ```
+
+> ℹ️ **ملاحظة:** يتم إرجاع كامل بيانات المدرسة بعد تغيير الحالة.
 
 ---
 
@@ -1189,11 +1235,13 @@ Content-Type: application/json
 
 ### 👨‍💼 مدراء المدارس (Admins)
 
+> ⚠️ **ملاحظة:** يتم إنشاء مدراء المدارس حصراً عن طريق `POST /schools/:uuid/manager`. هذه الـ endpoints للعرض والتعديل فقط.
+
+
 | Method | Endpoint | الوصف |
 |--------|----------|-------|
 | `GET` | `/admins` | جلب جميع المدراء |
 | `GET` | `/admins/by-school/:uuid` | جلب مدراء مدرسة معينة |
-| `POST` | `/admins` | إنشاء مدير جديد |
 | `PATCH` | `/admins/:uuid` | تحديث بيانات مدير |
 | `PATCH` | `/admins/:uuid/status` | تغيير حالة المدير |
 
@@ -1258,58 +1306,7 @@ Content-Type: application/json
 
 ---
 
-#### `POST /admins`
 
-إنشاء مدير مدرسة جديد.
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Request Body:**
-| الحقل | النوع | مطلوب | الوصف |
-|-------|-------|-------|-------|
-| `name` | `string` | ✅ | اسم المدير |
-| `email` | `string` | ✅ | البريد الإلكتروني (فريد) |
-| `phone` | `string` | ✅ | رقم الهاتف |
-| `password` | `string` | ✅ | كلمة المرور (6 أحرف على الأقل) |
-| `schoolUuid` | `string` | ✅ | معرف المدرسة (UUID) |
-
-**Request Example:**
-```json
-{
-  "name": "أحمد محمد علي",
-  "email": "ahmed@school.com",
-  "phone": "777123456",
-  "password": "securePass123",
-  "schoolUuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890"
-}
-```
-
-**Response:** `201 Created`
-```json
-{
-  "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "name": "أحمد محمد علي",
-  "email": "ahmed@school.com",
-  "phone": "777123456",
-  "userType": "ADMIN",
-  "school": {
-    "uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
-    "name": "مدرسة النور",
-    "schoolCode": 1001
-  }
-}
-```
-
-**Error Responses:**
-| الكود | الوصف |
-|-------|-------|
-| `400` | البريد مستخدم مسبقاً |
-| `404` | لم يتم العثور على المدرسة |
-
----
 
 #### `PATCH /admins/:uuid`
 

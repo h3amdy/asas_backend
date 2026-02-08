@@ -1,259 +1,106 @@
-تمام ✅ خلّنا نعتمد التقسيم النهائي:
+الذي تفعله الآن (كقرار + تعديل كود) هو:
 
-GET /api/v1/status/schools/:uuid (بدون JWT) ← Boot Gate
+## ✅ 1) ثبّت قرار: **إنشاء/تعيين مدير المدرسة يتم فقط عبر**
 
-GET /api/v1/status/me (مع JWT لمستخدمي المدرسة) ← Account Gate
+**`POST /schools/:uuid/manager`**
 
-
-> ملاحظة: في الأمثلة تحت أفترض إنك ستعمل Prefix عام /api/v1 في main.ts (سأذكّرك به آخر الرد).
-
-
-
+يعني هذا هو “المسار الرسمي الوحيد” لإنشاء مدير المدرسة (ADMIN الأساسي) وتحديثه.
 
 ---
 
-1) الملفات والمكان في الهيكلية
+## ✅ 2) ماذا تفعل بملفات `admins`؟
 
-ضعها هنا (كما اتفقنا سابقًا):
+خلِّ وحدة `admins` **للعرض والتعديل والتفعيل فقط** (Owner View)، وامنع منها الإنشاء.
 
-src/status/
-  status.module.ts
-  status.controller.ts
-  status.service.ts
+### (A) احذف/علّق `@Post()` من `AdminsController`
 
+**AdminsController** يصبح بدون create:
 
----
+```ts
+// srs/owner/admins/admins.controller.ts
+@Controller('admins')
+export class AdminsController {
+  constructor(private readonly adminsService: AdminsService) {}
 
-2) كود NestJS الكامل
-
-2.1 src/status/status.module.ts
-
-import { Module } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module';
-import { StatusController } from './status.controller';
-import { StatusService } from './status.service';
-
-@Module({
-  imports: [PrismaModule],
-  controllers: [StatusController],
-  providers: [StatusService],
-})
-export class StatusModule {}
-
-
----
-
-2.2 src/status/status.controller.ts
-
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
-import { StatusService } from './status.service';
-import { SchoolJwtAuthGuard } from '../school/auth/guards/school-jwt-auth.guard';
-
-@Controller('status')
-export class StatusController {
-  constructor(private readonly statusService: StatusService) {}
-
-  /**
-   * ✅ Boot Gate (Public)
-   * GET /api/v1/status/schools/:uuid
-   */
-  @Get('schools/:uuid')
-  async schoolStatus(@Param('uuid') uuid: string) {
-    return this.statusService.getSchoolStatus(uuid);
+  @Get()
+  findAll() {
+    return this.adminsService.findAll();
   }
 
-  /**
-   * ✅ Account Gate (Protected by School JWT)
-   * GET /api/v1/status/me
-   */
-  @UseGuards(SchoolJwtAuthGuard)
-  @Get('me')
-  async me(@Req() req: any) {
-    // req.user coming from JWT strategy
-    return this.statusService.getMyStatus(req.user);
+  @Get('by-school/:uuid')
+  findBySchool(@Param('uuid') uuid: string) {
+    return this.adminsService.findBySchool(uuid);
+  }
+
+  // ❌ احذف هذا:
+  // @Post()
+  // create(@Body() dto: CreateAdminDto) {
+  //   return this.adminsService.create(dto);
+  // }
+
+  @Patch(':uuid')
+  update(@Param('uuid') uuid: string, @Body() dto: UpdateAdminDto) {
+    return this.adminsService.update(uuid, dto);
+  }
+
+  @Patch(':uuid/status')
+  updateStatus(@Param('uuid') uuid: string, @Body() dto: UpdateAdminStatusDto) {
+    return this.adminsService.updateStatus(uuid, dto.isActive);
   }
 }
+```
 
+### (B) احذف `create()` من `AdminsService` (أو خليها private/غير مستخدمة)
 
----
-
-2.3 src/status/status.service.ts
-
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-
-type SchoolJwtUser = {
-  userUuid?: string;
-  schoolUuid?: string | null;
-  userType?: string;
-};
-
-@Injectable()
-export class StatusService {
-  constructor(private readonly prisma: PrismaService) {}
-
-  /**
-   * Boot Gate:
-   * - موجودة/غير موجودة
-   * - مفعّلة/موقوفة
-   * - نوع التطبيق PUBLIC/PRIVATE
-   */
-  async getSchoolStatus(uuid: string) {
-    const school = await this.prisma.school.findFirst({
-      where: { uuid, isDeleted: false },
-      select: {
-        uuid: true,
-        isActive: true,
-        appType: true,
-        displayName: true,
-      },
-    });
-
-    if (!school) {
-      throw new NotFoundException('School not found');
-    }
-
-    return {
-      school_uuid: school.uuid,
-      is_active: school.isActive,
-      app_type: school.appType, // PUBLIC / PRIVATE
-      display_name: school.displayName ?? null,
-      reason: school.isActive ? null : 'SCHOOL_DISABLED',
-    };
-  }
-
-  /**
-   * Account Gate (after login):
-   * - هل حسابي مفعّل؟
-   * - هل مدرستي (في الجلسة) مفعّلة؟
-   */
-  async getMyStatus(jwtUser: SchoolJwtUser) {
-    const userUuid = jwtUser?.userUuid;
-    if (!userUuid) {
-      throw new ForbiddenException('INVALID_SESSION');
-    }
-
-    const user = await this.prisma.user.findFirst({
-      where: {
-        uuid: userUuid,
-        isDeleted: false,
-      },
-      select: {
-        uuid: true,
-        isActive: true,
-        schoolId: true,
-        userType: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('USER_NOT_FOUND');
-    }
-
-    // OWNER ما يدخل هنا عادة، لكن لو حصل:
-    if (!user.schoolId) {
-      return {
-        user_is_active: user.isActive,
-        school_is_active: null,
-        reason: user.isActive ? null : 'USER_DISABLED',
-      };
-    }
-
-    const school = await this.prisma.school.findFirst({
-      where: {
-        id: user.schoolId,
-        isDeleted: false,
-      },
-      select: { uuid: true, isActive: true },
-    });
-
-    if (!school) {
-      throw new NotFoundException('SCHOOL_NOT_FOUND');
-    }
-
-    // ترتيب الأسباب (أنت تحدده)
-    let reason: string | null = null;
-    if (!school.isActive) reason = 'SCHOOL_DISABLED';
-    else if (!user.isActive) reason = 'USER_DISABLED';
-
-    return {
-      user_uuid: user.uuid,
-      user_type: user.userType,
-      user_is_active: user.isActive,
-      school_uuid: school.uuid,
-      school_is_active: school.isActive,
-      reason,
-    };
-  }
-}
-
+أفضل تحذفها لتفادي أي استعمال بالخطأ.
 
 ---
 
-3) ربط حارس JWT لمستخدمي المدرسة
+## ✅ 3) وثّق وتأكد من REST
 
-أنت عندك auth/jwt.strategy.ts للمالك. لا نلمسه.
+بدل:
 
-نضيف Guard خاص بالمدرسة داخل: src/school/auth/guards/school-jwt-auth.guard.ts
+* `POST /admins` لإنشاء مدير
 
-src/school/auth/guards/school-jwt-auth.guard.ts
+استخدم:
 
-import { Injectable } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+* `POST /schools/:uuid/manager` لإنشاء/تحديث مدير مدرسة محددة
 
-@Injectable()
-export class SchoolJwtAuthGuard extends AuthGuard('school-jwt') {}
+وباقي `/admins` فقط:
 
-> هذا يفترض أنك ستسمي Strategy لمستخدمي المدرسة: school-jwt.
-
-
-
+* `GET /admins`
+* `GET /admins/by-school/:uuid`
+* `PATCH /admins/:uuid`
+* `PATCH /admins/:uuid/status`
 
 ---
 
-4) (مهم) تأكد أن School JWT Strategy يحقن userUuid
+## ✅ 4) لازم تثبّت قيود DB (حتى ما يرجع الخطأ لاحقًا)
 
-داخل src/school/auth/.../school-jwt.strategy.ts (إذا عندك أو ستنشئه) لازم validate() يرجّع شيء مثل:
+نفّذ migration SQL:
 
-return { userUuid: payload.sub, schoolUuid: payload.schoolUuid, userType: payload.userType };
+### (1) كود فريد داخل المدرسة:
 
-ولو sub عندك ليس uuid بل id، غيّر الاستعلام في getMyStatus() ليتعامل مع id بدل uuid.
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_code_per_school
+ON "User" ("schoolId","code")
+WHERE "schoolId" IS NOT NULL AND "isDeleted" = false;
+```
 
+### (2) (اختياري لكن قوي) مدير واحد فعّال لكل مدرسة:
 
----
-
-5) تفعيل /api/v1 ومعناه
-
-/api/v1 يعني نسخة الـ API.
-
-تطبيقه (مرة واحدة) في main.ts:
-
-app.setGlobalPrefix('api/v1');
-
-وقتها كل مساراتك تصبح:
-
-/api/v1/status/...
-
-/api/v1/public/schools/...
-
-إلخ
-
-
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS uq_one_admin_per_school
+ON "User" ("schoolId")
+WHERE "userType"='ADMIN' AND "isDeleted"=false;
+```
 
 ---
 
-الخطوة التالية (بعد هذا مباشرة)
+---
 
-بما أنك قلت “نبدأ بوحدة school/auth + sessions”:
+### الخلاصة التنفيذية
 
-1. نكتب SchoolAuthService + SessionsService كامل (Login/Refresh/Logout)
-
-
-2. نضيف Models Prisma المطلوبة: user_devices و auth_sessions (حسب DBML V9.3)
-
-
-3. نعمل Migration ثم generate ثم نختبر بــ Postman
-
-
-
-إذا تريد، أرسل لي شكل Payload اللي تريده داخل access token (uuid/id + schoolUuid + role) وأنا أكتب الاستراتيجية والـ services بناءً عليه بدون أي تغيير لاحق.
+1. **احذف POST /admins** (Controller + Service).
+2. اعتمد **POST /schools/:uuid/manager** كمسار الإنشاء الوحيد.
+3. أضف الـ indexes في DB.

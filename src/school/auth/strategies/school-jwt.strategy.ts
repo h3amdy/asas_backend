@@ -14,19 +14,25 @@ type SchoolJwtPayload = {
 
 @Injectable()
 export class SchoolJwtStrategy extends PassportStrategy(Strategy, 'school-jwt') {
-    constructor() {
-        super({
-            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-            ignoreExpiration: false,
-            secretOrKey: process.env.JWT_SECRET,
-        });
+  constructor() {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET is not set. Check your .env file');
     }
 
-    validate(payload: SchoolJwtPayload) {
-        if (!payload?.sub || !payload?.sc || !payload?.ut) {
-            throw new UnauthorizedException('Invalid token payload');
-        }
-        // هذا يرجع كـ req.user
-        return payload;
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: jwtSecret, // ✅ صار string مؤكد
+    });
+  }
+
+  validate(payload: SchoolJwtPayload) {
+    if (!payload?.sub || !payload?.sc || !payload?.ut) {
+      throw new UnauthorizedException('Invalid token payload');
     }
+    return payload;
+  }
 }
+
+

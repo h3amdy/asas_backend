@@ -1,4 +1,4 @@
-// src/schools/dto/school-sync.dto.ts
+// src/owner/schools/dto/school-sync.dto.ts
 import {
     IsArray,
     IsBoolean,

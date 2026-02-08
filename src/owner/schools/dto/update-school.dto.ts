@@ -1,4 +1,4 @@
-// src/schools/dto/update-school.dto.ts
+// src/owner/schools/dto/update-school.dto.ts
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateSchoolDto } from './create-school.dto';
 

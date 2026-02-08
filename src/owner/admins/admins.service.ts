@@ -1,69 +1,17 @@
+// srs/owner/admins/admins.service.ts
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { CreateAdminDto } from './dto/create-admin.dto';
+import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateAdminDto } from './dto/update-admin.dto';
-import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AdminsService {
   constructor(private prisma: PrismaService) { }
 
-  // إنشاء مدير مدرسة جديد
-  async create(dto: CreateAdminDto) {
-    // 1) نتأكد أن المدرسة موجودة
-    const school = await this.prisma.school.findUnique({
-      where: { uuid: dto.schoolUuid },
-    });
 
-    if (!school) {
-      throw new NotFoundException('لم يتم العثور على المدرسة');
-    }
-
-    // 2) نتأكد أن البريد غير مستخدم
-    if (dto.email) {
-      const exists = await this.prisma.user.findUnique({
-        where: { email: dto.email },
-      });
-      if (exists) {
-        throw new BadRequestException('البريد مستخدم مسبقاً');
-      }
-    }
-
-    // 3) تشفير كلمة المرور
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-
-    // 4) إنشاء المستخدم كـ ADMIN
-    const admin = await this.prisma.user.create({
-      data: {
-        name: dto.name,
-        email: dto.email,
-        phone: dto.phone,
-        passwordHash,
-        userType: 'ADMIN', // انتبه: من enum UserType
-        school: {
-          connect: { id: school.id },
-        },
-        isActive: true,
-      },
-    });
-
-    return {
-      uuid: admin.uuid,
-      name: admin.name,
-      email: admin.email,
-      phone: admin.phone,
-      userType: admin.userType,
-      school: {
-        uuid: school.uuid,
-        name: school.name,
-        schoolCode: school.schoolCode,
-      },
-    };
-  }
 
   // جميع مدراء المدارس (للمالك)
   async findAll() {

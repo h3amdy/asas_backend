@@ -1,6 +1,6 @@
-// src/schools/schools-sync.service.ts
+// src/owner/schools/schools-sync.service.ts
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma, School, UserType } from '@prisma/client';
 import {
   SchoolSyncItemDto,

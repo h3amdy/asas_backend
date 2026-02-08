@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { OwnerLoginDto } from './dto/owner-login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
@@ -16,15 +16,15 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
-  ) {}
+  ) { }
 
   // ✅ تسجيل دخول المالك
   async loginOwner(dto: OwnerLoginDto) {
     const { email, password } = dto;
 
     // 1) نبحث عن المستخدم بالـ email
-    const user = await this.prisma.user.findUnique({
-      where: { email },
+    const user = await this.prisma.user.findFirst({
+      where: { email, isDeleted: false },
     });
 
     // 2) نتأكد أنه موجود و نوعه OWNER

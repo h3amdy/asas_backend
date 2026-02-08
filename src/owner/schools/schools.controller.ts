@@ -1,4 +1,4 @@
-// src/schools/schools.controller.ts
+// src/owner/schools/schools.controller.ts
 import {
   Body,
   Controller,

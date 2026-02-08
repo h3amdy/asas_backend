@@ -1,10 +1,10 @@
-// src/schools/schools.service.ts
+// src/owner/schools/schools.service.ts
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma, AppType, UserType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
@@ -168,17 +168,17 @@ export class SchoolsService {
     return { success: true };
   }
 
-  private async getNextUserCodeForSchool(schoolId: number): Promise<number> {
-    const updated = await this.prisma.school.update({
-      where: { id: schoolId },
-      data: {
-        nextUserCode: { increment: 1 },
-      },
-      select: { nextUserCode: true },
-    });
+ private async getNextUserCodeForSchool(schoolId: number): Promise<number> {
+  const updated = await this.prisma.school.update({
+    where: { id: schoolId },
+    data: { nextUserCode: { increment: 1 } },
+    select: { nextUserCode: true },
+  });
 
-    return updated.nextUserCode;
-  }
+  // ✅ لو nextUserCode default = 1 → أول مرة يرجع 1
+  return updated.nextUserCode - 1;
+}
+
 
   async createOrUpdateManagerForSchool(
     uuid: string,

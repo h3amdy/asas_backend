@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module';
+import { PrismaModule } from '../../prisma/prisma.module';
 import { GradesController } from './grades.controller';
 import { GradesSyncController } from './grades-sync.controller';
 import { GradesService } from './grades.service';

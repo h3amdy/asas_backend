@@ -58,7 +58,7 @@ model User {
   gender       String?
 
   phone        String?
- email String? @unique
+  email        String?
 
   province        String?
   district        String?
@@ -81,6 +81,7 @@ model User {
   @@index([schoolId], map: "users_school_id_idx")
   @@index([userType], map: "users_user_type_idx")
   @@index([phone], map: "users_phone_idx")
+  @@index([email], map: "users_email_idx")
 
   @@map("users")
 }
