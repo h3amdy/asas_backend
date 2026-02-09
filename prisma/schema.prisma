@@ -165,9 +165,15 @@ model UserDevice {
 
   sessions          AuthSession[]
 
-  @@unique([deviceFingerprint], map: "user_devices_device_fingerprint_key") // يطابق unique
-  @@unique([pushToken], map: "user_devices_push_token_key")                // يطابق unique (قد تحتاج لاحقًا تغييره)
+  // ✅ لا تجعل fingerprint فريد عالميًا
+  @@unique([userId, deviceFingerprint], map: "user_devices_user_device_fp_key")
+
+  // ✅ لا تجعل pushToken unique
+  @@index([pushToken], map: "user_devices_push_token_idx")
+
+  // فهارس
   @@index([userId], map: "user_devices_user_id_idx")
+  @@index([deviceFingerprint], map: "user_devices_device_fp_idx")
 
   @@map("user_devices")
 }

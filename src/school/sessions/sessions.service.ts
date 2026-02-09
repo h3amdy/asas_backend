@@ -21,9 +21,13 @@ export class SessionsService {
     async upsertDevice(input: DeviceUpsertInput) {
         const now = new Date();
 
-        // حسب V9.3: device_fingerprint unique
         const device = await this.prisma.userDevice.upsert({
-            where: { deviceFingerprint: input.deviceFingerprint },
+            where: {
+                userId_deviceFingerprint: {
+                    userId: input.userId,
+                    deviceFingerprint: input.deviceFingerprint,
+                },
+            },
             create: {
                 userId: input.userId,
                 deviceFingerprint: input.deviceFingerprint,
@@ -33,7 +37,6 @@ export class SessionsService {
                 isActive: true,
             },
             update: {
-                userId: input.userId, // مهم: لو تغيّر الحساب على نفس الجهاز
                 deviceType: input.deviceType as any,
                 pushToken: input.pushToken ?? undefined,
                 lastSeenAt: now,
@@ -41,6 +44,7 @@ export class SessionsService {
             },
             select: { id: true, uuid: true, userId: true, deviceFingerprint: true },
         });
+
 
         return device;
     }
@@ -107,13 +111,49 @@ export class SessionsService {
             throw new ForbiddenException('Invalid refresh token');
         }
 
-        // تحديث/تثبيت الجهاز
-        const device = await this.upsertDevice({
-            userId: session.userId,
-            deviceFingerprint: params.deviceFingerprint,
-            deviceType: params.deviceType,
-            pushToken: params.pushToken,
-        });
+        let deviceId = session.deviceId;
+
+        // إذا ما في جهاز مربوط (حالة قديمة/مهاجرة) نعمل upsert ونربط
+        if (!deviceId) {
+            const device = await this.upsertDevice({
+                userId: session.userId,
+                deviceFingerprint: params.deviceFingerprint,
+                deviceType: params.deviceType,
+                pushToken: params.pushToken,
+            });
+            deviceId = device.id;
+
+            await this.prisma.authSession.update({
+                where: { uuid: session.uuid },
+                data: { deviceId },
+            });
+        } else {
+            // ✅ التحقق من تطابق الجهاز قبل السماح بالـ refresh
+            const existingDevice = await this.prisma.userDevice.findUnique({
+                where: { id: deviceId },
+                select: { deviceFingerprint: true, isActive: true },
+            });
+
+            if (!existingDevice) {
+                throw new ForbiddenException('Device not found');
+            }
+            if (!existingDevice.isActive) {
+                throw new ForbiddenException('Device inactive');
+            }
+            if (existingDevice.deviceFingerprint !== params.deviceFingerprint) {
+                throw new ForbiddenException('Device mismatch');
+            }
+
+            // تحديث معلومات الجهاز الحالي فقط
+            await this.prisma.userDevice.update({
+                where: { id: deviceId },
+                data: {
+                    lastSeenAt: new Date(),
+                    pushToken: params.pushToken ?? undefined,
+                    deviceType: params.deviceType as any,
+                },
+            });
+        }
 
         const now = new Date();
         const newRefreshPlain = randomToken(48);
@@ -126,7 +166,6 @@ export class SessionsService {
                 refreshTokenHash: newRefreshHash,
                 expiresAt: newExpiresAt,
                 lastSeenAt: now,
-                deviceId: device.id,
             },
         });
 

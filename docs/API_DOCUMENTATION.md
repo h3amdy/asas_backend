@@ -394,7 +394,7 @@ GET /public/schools/search?q=النور&limit=5
 |--------|----------|-------|---------|
 | `POST` | `/school/auth/login` | تسجيل دخول مستخدمي المدرسة | ❌ |
 | `POST` | `/school/auth/refresh` | تجديد التوكن | ❌ |
-| `POST` | `/school/auth/logout` | تسجيل الخروج | ❌ |
+| `POST` | `/school/auth/logout` | تسجيل الخروج | ✅ JWT |
 
 ---
 
@@ -411,11 +411,13 @@ GET /public/schools/search?q=النور&limit=5
 | `userCode` | `number` | ⚠️ | كود المستخدم (ADMIN/TEACHER/STUDENT) |
 | `phone` | `string` | ⚠️ | رقم الهاتف (PARENT فقط) |
 | `password` | `string` | ✅ | كلمة المرور |
-| `deviceFingerprint` | `string` | ✅ | معرّف الجهاز الثابت |
-| `deviceType` | `string` | ✅ | نوع الجهاز: `ANDROID` / `IOS` / `WEB` |
+| `deviceFingerprint` | `string` | ✅ | معرّف تثبيت التطبيق (Installation ID) |
+| `deviceType` | `enum` | ✅ | `ANDROID` / `IOS` / `WEB` |
 | `pushToken` | `string` | ❌ | FCM Token للإشعارات |
 
 > ⚠️ يجب إرسال واحد فقط من `userCode` أو `phone`، وليس كلاهما.
+>
+> 💡 **`deviceFingerprint`:** يُولّد محليًا ويُحفظ على الجهاز. قد يتغير عند حذف التطبيق وإعادة تثبيته، وهذا متوقع.
 
 **Request Example (TEACHER/STUDENT/ADMIN):**
 ```json
@@ -474,15 +476,17 @@ GET /public/schools/search?q=النور&limit=5
 
 #### `POST /school/auth/refresh`
 
-تجديد Access Token باستخدام Refresh Token. يتم تدوير الـ Refresh Token مع كل طلب (Rotation).
+تجديد Access Token باستخدام Refresh Token.
+
+> 🔐 **Security:** refresh يعتمد على تدوير refresh token مع كل طلب (Rotation) ويمنع التحديث من جهاز مختلف عبر التحقق من `deviceFingerprint` (Device mismatch).
 
 **Request Body:**
 | الحقل | النوع | مطلوب | الوصف |
 |-------|-------|-------|-------|
 | `sessionId` | `string` | ✅ | UUID الجلسة |
 | `refreshToken` | `string` | ✅ | Refresh Token الحالي |
-| `deviceFingerprint` | `string` | ✅ | معرّف الجهاز |
-| `deviceType` | `string` | ✅ | نوع الجهاز |
+| `deviceFingerprint` | `string` | ✅ | معرّف تثبيت التطبيق (Installation ID) |
+| `deviceType` | `enum` | ✅ | `ANDROID` / `IOS` / `WEB` |
 | `pushToken` | `string` | ❌ | FCM Token (لتحديثه) |
 
 **Request Example:**
@@ -513,6 +517,9 @@ GET /public/schools/search?q=النور&limit=5
 | `403` | `Session revoked` |
 | `403` | `Session expired` |
 | `403` | `Invalid refresh token` |
+| `403` | `Device mismatch` - بصمة الجهاز لا تطابق الجلسة |
+| `403` | `Device not found` - الجهاز المرتبط بالجلسة غير موجود |
+| `403` | `Device inactive` - الجهاز معطل |
 | `403` | `User not active` |
 | `403` | `School is not active` |
 | `404` | `Session not found` |
@@ -524,6 +531,13 @@ GET /public/schools/search?q=النور&limit=5
 #### `POST /school/auth/logout`
 
 تسجيل الخروج وإلغاء الجلسة/الجلسات.
+
+> ⚠️ **محمي بـ JWT** - يجب إرسال `Authorization: Bearer <accessToken>` ويتم التحقق من أن الجلسة تخص المستخدم الحالي.
+
+**Headers:**
+| الحقل | النوع | مطلوب | الوصف |
+|-------|-------|-------|-------|
+| `Authorization` | `string` | ✅ | `Bearer <accessToken>` |
 
 **Request Body:**
 | الحقل | النوع | مطلوب | الوصف |
@@ -558,9 +572,16 @@ GET /public/schools/search?q=النور&limit=5
 **Error Responses:**
 | الكود | الوصف |
 |-------|-------|
+| `401` | `Unauthorized` - توكن غير صالح أو مفقود |
+| `403` | `Not your session` - الجلسة لا تخص المستخدم الحالي |
 | `404` | `Session not found` |
 
 ---
+
+### 📝 ملاحظات مهمة حول الأجهزة (UserDevice)
+
+- `deviceFingerprint` مرتبط بالمستخدم، لذلك **نفس الجهاز يمكن أن يسجل بأكثر من حساب**.
+- `pushToken` قد يتغير أو يتكرر تاريخيًا، لذلك لا يُعتبر معرّفًا فريدًا.
 
 
 

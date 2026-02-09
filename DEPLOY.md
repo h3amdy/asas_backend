@@ -109,6 +109,21 @@ npx prisma generate
 
 ربما يوجد تعديل غير مكتمل — راجع ملف schema.prisma.
 
+الدخول إلى اوامر قاعدة البيانات
+psql -h 127.0.0.1 -p 5432 -U asasuser -d asasprod
 
+ اظهار جداول قاعدة البيانات بعد الدخول 
+  \dt
+  إظهار حقول جدول 
+  \d "User"
+  # التأكد من قاعدة البيانات الحالية 
+  SELECT current_database();
+
+  £ اخذ نسخة احتياطية 
+  pg_dump -h 127.0.0.1 -p 5432 -U asasuser -d asasprod -Fc -f asasprod_backup.dump
+# التأكد من السخة الاحتياطية 
+ -lh asasprod_backup.dump
+ تظهر 
+ -rw-r--r-- 1 root root 19K Feb  9 18:27 asasprod_backup.dump
 ---
 

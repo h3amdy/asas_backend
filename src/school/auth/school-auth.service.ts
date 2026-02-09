@@ -21,7 +21,7 @@ export class SchoolAuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly sessions: SessionsService,
-  ) {}
+  ) { }
 
   private buildAccessToken(payload: SafeUserPayload): string {
     return this.jwt.sign(payload, {
@@ -155,9 +155,9 @@ export class SchoolAuthService {
       }),
       rotated.schoolId
         ? this.prisma.school.findFirst({
-            where: { id: rotated.schoolId, isDeleted: false },
-            select: { uuid: true, isActive: true, displayName: true, name: true, appType: true },
-          })
+          where: { id: rotated.schoolId, isDeleted: false },
+          select: { uuid: true, isActive: true, displayName: true, name: true, appType: true },
+        })
         : null,
     ]);
 
@@ -191,14 +191,19 @@ export class SchoolAuthService {
     };
   }
 
-  async logout(input: { sessionId: string; logoutAll?: boolean }) {
+  async logout(input: { sessionId: string; logoutAll?: boolean; currentUserUuid: string }) {
     // نحتاج userId/schoolId لو logoutAll
     const session = await this.prisma.authSession.findUnique({
       where: { uuid: input.sessionId },
-      select: { uuid: true, userId: true, schoolId: true, revokedAt: true },
+      select: { uuid: true, userId: true, schoolId: true, revokedAt: true, user: { select: { uuid: true } } },
     });
 
     if (!session) throw new NotFoundException('Session not found');
+
+    // ✅ التحقق من أن الجلسة تخص المستخدم الحالي
+    if (session.user.uuid !== input.currentUserUuid) {
+      throw new ForbiddenException('Not your session');
+    }
 
     if (input.logoutAll) {
       await this.sessions.revokeAllUserSessions({
