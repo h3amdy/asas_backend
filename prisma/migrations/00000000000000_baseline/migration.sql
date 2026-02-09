@@ -1,11 +1,9 @@
-/*
-  Warnings:
+-- CreateEnum
+CREATE TYPE "UserType" AS ENUM ('OWNER', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT');
 
-  - You are about to drop the column `logoUrl` on the `School` table. All the data in the column will be lost.
-  - You are about to drop the `User` table. If the table is not empty, all the data it contains will be lost.
-  - You are about to drop the `UserDevice` table. If the table is not empty, all the data it contains will be lost.
+-- CreateEnum
+CREATE TYPE "AppType" AS ENUM ('PUBLIC', 'PRIVATE');
 
-*/
 -- CreateEnum
 CREATE TYPE "DeviceType" AS ENUM ('ANDROID', 'IOS', 'WEB');
 
@@ -14,26 +12,6 @@ CREATE TYPE "RevokeReason" AS ENUM ('LOGOUT', 'PASSWORD_CHANGED', 'ADMIN_REVOKE'
 
 -- CreateEnum
 CREATE TYPE "DeliveryPolicy" AS ENUM ('OPEN', 'SCHEDULED', 'MANUAL');
-
--- DropForeignKey
-ALTER TABLE "User" DROP CONSTRAINT "User_schoolId_fkey";
-
--- DropForeignKey
-ALTER TABLE "UserDevice" DROP CONSTRAINT "UserDevice_userId_fkey";
-
--- AlterTable
-ALTER TABLE "School" DROP COLUMN "logoUrl",
-ADD COLUMN     "addressArea" TEXT,
-ADD COLUMN     "deliveryPolicy" "DeliveryPolicy" NOT NULL DEFAULT 'OPEN',
-ADD COLUMN     "displayName" TEXT,
-ADD COLUMN     "district" TEXT,
-ADD COLUMN     "logoMediaAssetId" INTEGER;
-
--- DropTable
-DROP TABLE "User";
-
--- DropTable
-DROP TABLE "UserDevice";
 
 -- CreateTable
 CREATE TABLE "users" (
@@ -62,6 +40,55 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
+CREATE TABLE "School" (
+    "id" SERIAL NOT NULL,
+    "uuid" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "displayName" TEXT,
+    "schoolCode" INTEGER NOT NULL,
+    "appType" "AppType" NOT NULL,
+    "phone" TEXT,
+    "email" TEXT,
+    "logoMediaAssetId" INTEGER,
+    "address" TEXT,
+    "province" TEXT,
+    "district" TEXT,
+    "addressArea" TEXT,
+    "educationType" TEXT,
+    "ownerNotes" TEXT,
+    "nextUserCode" INTEGER NOT NULL DEFAULT 1,
+    "primaryColor" TEXT,
+    "secondaryColor" TEXT,
+    "backgroundColor" TEXT,
+    "deliveryPolicy" "DeliveryPolicy" NOT NULL DEFAULT 'OPEN',
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "School_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "GradeDictionary" (
+    "id" SERIAL NOT NULL,
+    "uuid" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "defaultName" TEXT NOT NULL,
+    "shortName" TEXT,
+    "stage" TEXT,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "isDeleted" BOOLEAN NOT NULL DEFAULT false,
+    "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "GradeDictionary_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "user_devices" (
     "id" SERIAL NOT NULL,
     "uuid" TEXT NOT NULL,
@@ -69,8 +96,8 @@ CREATE TABLE "user_devices" (
     "device_fingerprint" TEXT NOT NULL,
     "push_token" TEXT,
     "device_type" "DeviceType" NOT NULL,
-    "last_seen_at" TIMESTAMP(3) NOT NULL,
-    "is_active" BOOLEAN NOT NULL,
+    "last_seen_at" TIMESTAMP(3),
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
 
     CONSTRAINT "user_devices_pkey" PRIMARY KEY ("id")
 );
@@ -103,6 +130,20 @@ CREATE INDEX "users_user_type_idx" ON "users"("user_type");
 
 -- CreateIndex
 CREATE INDEX "users_phone_idx" ON "users"("phone");
+
+
+
+-- CreateIndex
+CREATE UNIQUE INDEX "School_uuid_key" ON "School"("uuid");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "School_schoolCode_key" ON "School"("schoolCode");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "GradeDictionary_uuid_key" ON "GradeDictionary"("uuid");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "GradeDictionary_code_key" ON "GradeDictionary"("code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "user_devices_uuid_key" ON "user_devices"("uuid");
@@ -148,3 +189,15 @@ ALTER TABLE "auth_sessions" ADD CONSTRAINT "auth_sessions_school_id_fkey" FOREIG
 
 -- AddForeignKey
 ALTER TABLE "auth_sessions" ADD CONSTRAINT "auth_sessions_device_id_fkey" FOREIGN KEY ("device_id") REFERENCES "user_devices"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- ✅ Partial unique index for active emails
+CREATE UNIQUE INDEX IF NOT EXISTS "users_email_idx"
+ON "users"("email")
+WHERE "email" IS NOT NULL AND "is_deleted" = false;
+
+-- ✅ Unique parent phone per school
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_parent_phone_per_school"
+ON "users"(school_id, phone)
+WHERE user_type = 'PARENT'
+  AND phone IS NOT NULL
+  AND is_deleted = false;

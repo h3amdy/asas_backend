@@ -1,46 +1,28 @@
-// src/school/auth/dto/school-login.dto.ts
-
+// src/school/auth/dto/refresh.dto.ts
 import { Transform } from 'class-transformer';
-import { IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsString, IsUUID } from 'class-validator';
 
 /**
- * DTO لتسجيل دخول مستخدمي المدرسة
- * يدعم الدخول بـ (schoolCode + userCode) أو (schoolCode + phone)
+ * DTO لتجديد التوكن
  */
-export class SchoolLoginDto {
-  // في التطبيق الخاص: ترسل schoolUuid مباشرة من config
-  // في العام: بعد اختيار المدرسة ترسل نفس الشيء
+export class RefreshDto {
   @IsUUID()
-  schoolUuid!: string;
-
-  // ADMIN/TEACHER/STUDENT
-  @IsOptional()
-  @Transform(({ value }) => (value === '' || value == null ? undefined : Number(value)))
-  @IsInt()
-  @Min(1)
-  userCode?: number;
-
-  // PARENT
-  @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsString()
-  phone?: string;
+  sessionId!: string;
 
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  password!: string;
+  refreshToken!: string;
 
-  // الجهاز
+  // لتحديث lastSeen + وربط pushToken
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   deviceFingerprint!: string;
 
-  @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsString()
-  pushToken?: string;
-
   @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
   @IsString()
   deviceType!: 'ANDROID' | 'IOS' | 'WEB';
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  pushToken?: string;
 }

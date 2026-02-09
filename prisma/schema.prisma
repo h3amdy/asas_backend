@@ -79,9 +79,7 @@ model User {
   sessions     AuthSession[]
 
   @@index([schoolId], map: "users_school_id_idx")
-  @@index([userType], map: "users_user_type_idx")
-  @@index([phone], map: "users_phone_idx")
-  @@index([email], map: "users_email_idx")
+ 
 
   @@map("users")
 }
@@ -99,7 +97,7 @@ model School {
 
   phone         String?
   email         String?
-  // OLD: logoUrl String?
+  
   logoMediaAssetId Int? // NEW (FK لاحقًا على media_assets)
 
   address       String?
@@ -162,8 +160,8 @@ model UserDevice {
   pushToken         String?  @map("push_token")
   deviceType        DeviceType @map("device_type")
 
-  lastSeenAt        DateTime @map("last_seen_at")
-  isActive          Boolean  @map("is_active")
+  lastSeenAt        DateTime? @map("last_seen_at")
+  isActive          Boolean @default(true)  @map("is_active") 
 
   sessions          AuthSession[]
 
