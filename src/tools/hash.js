@@ -1,3 +1,4 @@
+// src/tools/hash.js
 // لاختبار وإنشاء كلمة المرور
 
 const bcrypt = require('bcrypt');

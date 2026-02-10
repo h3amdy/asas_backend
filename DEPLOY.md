@@ -111,7 +111,9 @@ npx prisma generate
 
 الدخول إلى اوامر قاعدة البيانات
 psql -h 127.0.0.1 -p 5432 -U asasuser -d asasprod
-
+أو خيار افضل دخول مع تحكم 
+ sudo -i -u postgres
+ 
  اظهار جداول قاعدة البيانات بعد الدخول 
   \dt
   إظهار حقول جدول 
@@ -125,5 +127,8 @@ psql -h 127.0.0.1 -p 5432 -U asasuser -d asasprod
  -lh asasprod_backup.dump
  تظهر 
  -rw-r--r-- 1 root root 19K Feb  9 18:27 asasprod_backup.dump
+
+ الرمز السري لقاعجة البيانات asaar_olld
+ XMrXJYmiGNnp
 ---
 

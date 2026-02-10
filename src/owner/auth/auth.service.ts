@@ -1,4 +1,4 @@
-// src/auth/auth.service.ts
+// src/owner/auth/auth.service.ts
 import {
   Injectable,
   UnauthorizedException,
@@ -23,9 +23,9 @@ export class AuthService {
     const { email, password } = dto;
 
     // 1) نبحث عن المستخدم بالـ email
-    const user = await this.prisma.user.findFirst({
-      where: { email, isDeleted: false },
-    });
+   const user = await this.prisma.user.findFirst({
+  where: { email, isDeleted: false, isActive: true },
+});
 
     // 2) نتأكد أنه موجود و نوعه OWNER
     if (!user || user.userType !== 'OWNER') {
@@ -39,10 +39,11 @@ export class AuthService {
     }
 
     // 4) نحضّر الـ payload الذي سيكون داخل JWT
-    const payload = {
-      sub: user.id, // subject = id
-      role: user.userType, // OWNER
-    };
+   const payload = {
+  sub: user.uuid,          // ✅ uuid
+  role: user.userType,     // OWNER
+};
+
 
     // 5) نولّد التوكن باستخدام JwtService (السر مأخوذ من JwtModule)
     const token = await this.jwtService.signAsync(payload);
@@ -60,13 +61,13 @@ export class AuthService {
   }
 
   // ✅ تغيير كلمة المرور
-  async changePassword(userId: number, dto: ChangePasswordDto) {
-    if (!userId) {
+  async changePassword(userUuid: string, dto: ChangePasswordDto) {
+    if (!userUuid) {
       throw new UnauthorizedException('المستخدم غير مصرح');
     }
 
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: { uuid: userUuid },
     });
 
     if (!user) {
@@ -83,7 +84,7 @@ export class AuthService {
     const newHash = await bcrypt.hash(dto.newPassword, 10);
 
     await this.prisma.user.update({
-      where: { id: userId },
+      where: { uuid: userUuid },
       data: {
         passwordHash: newHash,
       },

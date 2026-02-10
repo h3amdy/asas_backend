@@ -1,20 +1,36 @@
-// src/auth/jwt.strategy.ts
-import { Injectable } from '@nestjs/common';
+// src/owner/auth/jwt.strategy.ts
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { OWNER_AUTH_JWT } from './constants';
+
+type OwnerJwtPayload = {
+  sub: string; // user uuid
+  role: 'OWNER';
+  iat?: number;
+  exp?: number;
+};
 
 @Injectable()
-export class JwtStrategy extends PassportStrategy(Strategy) {
+export class OwnerJwtStrategy extends PassportStrategy(Strategy, 'owner-jwt') {
   constructor() {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) throw new Error('JWT_SECRET is not set');
+
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), // نقرأ من Authorization: Bearer
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'SUPER_SECRET_ASAS',
+      secretOrKey: jwtSecret,
+      issuer: OWNER_AUTH_JWT.issuer,
+      audience: OWNER_AUTH_JWT.audience,
     });
   }
 
-  async validate(payload: any) {
-    // أي شيء ترجعه هنا يروح لـ req.user
+  async validate(payload: OwnerJwtPayload) {
+    // التحقق من أن المستخدم هو مالك
+    if (payload.role !== 'OWNER') {
+      throw new UnauthorizedException('Not an owner token');
+    }
     return { sub: payload.sub, role: payload.role };
   }
 }
