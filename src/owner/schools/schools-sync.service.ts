@@ -20,7 +20,7 @@ export class SchoolsSyncService {
     const serverTime = new Date();
     const { since, full } = params;
 
-    let where: Prisma.SchoolWhereInput = {};
+    let where: Prisma.SchoolWhereInput = { isDeleted: false };
 
     if (full) {
       where = {};

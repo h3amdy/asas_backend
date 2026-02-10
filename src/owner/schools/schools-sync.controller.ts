@@ -10,7 +10,7 @@ import {
 export class SchoolsSyncController {
   constructor(private readonly syncService: SchoolsSyncService) {}
 
-  // GET /schools/sync?since=...&full=true
+  // GET api/v1/schools-sync?since=...&full=true
   @Get()
   pull(@Query() query: SchoolsSyncPullQueryDto) {
     return this.syncService.pullSync({
@@ -19,7 +19,7 @@ export class SchoolsSyncController {
     });
   }
 
-  // POST /schools/sync
+  // POST api/v1/schools-sync
   @Post()
   push(@Body() body: SchoolsSyncPushDto) {
     return this.syncService.pushSync(body);

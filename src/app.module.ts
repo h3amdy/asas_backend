@@ -6,7 +6,6 @@ import { AuthModule } from './owner/auth/auth.module';
 import { OwnerModule } from './owner/owner.module';
 import { SchoolsModule } from './owner/schools/schools.module';
 import { GradesModule } from './owner/grades/grades.module';
-import { AdminsModule } from './owner/admins/admins.module';
 import { StatusModule } from './status/status.module';
 import { PublicModule } from './public/public.module';
 import { SchoolModule } from './school/school.module';
@@ -19,7 +18,7 @@ import { SchoolModule } from './school/school.module';
     OwnerModule,
     SchoolsModule,
     GradesModule,
-    AdminsModule,
+
     StatusModule,
     PublicModule,
     SchoolModule,

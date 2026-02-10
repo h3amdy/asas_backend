@@ -5,7 +5,7 @@ import { UpdateOwnerDto } from './dto/update-owner.dto';
 
 @Injectable()
 export class OwnerService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async updateOwnerProfile(dto: UpdateOwnerDto) {
     // هنا نفترض دائماً أن المالك هو أول مستخدم userType = OWNER
@@ -28,16 +28,28 @@ export class OwnerService {
     return this.prisma.user.update({
       where: { id: owner.id },
       data,
+      select: {
+        uuid: true,
+        name: true,
+        email: true,
+        phone: true,
+        userType: true,
+        isActive: true,
+      },
     });
+
   }
 
   async getOwner() {
     return this.prisma.user.findFirst({
       where: { userType: 'OWNER' },
       select: {
+        uuid: true,
         name: true,
         email: true,
         phone: true,
+        userType: true,
+        isActive: true,
       },
     });
   }

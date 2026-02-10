@@ -23,9 +23,9 @@ export class AuthService {
     const { email, password } = dto;
 
     // 1) نبحث عن المستخدم بالـ email
-   const user = await this.prisma.user.findFirst({
-  where: { email, isDeleted: false, isActive: true },
-});
+    const user = await this.prisma.user.findFirst({
+      where: { email, isDeleted: false, isActive: true },
+    });
 
     // 2) نتأكد أنه موجود و نوعه OWNER
     if (!user || user.userType !== 'OWNER') {
@@ -39,10 +39,10 @@ export class AuthService {
     }
 
     // 4) نحضّر الـ payload الذي سيكون داخل JWT
-   const payload = {
-  sub: user.uuid,          // ✅ uuid
-  role: user.userType,     // OWNER
-};
+    const payload = {
+      sub: user.uuid,          // ✅ uuid
+      role: user.userType,     // OWNER
+    };
 
 
     // 5) نولّد التوكن باستخدام JwtService (السر مأخوذ من JwtModule)
