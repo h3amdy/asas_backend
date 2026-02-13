@@ -9,6 +9,7 @@ type SchoolJwtPayload = {
     sub: string; // user uuid
     sc: string; // school uuid
     ut: 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
+    sid: string; // session uuid
     uc?: number; // user code
 };
 
@@ -95,10 +96,11 @@ export class StatusService {
 
         const school = await this.prisma.school.findFirst({
             where: {
-                id: user.schoolId,
+                uuid: jwtPayload.sc,
                 isDeleted: false,
             },
             select: {
+                id: true,
                 uuid: true,
                 isActive: true,
                 displayName: true,
@@ -108,6 +110,11 @@ export class StatusService {
 
         if (!school) {
             throw new NotFoundException('SCHOOL_NOT_FOUND');
+        }
+
+        // ✅ تحقق أن المستخدم فعلاً ينتمي لهذه المدرسة
+        if (user.schoolId !== school.id) {
+            throw new ForbiddenException('INVALID_SESSION');
         }
 
         // ترتيب الأسباب: المدرسة أولاً ثم المستخدم

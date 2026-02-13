@@ -5,7 +5,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { sha256, randomToken } from '../auth/utils/crypto.util';
-import { SCHOOL_AUTH_JWT } from '../auth/constants';
+import { SCHOOL_AUTH_JWT, SCHOOL_AUTH_ERRORS } from '../auth/constants';
 
 type DeviceUpsertInput = {
     userId: number;
@@ -102,13 +102,13 @@ export class SessionsService {
             },
         });
 
-        if (!session) throw new NotFoundException('Session not found');
-        if (session.revokedAt) throw new ForbiddenException('Session revoked');
-        if (session.expiresAt.getTime() <= Date.now()) throw new ForbiddenException('Session expired');
+        if (!session) throw new NotFoundException(SCHOOL_AUTH_ERRORS.SESSION_NOT_FOUND);
+        if (session.revokedAt) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SESSION_REVOKED);
+        if (session.expiresAt.getTime() <= Date.now()) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SESSION_EXPIRED);
 
         const incomingHash = sha256(params.refreshTokenPlain);
         if (incomingHash !== session.refreshTokenHash) {
-            throw new ForbiddenException('Invalid refresh token');
+            throw new ForbiddenException(SCHOOL_AUTH_ERRORS.REFRESH_TOKEN_INVALID);
         }
 
         let deviceId = session.deviceId;
@@ -135,13 +135,13 @@ export class SessionsService {
             });
 
             if (!existingDevice) {
-                throw new ForbiddenException('Device not found');
+                throw new ForbiddenException(SCHOOL_AUTH_ERRORS.DEVICE_NOT_FOUND);
             }
             if (!existingDevice.isActive) {
-                throw new ForbiddenException('Device inactive');
+                throw new ForbiddenException(SCHOOL_AUTH_ERRORS.DEVICE_INACTIVE);
             }
             if (existingDevice.deviceFingerprint !== params.deviceFingerprint) {
-                throw new ForbiddenException('Device mismatch');
+                throw new ForbiddenException(SCHOOL_AUTH_ERRORS.DEVICE_MISMATCH);
             }
 
             // تحديث معلومات الجهاز الحالي فقط
@@ -184,7 +184,7 @@ export class SessionsService {
             select: { uuid: true, revokedAt: true },
         });
 
-        if (!session) throw new NotFoundException('Session not found');
+        if (!session) throw new NotFoundException(SCHOOL_AUTH_ERRORS.SESSION_NOT_FOUND);
         if (session.revokedAt) return { success: true }; // idempotent
 
         await this.prisma.authSession.update({

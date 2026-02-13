@@ -5,13 +5,14 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SessionsService } from '../sessions/sessions.service';
-import { SCHOOL_AUTH_JWT } from './constants';
+import { SCHOOL_AUTH_JWT, SCHOOL_AUTH_ERRORS } from './constants';
 import { randomToken } from './utils/crypto.util';
 
 type SafeUserPayload = {
   sub: string; // user uuid
   ut: 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
   sc: string; // school uuid
+  sid: string; // session uuid
   uc?: number; // code
 };
 
@@ -46,8 +47,8 @@ export class SchoolAuthService {
       select: { id: true, uuid: true, isActive: true, appType: true, displayName: true, name: true },
     });
 
-    if (!school) throw new NotFoundException('School not found');
-    if (!school.isActive) throw new ForbiddenException('School is not active');
+    if (!school) throw new NotFoundException(SCHOOL_AUTH_ERRORS.SCHOOL_NOT_FOUND);
+    if (!school.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_INACTIVE);
 
     // 2) find user by login mode
     const hasPhone = !!(input.phone && input.phone.trim());
@@ -64,7 +65,6 @@ export class SchoolAuthService {
       where: {
         schoolId: school.id,
         isDeleted: false,
-        isActive: true,
         ...(hasPhone
           ? { userType: 'PARENT', phone: input.phone!.trim() }
           : { userType: { in: ['ADMIN', 'TEACHER', 'STUDENT'] }, code: input.userCode! }),
@@ -77,14 +77,18 @@ export class SchoolAuthService {
         displayName: true,
         name: true,
         passwordHash: true,
+        isActive: true,
       },
     });
 
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user) throw new UnauthorizedException(SCHOOL_AUTH_ERRORS.INVALID_CREDENTIALS);
 
     // 3) password
     const ok = await bcrypt.compare(input.password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+    if (!ok) throw new UnauthorizedException(SCHOOL_AUTH_ERRORS.INVALID_CREDENTIALS);
+
+    // ✅ تحقق من أن الحساب نشط (UX أفضل من إخفاء المستخدم)
+    if (!user.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.USER_INACTIVE);
 
     // 4) device upsert
     const device = await this.sessions.upsertDevice({
@@ -108,6 +112,7 @@ export class SchoolAuthService {
       sub: user.uuid,
       ut: user.userType as any,
       sc: school.uuid,
+      sid: session.uuid,
       uc: user.code ?? undefined,
     });
 
@@ -161,14 +166,20 @@ export class SchoolAuthService {
         : null,
     ]);
 
-    if (!user) throw new ForbiddenException('User not active');
-    if (!school) throw new ForbiddenException('School not found');
-    if (!school.isActive) throw new ForbiddenException('School is not active');
+    if (!user) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.USER_INACTIVE);
+    if (!school) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_NOT_FOUND);
+    if (!school.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_INACTIVE);
+
+    // ✅ التحقق من تطابق المدرسة في الجلسة مع المدرسة الفعلية للمستخدم
+    if (user.schoolId !== rotated.schoolId) {
+      throw new ForbiddenException(SCHOOL_AUTH_ERRORS.INVALID_SESSION);
+    }
 
     const accessToken = this.buildAccessToken({
       sub: user.uuid,
       ut: user.userType as any,
       sc: school.uuid,
+      sid: rotated.sessionUuid,
       uc: user.code ?? undefined,
     });
 
@@ -198,11 +209,11 @@ export class SchoolAuthService {
       select: { uuid: true, userId: true, schoolId: true, revokedAt: true, user: { select: { uuid: true } } },
     });
 
-    if (!session) throw new NotFoundException('Session not found');
+    if (!session) throw new NotFoundException(SCHOOL_AUTH_ERRORS.SESSION_NOT_FOUND);
 
     // ✅ التحقق من أن الجلسة تخص المستخدم الحالي
     if (session.user.uuid !== input.currentUserUuid) {
-      throw new ForbiddenException('Not your session');
+      throw new ForbiddenException(SCHOOL_AUTH_ERRORS.NOT_YOUR_SESSION);
     }
 
     if (input.logoutAll) {

@@ -1,9 +1,10 @@
 // src/public/schools/dto/public-school.dto.ts
 export class PublicSchoolDto {
   uuid!: string;
-  displayName!: string; // لا ترجع null لو عندك قاعدة: displayName دائماً موجود
+  displayName!: string;
   schoolCode!: number;
   appType!: 'PUBLIC' | 'PRIVATE';
+  isActive!: boolean;
   phone!: string | null;
   email!: string | null;
 
@@ -11,6 +12,9 @@ export class PublicSchoolDto {
   district!: string | null;
   addressArea!: string | null;
   address!: string | null;
+
+  educationType!: string | null;
+  deliveryPolicy!: 'OPEN' | 'SCHEDULED' | 'MANUAL';
 
   logoMediaAssetId!: number | null;
   primaryColor!: string | null;

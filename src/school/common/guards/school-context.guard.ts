@@ -2,6 +2,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SCHOOL_HEADERS } from '../constants';
+import { SCHOOL_AUTH_ERRORS } from '../../auth/constants';
 
 /**
  * 🛡️ حارس سياق المدرسة
@@ -34,7 +35,7 @@ export class SchoolContextGuard implements CanActivate {
 
         // تحقق من تطابق المدرسة في الـ Token و Header
         if (tokenSchoolUuid !== headerSchoolUuid) {
-            throw new ForbiddenException('School scope mismatch');
+            throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_SCOPE_MISMATCH);
         }
 
         // جلب المدرسة والتحقق من حالتها
@@ -53,8 +54,8 @@ export class SchoolContextGuard implements CanActivate {
             },
         });
 
-        if (!school) throw new ForbiddenException('School not found');
-        if (!school.isActive) throw new ForbiddenException('School is not active');
+        if (!school) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_NOT_FOUND);
+        if (!school.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_INACTIVE);
 
         // حفظ السياق في الطلب
         req.schoolContext = {

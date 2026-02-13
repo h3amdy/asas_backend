@@ -1,106 +1,240 @@
-الذي تفعله الآن (كقرار + تعديل كود) هو:
+تمام. نبدأ **من السيرفر** ونطلع Endpoint واضح اسمه “School Profile” يرجّع **كل بيانات المدرسة اللازمة للثيم + صفحة بيانات المدرسة**، ويكون **Public** (بدون JWT) لأنك تحتاجه مباشرة بعد اختيار المدرسة وقبل تسجيل الدخول أحيانًا.
 
-## ✅ 1) ثبّت قرار: **إنشاء/تعيين مدير المدرسة يتم فقط عبر**
+## 1) قرار سريع لشكل الـ API
 
-**`POST /schools/:uuid/manager`**
+### Endpoint جديد (Public)
 
-يعني هذا هو “المسار الرسمي الوحيد” لإنشاء مدير المدرسة (ADMIN الأساسي) وتحديثه.
+**GET** `/api/v1/public/schools/:uuid/profile`
+
+* يعيد بيانات المدرسة كاملة (قدر الإمكان) حتى لو المستخدم لم يسجل دخول.
+* **المدرسة PUBLIC فقط** (مثل search/verify).
+* يفضّل يعيد أيضًا `isActive` حتى لو موقوفة (عشان تعرض شاشة الحجب صح).
+* يرجع `serverTime` (اختياري لكن مفيد جدًا لتخزين `serverTimeAtSave`).
+
+### Response المقترح (مطابق لـ SchoolContext.fromJson عندك)
+
+```json
+{
+  "school": {
+    "uuid": "....",
+    "schoolCode": 1001,
+    "displayName": "مدرسة النور الأهلية",
+    "appType": "PUBLIC",
+    "isActive": true,
+
+    "phone": "777123456",
+    "email": "school@example.com",
+
+    "province": "صنعاء",
+    "district": "شميلة",
+    "addressArea": "حي النور",
+    "address": "شارع الجامعة",
+
+    "logoMediaAssetId": 5,
+
+    "primaryColor": "#1976D2",
+    "secondaryColor": "#FF5722",
+    "backgroundColor": "#FFFFFF"
+  },
+  "serverTime": "2026-02-13T22:10:00.000Z"
+}
+```
+
+> ملاحظة: أنت الآن في Flutter تستقبل camelCase (تمام).
 
 ---
 
-## ✅ 2) ماذا تفعل بملفات `admins`؟
+## 2) ملفات السيرفر التي سنضيفها (NestJS)
 
-خلِّ وحدة `admins` **للعرض والتعديل والتفعيل فقط** (Owner View)، وامنع منها الإنشاء.
+داخل: `src/public/schools/`
 
-### (A) احذف/علّق `@Post()` من `AdminsController`
+### (A) DTO جديد
 
-**AdminsController** يصبح بدون create:
+`src/public/schools/dto/public-school-profile.dto.ts`
+
+* نفس حقول `school` أعلاه.
+
+### (B) Route جديد في Controller
+
+`public-schools.controller.ts`
+
+* إضافة:
 
 ```ts
-// srs/owner/admins/admins.controller.ts
-@Controller('admins')
-export class AdminsController {
-  constructor(private readonly adminsService: AdminsService) {}
+@Get(':uuid/profile')
+getSchoolProfile(@Param('uuid') uuid: string) { ... }
+```
 
-  @Get()
-  findAll() {
-    return this.adminsService.findAll();
-  }
+### (C) Service Method
 
-  @Get('by-school/:uuid')
-  findBySchool(@Param('uuid') uuid: string) {
-    return this.adminsService.findBySchool(uuid);
-  }
+`public-schools.service.ts`
 
-  // ❌ احذف هذا:
-  // @Post()
-  // create(@Body() dto: CreateAdminDto) {
-  //   return this.adminsService.create(dto);
-  // }
+* `getProfile(uuid: string)`
 
-  @Patch(':uuid')
-  update(@Param('uuid') uuid: string, @Body() dto: UpdateAdminDto) {
-    return this.adminsService.update(uuid, dto);
-  }
+---
 
-  @Patch(':uuid/status')
-  updateStatus(@Param('uuid') uuid: string, @Body() dto: UpdateAdminStatusDto) {
-    return this.adminsService.updateStatus(uuid, dto.isActive);
+## 3) منطق الـ Service (Prisma) — عملي وواضح
+
+### قواعد الاستعلام
+
+* `uuid` يطابق المدرسة
+* `appType = PUBLIC`
+* `isDeleted = false` (إذا عندك)
+* **لا تشترط isActive** (نرجعها كما هي)
+
+### Prisma select (مثال)
+
+```ts
+const school = await this.prisma.school.findFirst({
+  where: { uuid, appType: 'PUBLIC', isDeleted: false },
+  select: {
+    uuid: true,
+    code: true,              // schoolCode
+    displayName: true,
+    appType: true,
+    isActive: true,
+
+    phone: true,
+    email: true,
+
+    province: true,
+    district: true,
+    addressArea: true,
+    address: true,
+
+    logoMediaAssetId: true,  // أو logo_media_asset_id حسب موديلك
+    primaryColor: true,
+    secondaryColor: true,
+    backgroundColor: true,
+  },
+});
+if (!school) throw new NotFoundException('SCHOOL_NOT_FOUND');
+```
+
+> إذا حقول العنوان/الألوان غير موجودة عندك في جدول School الآن:
+> **إما تضيفها** (أفضل) أو ترجع null مؤقتًا.
+
+---
+
+## 4) Error Codes (موحّد)
+
+مثل بقية public endpoints:
+
+* `404 SCHOOL_NOT_FOUND`
+* `403 SCHOOL_NOT_PUBLIC` (إذا أنت تسمح بالبحث العام فقط للـ PUBLIC)
+
+بس أنا أنصح: بما أنه `/public/...` أساسًا، يكفي ترجع `404` لو مش PUBLIC.
+
+---
+
+## 5) كود جاهز (سيرفر) — Skeleton كامل
+
+### `public-schools.controller.ts`
+
+```ts
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { PublicSchoolsService } from './public-schools.service';
+
+@Controller('public/schools')
+export class PublicSchoolsController {
+  constructor(private readonly service: PublicSchoolsService) {}
+
+  // موجود عندك:
+  // GET /search
+  // POST /verify-code
+
+  @Get(':uuid/profile')
+  async getSchoolProfile(@Param('uuid') uuid: string) {
+    const school = await this.service.getProfile(uuid);
+    return {
+      school,
+      serverTime: new Date().toISOString(),
+    };
   }
 }
 ```
 
-### (B) احذف `create()` من `AdminsService` (أو خليها private/غير مستخدمة)
+### `public-schools.service.ts`
 
-أفضل تحذفها لتفادي أي استعمال بالخطأ.
+```ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 
----
+@Injectable()
+export class PublicSchoolsService {
+  constructor(private readonly prisma: PrismaService) {}
 
-## ✅ 3) وثّق وتأكد من REST
+  async getProfile(uuid: string) {
+    const school = await this.prisma.school.findFirst({
+      where: { uuid, appType: 'PUBLIC', isDeleted: false },
+      select: {
+        uuid: true,
+        code: true,
+        displayName: true,
+        appType: true,
+        isActive: true,
+        phone: true,
+        email: true,
+        province: true,
+        district: true,
+        addressArea: true,
+        address: true,
+        logoMediaAssetId: true,
+        primaryColor: true,
+        secondaryColor: true,
+        backgroundColor: true,
+      },
+    });
 
-بدل:
+    if (!school) throw new NotFoundException('SCHOOL_NOT_FOUND');
 
-* `POST /admins` لإنشاء مدير
-
-استخدم:
-
-* `POST /schools/:uuid/manager` لإنشاء/تحديث مدير مدرسة محددة
-
-وباقي `/admins` فقط:
-
-* `GET /admins`
-* `GET /admins/by-school/:uuid`
-* `PATCH /admins/:uuid`
-* `PATCH /admins/:uuid/status`
-
----
-
-## ✅ 4) لازم تثبّت قيود DB (حتى ما يرجع الخطأ لاحقًا)
-
-نفّذ migration SQL:
-
-### (1) كود فريد داخل المدرسة:
-
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS uq_user_code_per_school
-ON "User" ("schoolId","code")
-WHERE "schoolId" IS NOT NULL AND "isDeleted" = false;
+    // تحويل للأسماء المتوقعة في Flutter
+    return {
+      uuid: school.uuid,
+      schoolCode: school.code,
+      displayName: school.displayName,
+      appType: school.appType,
+      isActive: school.isActive,
+      phone: school.phone,
+      email: school.email,
+      province: school.province,
+      district: school.district,
+      addressArea: school.addressArea,
+      address: school.address,
+      logoMediaAssetId: school.logoMediaAssetId,
+      primaryColor: school.primaryColor,
+      secondaryColor: school.secondaryColor,
+      backgroundColor: school.backgroundColor,
+    };
+  }
+}
 ```
 
-### (2) (اختياري لكن قوي) مدير واحد فعّال لكل مدرسة:
-
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS uq_one_admin_per_school
-ON "User" ("schoolId")
-WHERE "userType"='ADMIN' AND "isDeleted"=false;
-```
+> إذا عندك أسماء أعمدة مختلفة في Prisma Model (مثل `logo_media_asset_id`) قلّي/ارسل model School من schema.prisma وانا أعدّل mapping بدقة.
 
 ---
 
+## 6) ترتيب التنفيذ (خطواتك الآن)
+
+1. **أضف الحقول الناقصة** في `School` إن لم تكن موجودة (province/district/addressArea/address/backgroundColor/logoMediaAssetId).
+2. نفّذ Endpoint: `GET /public/schools/:uuid/profile`.
+3. جرّبه في Postman:
+
+   * مدرسة موجودة PUBLIC
+   * مدرسة غير موجودة
+   * مدرسة PRIVATE (لازم 404)
+   * مدرسة موقوفة (يرجع isActive:false)
+4. بعدها نبدأ دمجه في Flutter (لكن أنت قلت الآن السيرفر فقط—تمام).
+
 ---
 
-### الخلاصة التنفيذية
+## نقطة مهمة جدًا قبل ما نكمل
 
-1. **احذف POST /admins** (Controller + Service).
-2. اعتمد **POST /schools/:uuid/manager** كمسار الإنشاء الوحيد.
-3. أضف الـ indexes في DB.
+هل جدول `School` عندك في Prisma يحتوي فعلاً على هذه الحقول؟
+
+* `province, district, addressArea, address`
+* `primaryColor, secondaryColor, backgroundColor`
+* `logoMediaAssetId`
+* `isDeleted` / `deletedAt`
+
+إذا أرسلت لي **model School من schema.prisma** (فقط هذا الجزء)، سأعطيك **كود نهائي 100% مطابق** بدون افتراضات.
