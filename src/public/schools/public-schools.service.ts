@@ -126,7 +126,7 @@ export class PublicSchoolsService {
    */
   async getProfile(uuid: string): Promise<{ school: PublicSchoolDto; serverTime: string }> {
     const school = await this.prisma.school.findFirst({
-      where: { uuid, appType: 'PUBLIC', isDeleted: false },
+      where: { uuid, isDeleted: false },
       select: {
         uuid: true,
         displayName: true,

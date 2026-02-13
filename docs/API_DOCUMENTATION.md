@@ -432,7 +432,7 @@ GET /public/schools/search?q=النور&limit=5
 |-------|-------|
 | `404` | `SCHOOL_NOT_FOUND` |
 
-> ⚠️ **ملاحظة:** يتم إرجاع فقط المدارس غير المحذوفة (`isDeleted=false`) ونوعها `PUBLIC`، بغض النظر عن حالة `isActive`.
+> ⚠️ **ملاحظة:** يتم إرجاع المدارس غير المحذوفة (`isDeleted=false`) بغض النظر عن `appType` أو حالة `isActive`.
 
 ---
 
