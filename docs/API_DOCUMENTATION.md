@@ -82,14 +82,7 @@ asas_backend/
 │   │   │       ├── update-grade-status.dto.ts # DTO: تفعيل/إيقاف صف
 │   │   │       └── grade-sync.dto.ts       # DTOs: المزامنة
 │   │   │
-│   │   ├── 📂 admins/                      # 👨‍💼 وحدة مدراء المدارس للمالك
-│   │   │   ├── admins.module.ts            # تسجيل الوحدة
-│   │   │   ├── admins.controller.ts        # endpoints إدارة المدراء
-│   │   │   ├── admins.service.ts           # منطق إنشاء وتحديث المدراء
-│   │   │   └── 📂 dto/
-│   │   │       ├── create-admin.dto.ts     # DTO: إنشاء مدير
-│   │   │       ├── update-admin.dto.ts     # DTO: تحديث مدير
-│   │   │       └── update-admin-status.dto.ts # DTO: تفعيل/إيقاف مدير
+
 │   │
 │   ├── 📂 status/                           # 🚦 وحدة Boot Gate (حالة المدرسة)
 │   │   ├── status.module.ts                # تسجيل الوحدة
@@ -115,6 +108,14 @@ asas_backend/
 │   │   │       ├── refresh.dto.ts          # DTO: sessionId + refreshToken
 │   │   │       └── logout.dto.ts           # DTO: sessionId + logoutAll
 │   │   │
+│   │   ├── 📂 profile/                      # 👤 الملف الشخصي لمستخدمي المدرسة
+│   │   │   ├── profile.module.ts           # وحدة الملف الشخصي
+│   │   │   ├── profile.controller.ts       # endpoints: me, update, change-password
+│   │   │   ├── profile.service.ts          # منطق جلب/تعديل/تغيير كلمة المرور
+│   │   │   └── 📂 dto/
+│   │   │       ├── update-profile.dto.ts   # DTO: تعديل البيانات
+│   │   │       └── change-password.dto.ts  # DTO: تغيير كلمة المرور
+│   │   │
 │   │   ├── 📂 sessions/                    # 🔄 إدارة الجلسات والأجهزة
 │   │   │   ├── sessions.module.ts          # وحدة الجلسات
 │   │   │   └── sessions.service.ts         # خدمة auth_sessions + user_devices
@@ -132,7 +133,7 @@ asas_backend/
 │   │   ├── public.module.ts                # الوحدة الرئيسية
 │   │   └── 📂 schools/                     # 🔍 البحث عن المدارس العامة
 │   │       ├── public-schools.module.ts    # وحدة المدارس العامة
-│   │       ├── public-schools.controller.ts# endpoints: search, verify-code
+│   │       ├── public-schools.controller.ts# endpoints: search, verify-code, getprofile
 │   │       ├── public-schools.service.ts   # منطق البحث والتحقق
 │   │       └── 📂 dto/
 │   │           ├── public-school.dto.ts    # DTO: بيانات المدرسة العامة
@@ -644,6 +645,26 @@ GET /public/schools/search?q=النور&limit=5
 
 ---
 
+### 👤 الملف الشخصي (School User Profile)
+
+> 📖 **وثيقة تفصيلية:** راجع [`PROFILE_README.md`](file:///Users/hamdy/development/Projects/asas_backend/docs/PROFILE_README.md) للتفاصيل الكاملة.
+
+| Method | Endpoint | الوصف | الحماية |
+|--------|----------|-------|---------|
+| `GET` | `/school/profile/me` | جلب بياناتي | ✅ JWT + Context |
+| `PATCH` | `/school/profile/me` | تعديل بياناتي | ✅ JWT + Context |
+| `POST` | `/school/profile/change-password` | تغيير كلمة المرور (بدون خروج) | ✅ JWT + Context |
+
+**الحقول القابلة للتعديل:** `displayName`, `gender`, `email`, `province`, `district`, `addressArea`, `addressDetails`
+
+**أكواد الأخطاء الخاصة:**
+| الكود | الرسالة | الوصف |
+|-------|---------|-------|
+| `401` | `OLD_PASSWORD_WRONG` | كلمة المرور القديمة غير صحيحة |
+| `400` | `NEW_PASSWORD_SAME_AS_OLD` | كلمة المرور الجديدة مطابقة للقديمة |
+
+---
+
 ### 📝 ملاحظات مهمة حول الأجهزة (UserDevice)
 
 - `deviceFingerprint` مرتبط بالمستخدم، لذلك **نفس الجهاز يمكن أن يسجل بأكثر من حساب**.
@@ -755,11 +776,12 @@ GET /public/schools/search?q=النور&limit=5
 **Response:**
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token": "eyJhbGciOiJIUzI1NiIs...",
   "user": {
-    "uuid": "...",
+    "id": 1,
     "name": "...",
-    "email": "..."
+    "email": "...",
+    "role": "OWNER"
   }
 }
 ```
@@ -816,7 +838,7 @@ Content-Type: application/json
     "appType": "PUBLIC",
     "phone": "777123456",
     "email": "school@example.com",
-    "logoUrl": null,
+    "logoMediaAssetId": null,
     "address": "صنعاء",
     "province": "صنعاء",
     "educationType": "أهلي",
@@ -1401,174 +1423,7 @@ Content-Type: application/json
 
 ---
 
-### 👨‍💼 مدراء المدارس (Admins)
 
-> ⚠️ **ملاحظة:** يتم إنشاء مدراء المدارس حصراً عن طريق `POST /schools/:uuid/manager`. هذه الـ endpoints للعرض والتعديل فقط.
-
-
-| Method | Endpoint | الوصف |
-|--------|----------|-------|
-| `GET` | `/admins` | جلب جميع المدراء |
-| `GET` | `/admins/by-school/:uuid` | جلب مدراء مدرسة معينة |
-| `PATCH` | `/admins/:uuid` | تحديث بيانات مدير |
-| `PATCH` | `/admins/:uuid/status` | تغيير حالة المدير |
-
----
-
-#### `GET /admins`
-
-جلب قائمة بجميع مدراء المدارس في النظام.
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Response:** `200 OK`
-```json
-[
-  {
-    "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    "name": "أحمد محمد",
-    "email": "ahmed@school.com",
-    "phone": "777123456",
-    "isActive": true,
-    "school": {
-      "uuid": "s1s2s3s4-e5f6-7890-abcd-ef1234567890",
-      "name": "مدرسة النور",
-      "schoolCode": 1001,
-      "appType": "PUBLIC"
-    }
-  }
-]
-```
-
----
-
-#### `GET /admins/by-school/:uuid`
-
-جلب قائمة مدراء مدرسة محددة.
-
-**Path Parameters:**
-| المعامل | النوع | الوصف |
-|---------|-------|-------|
-| `uuid` | `string` | معرف المدرسة (UUID) |
-
-**Response:** `200 OK`
-```json
-[
-  {
-    "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-    "name": "أحمد محمد",
-    "email": "ahmed@school.com",
-    "phone": "777123456",
-    "isActive": true
-  }
-]
-```
-
-**Error Responses:**
-| الكود | الوصف |
-|-------|-------|
-| `404` | لم يتم العثور على المدرسة |
-
----
-
-
-
-#### `PATCH /admins/:uuid`
-
-تحديث بيانات مدير موجود.
-
-**Path Parameters:**
-| المعامل | النوع | الوصف |
-|---------|-------|-------|
-| `uuid` | `string` | معرف المدير (UUID) |
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Request Body:** (جميع الحقول اختيارية)
-| الحقل | النوع | الوصف |
-|-------|-------|-------|
-| `name` | `string` | الاسم الجديد |
-| `email` | `string` | البريد الإلكتروني الجديد |
-| `phone` | `string` | رقم الهاتف الجديد |
-
-**Request Example:**
-```json
-{
-  "name": "أحمد محمد سعيد",
-  "phone": "778888888"
-}
-```
-
-**Response:** `200 OK`
-```json
-{
-  "id": 5,
-  "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "name": "أحمد محمد سعيد",
-  "email": "ahmed@school.com",
-  "phone": "778888888",
-  "userType": "ADMIN",
-  "isActive": true,
-  "createdAt": "2026-01-15T10:30:00.000Z",
-  "updatedAt": "2026-02-05T15:00:00.000Z"
-}
-```
-
-**Error Responses:**
-| الكود | الوصف |
-|-------|-------|
-| `404` | لم يتم العثور على المدير |
-
----
-
-#### `PATCH /admins/:uuid/status`
-
-تفعيل أو إيقاف حساب مدير.
-
-**Path Parameters:**
-| المعامل | النوع | الوصف |
-|---------|-------|-------|
-| `uuid` | `string` | معرف المدير (UUID) |
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Request Body:**
-| الحقل | النوع | مطلوب | الوصف |
-|-------|-------|-------|-------|
-| `isActive` | `boolean` | ✅ | `true` للتفعيل، `false` للإيقاف |
-
-**Request Example:**
-```json
-{
-  "isActive": false
-}
-```
-
-**Response:** `200 OK`
-```json
-{
-  "id": 5,
-  "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "name": "أحمد محمد سعيد",
-  "email": "ahmed@school.com",
-  "isActive": false,
-  "updatedAt": "2026-02-05T15:05:00.000Z"
-}
-```
-
-**Error Responses:**
-| الكود | الوصف |
-|-------|-------|
-| `404` | لم يتم العثور على المدير |
 
 ---
 

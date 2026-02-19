@@ -137,6 +137,24 @@ Table students {
   uuid        varchar [unique]
   birth_date  date    [null]
 }
+// جدول أولياء الأمور
+Table parents {
+  user_id  int [pk] // FK to users.id
+  uuid     varchar [unique]
+}
+// جدول المعلمين
+Table teachers {
+  user_id       int [pk] // FK -> users.id
+  uuid          varchar [unique]
+  hire_date     date [null] // تاريخ التعيين
+  is_supervisor boolean
+
+  // ✅ بيانات مهنية (اختياري)
+  specialization   varchar [null]  // التخصص (مثال: رياضيات، لغة عربية...)
+  qualification    varchar [null]  // المؤهل العلمي (بكالوريوس/دبلوم/...)
+experience varchar     [null]  // الخبرة (المؤهل العملي)
+  notes            text    [null]  // ملاحظات إدارية داخلية عن المعلّم
+}
 
 
 // ✅ جدول سجل قيد الطالب عبر السنوات (التاريخ الحقيقي للترحيل)
@@ -167,11 +185,6 @@ Table student_enrollments {
 }
 
 
-// جدول أولياء الأمور
-Table parents {
-  user_id  int [pk] // FK to users.id
-  uuid     varchar [unique]
-}
 
 
 // جدول ربط ولي الأمر بالطلاب
@@ -192,19 +205,6 @@ Table parent_students {
 }
 
 
-// جدول المعلمين
-Table teachers {
-  user_id       int [pk] // FK -> users.id
-  uuid          varchar [unique]
-  hire_date     date [null] // تاريخ التعيين
-  is_supervisor boolean
-
-  // ✅ بيانات مهنية (اختياري)
-  specialization   varchar [null]  // التخصص (مثال: رياضيات، لغة عربية...)
-  qualification    varchar [null]  // المؤهل العلمي (بكالوريوس/دبلوم/...)
-experience varchar     [null]  // الخبرة (المؤهل العملي)
-  notes            text    [null]  // ملاحظات إدارية داخلية عن المعلّم
-}
 
 
 // جدول نطاقات المعلم (تدريس/إشراف)

@@ -1,240 +1,268 @@
-تمام. نبدأ **من السيرفر** ونطلع Endpoint واضح اسمه “School Profile” يرجّع **كل بيانات المدرسة اللازمة للثيم + صفحة بيانات المدرسة**، ويكون **Public** (بدون JWT) لأنك تحتاجه مباشرة بعد اختيار المدرسة وقبل تسجيل الدخول أحيانًا.
+تمام — خلّينا نعمل **خطة سيرفر كاملة** لميزة:
 
-## 1) قرار سريع لشكل الـ API
+1. **جلب الملف الشخصي (My Profile)**
+2. **تعديل الملف الشخصي**
+3. **تغيير كلمة المرور “بدون خروج” وبدون أي حركة في الجلسات** ✅
 
-### Endpoint جديد (Public)
+وسأبني الخطة على هيكل مشروعك الحالي (school/auth + guards + decorators + prisma).
 
-**GET** `/api/v1/public/schools/:uuid/profile`
+> ملاحظة مهمة: “بدون خروج” معناها **لا نعمل revoke للجلسة الحالية ولا نلغي باقي الجلسات**. فقط نغيّر `password_hash`.
+> (هذا أقل أمانًا من المعتاد، لكنه يطابق طلبك للمـVP. لاحقًا Phase 2 ممكن تضيف خيار “logoutAllDevices”.)
 
-* يعيد بيانات المدرسة كاملة (قدر الإمكان) حتى لو المستخدم لم يسجل دخول.
-* **المدرسة PUBLIC فقط** (مثل search/verify).
-* يفضّل يعيد أيضًا `isActive` حتى لو موقوفة (عشان تعرض شاشة الحجب صح).
-* يرجع `serverTime` (اختياري لكن مفيد جدًا لتخزين `serverTimeAtSave`).
+---
 
-### Response المقترح (مطابق لـ SchoolContext.fromJson عندك)
+## 0) أين نضع هذه الميزة داخل مشروعك؟
+
+بما أنك عندك `src/school/` للأدوار (ADMIN/TEACHER/STUDENT/PARENT)، فالميزة تكون هنا:
+
+```
+src/school/profile/
+  profile.module.ts
+  profile.controller.ts
+  profile.service.ts
+  dto/
+    update-my-profile.dto.ts
+    change-my-password.dto.ts
+```
+
+وتتسجل في `school.module.ts` أو `app.module.ts` حسب تجميعك.
+
+---
+
+## 1) Endpoints النهائية (واضحة وثابتة)
+
+### ✅ 1.1 جلب ملفي
+
+**GET** `/api/v1/school/profile/me`
+حماية: `SchoolJwtAuthGuard` + `SchoolContextGuard`
+
+**Response 200**
 
 ```json
 {
-  "school": {
-    "uuid": "....",
-    "schoolCode": 1001,
-    "displayName": "مدرسة النور الأهلية",
-    "appType": "PUBLIC",
-    "isActive": true,
-
-    "phone": "777123456",
-    "email": "school@example.com",
-
-    "province": "صنعاء",
-    "district": "شميلة",
-    "addressArea": "حي النور",
-    "address": "شارع الجامعة",
-
-    "logoMediaAssetId": 5,
-
-    "primaryColor": "#1976D2",
-    "secondaryColor": "#FF5722",
-    "backgroundColor": "#FFFFFF"
-  },
-  "serverTime": "2026-02-13T22:10:00.000Z"
+  "uuid": "user-uuid",
+  "userType": "TEACHER",
+  "code": 1001,
+  "name": "أحمد محمد",
+  "displayName": "أحمد",
+  "gender": "M",
+  "phone": "777...",
+  "email": "a@..",
+  "province": "...",
+  "district": "...",
+  "addressArea": "...",
+  "addressDetails": "...",
+  "updatedAt": "2026-02-14T..."
 }
 ```
 
-> ملاحظة: أنت الآن في Flutter تستقبل camelCase (تمام).
+> لا ترجع `passwordHash` نهائيًا.
 
 ---
 
-## 2) ملفات السيرفر التي سنضيفها (NestJS)
+### ✅ 1.2 تعديل ملفي
 
-داخل: `src/public/schools/`
+**PATCH** `/api/v1/school/profile/me`
+حماية: `SchoolJwtAuthGuard` + `SchoolContextGuard`
 
-### (A) DTO جديد
+**Body (كلها اختيارية)**
 
-`src/public/schools/dto/public-school-profile.dto.ts`
+* `displayName`
+* `gender`
+* `email`
+* `province`
+* `district`
+* `addressArea`
+* `addressDetails`
 
-* نفس حقول `school` أعلاه.
+> *لا تسمح بتعديل*: `userType`, `code`, `schoolId`, `isActive`… إلخ.
 
-### (B) Route جديد في Controller
+**Response 200**: نفس شكل `GET /me`
 
-`public-schools.controller.ts`
+---
 
-* إضافة:
+### ✅ 1.3 تغيير كلمة المرور بدون خروج
 
-```ts
-@Get(':uuid/profile')
-getSchoolProfile(@Param('uuid') uuid: string) { ... }
+**POST** `/api/v1/school/profile/change-password`
+حماية: `SchoolJwtAuthGuard` + `SchoolContextGuard`
+
+**Body**
+
+```json
+{ "oldPassword": "...", "newPassword": "..." }
 ```
 
-### (C) Service Method
+**Response 200**
 
-`public-schools.service.ts`
-
-* `getProfile(uuid: string)`
-
----
-
-## 3) منطق الـ Service (Prisma) — عملي وواضح
-
-### قواعد الاستعلام
-
-* `uuid` يطابق المدرسة
-* `appType = PUBLIC`
-* `isDeleted = false` (إذا عندك)
-* **لا تشترط isActive** (نرجعها كما هي)
-
-### Prisma select (مثال)
-
-```ts
-const school = await this.prisma.school.findFirst({
-  where: { uuid, appType: 'PUBLIC', isDeleted: false },
-  select: {
-    uuid: true,
-    code: true,              // schoolCode
-    displayName: true,
-    appType: true,
-    isActive: true,
-
-    phone: true,
-    email: true,
-
-    province: true,
-    district: true,
-    addressArea: true,
-    address: true,
-
-    logoMediaAssetId: true,  // أو logo_media_asset_id حسب موديلك
-    primaryColor: true,
-    secondaryColor: true,
-    backgroundColor: true,
-  },
-});
-if (!school) throw new NotFoundException('SCHOOL_NOT_FOUND');
+```json
+{ "success": true }
 ```
 
-> إذا حقول العنوان/الألوان غير موجودة عندك في جدول School الآن:
-> **إما تضيفها** (أفضل) أو ترجع null مؤقتًا.
+> لا revoke ولا logout ولا invalidate tokens.
+> (يبقى access token صالح لحد exp، والrefresh شغال.)
 
 ---
 
-## 4) Error Codes (موحّد)
+## 2) Guards و Context: كيف نضمن المستخدم صح؟
 
-مثل بقية public endpoints:
+أنت عندك:
 
-* `404 SCHOOL_NOT_FOUND`
-* `403 SCHOOL_NOT_PUBLIC` (إذا أنت تسمح بالبحث العام فقط للـ PUBLIC)
+* `SchoolJwtStrategy` تتحقق من الجلسة في DB (ممتاز)
+* `SchoolContextGuard` يطابق `x-school-uuid` مع `sc` داخل JWT
 
-بس أنا أنصح: بما أنه `/public/...` أساسًا، يكفي ترجع `404` لو مش PUBLIC.
+إذًا في profile endpoints:
 
----
+* نستخدم `@CurrentUser()` (payload فيه `sub`, `sc`, `sid`, `ut`, `uc?`)
+* نستخدم prisma لجلب user بناءً على `sub` + (schoolId matching)
 
-## 5) كود جاهز (سيرفر) — Skeleton كامل
+قاعدة ذهبية في كل عمليات profile:
 
-### `public-schools.controller.ts`
-
-```ts
-import { Controller, Get, Param, Query } from '@nestjs/common';
-import { PublicSchoolsService } from './public-schools.service';
-
-@Controller('public/schools')
-export class PublicSchoolsController {
-  constructor(private readonly service: PublicSchoolsService) {}
-
-  // موجود عندك:
-  // GET /search
-  // POST /verify-code
-
-  @Get(':uuid/profile')
-  async getSchoolProfile(@Param('uuid') uuid: string) {
-    const school = await this.service.getProfile(uuid);
-    return {
-      school,
-      serverTime: new Date().toISOString(),
-    };
-  }
-}
-```
-
-### `public-schools.service.ts`
-
-```ts
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-
-@Injectable()
-export class PublicSchoolsService {
-  constructor(private readonly prisma: PrismaService) {}
-
-  async getProfile(uuid: string) {
-    const school = await this.prisma.school.findFirst({
-      where: { uuid, appType: 'PUBLIC', isDeleted: false },
-      select: {
-        uuid: true,
-        code: true,
-        displayName: true,
-        appType: true,
-        isActive: true,
-        phone: true,
-        email: true,
-        province: true,
-        district: true,
-        addressArea: true,
-        address: true,
-        logoMediaAssetId: true,
-        primaryColor: true,
-        secondaryColor: true,
-        backgroundColor: true,
-      },
-    });
-
-    if (!school) throw new NotFoundException('SCHOOL_NOT_FOUND');
-
-    // تحويل للأسماء المتوقعة في Flutter
-    return {
-      uuid: school.uuid,
-      schoolCode: school.code,
-      displayName: school.displayName,
-      appType: school.appType,
-      isActive: school.isActive,
-      phone: school.phone,
-      email: school.email,
-      province: school.province,
-      district: school.district,
-      addressArea: school.addressArea,
-      address: school.address,
-      logoMediaAssetId: school.logoMediaAssetId,
-      primaryColor: school.primaryColor,
-      secondaryColor: school.secondaryColor,
-      backgroundColor: school.backgroundColor,
-    };
-  }
-}
-```
-
-> إذا عندك أسماء أعمدة مختلفة في Prisma Model (مثل `logo_media_asset_id`) قلّي/ارسل model School من schema.prisma وانا أعدّل mapping بدقة.
+* تأكد من `user.uuid = sub`
+* وتأكد أن `user.school.uuid = sc` (أو `schoolId` يطابق المدرسة)
 
 ---
 
-## 6) ترتيب التنفيذ (خطواتك الآن)
+## 3) DTOs (Validation) — قواعد واضحة
 
-1. **أضف الحقول الناقصة** في `School` إن لم تكن موجودة (province/district/addressArea/address/backgroundColor/logoMediaAssetId).
-2. نفّذ Endpoint: `GET /public/schools/:uuid/profile`.
-3. جرّبه في Postman:
+### 3.1 UpdateMyProfileDto
 
-   * مدرسة موجودة PUBLIC
-   * مدرسة غير موجودة
-   * مدرسة PRIVATE (لازم 404)
-   * مدرسة موقوفة (يرجع isActive:false)
-4. بعدها نبدأ دمجه في Flutter (لكن أنت قلت الآن السيرفر فقط—تمام).
+* `displayName`: optional, min 2 max 50
+* `gender`: optional (يفضل enum لاحقًا، حاليًا string مقبول)
+* `email`: optional, isEmail
+* العناوين: optional max lengths
+
+**مهم**: لا تقبل `name` إذا أنت تعتبره “اسم رسمي” غير قابل للتعديل (قرار منك).
+إذا تريد تسمح بتعديله، أضفه صراحة واعتبره “اسم المستخدم”.
 
 ---
 
-## نقطة مهمة جدًا قبل ما نكمل
+### 3.2 ChangeMyPasswordDto
 
-هل جدول `School` عندك في Prisma يحتوي فعلاً على هذه الحقول؟
+* `oldPassword`: required min 6
+* `newPassword`: required min 8 (أنصح 8 على الأقل)
+* rule: `newPassword != oldPassword`
 
-* `province, district, addressArea, address`
-* `primaryColor, secondaryColor, backgroundColor`
-* `logoMediaAssetId`
-* `isDeleted` / `deletedAt`
+---
 
-إذا أرسلت لي **model School من schema.prisma** (فقط هذا الجزء)، سأعطيك **كود نهائي 100% مطابق** بدون افتراضات.
+## 4) Service Logic بالتفصيل (بدون تعقيد)
+
+### 4.1 getMe(userPayload)
+
+1. prisma.user.findFirst:
+
+   * where: uuid=sub AND isDeleted=false
+   * include: school (للتحقق)
+2. تأكد user.isActive=true وإلا throw `USER_INACTIVE` (أنت أصلاً تعملها في strategy غالبًا)
+3. return safe mapped object
+
+---
+
+### 4.2 updateMe(userPayload, dto)
+
+1. fetch user by uuid=sub + isDeleted=false
+2. build `data` object فقط من الحقول المسموحة والتي جاءت فعلًا
+3. prisma.user.update({ where: { id }, data })
+4. return safe user
+
+> لو `email` تريد uniqueness داخل المدرسة أو platform: ضع سياسة الآن:
+
+* إذا تريد فريد داخل المدرسة: index لاحق
+* أو اتركه بلا uniqueness (أسهل MVP)
+
+---
+
+### 4.3 changePassword(userPayload, dto) **بدون خروج**
+
+1. fetch user (uuid=sub)
+2. compare bcrypt(oldPassword, user.passwordHash)
+
+   * إذا خطأ → `INVALID_CREDENTIALS` أو `OLD_PASSWORD_WRONG`
+3. hash newPassword
+4. prisma.user.update({ data: { passwordHash: newHash } })
+5. (اختياري) سجل audit log لاحقًا
+6. return `{ success: true }`
+
+✅ لا تعمل:
+
+* revoke session
+* تغيير refreshTokenHash
+* logoutAll
+
+---
+
+## 5) أخطاء موحدة (Constants) — مهم للـ Flutter
+
+أضف في `src/school/auth/constants.ts` أو ملف جديد `profile.constants.ts`:
+
+* `OLD_PASSWORD_WRONG` (401)
+* `NEW_PASSWORD_SAME_AS_OLD` (400)
+* `PROFILE_UPDATE_NOT_ALLOWED_FIELD` (400) (لو احتجته)
+* `USER_NOT_FOUND` (404) (موجود لديك)
+* `USER_INACTIVE` (403) (موجود لديك)
+
+وخلي الاستجابات مثل نظامك: message = code ثابت.
+
+---
+
+## 6) Prisma / DB: هل نحتاج migrations؟
+
+للـ profile: **لا**
+لتغيير كلمة المرور: **لا**
+
+**لكن** (مهم للمصادقة عمومًا):
+
+* نفّذ Partial Unique Index لهاتف ولي الأمر داخل المدرسة (كما في ERD) — هذا يخص login أكثر من profile، لكن وجوده ممتاز.
+
+---
+
+## 7) Testing Checklist (قبل ربط Flutter)
+
+### 7.1 Profile Me
+
+* سجل دخول Teacher → GET profile/me ✅
+* جرّب header مدرسة مختلفة → `SCHOOL_SCOPE_MISMATCH` ✅
+* جرّب user inactive → `USER_INACTIVE` ✅
+
+### 7.2 Update
+
+* عدّل displayName فقط → يرجع updatedAt جديد ✅
+* جرّب إرسال `userType` في body → لازم ValidationPipe يمنعه (whitelist + forbidNonWhitelisted) ✅
+
+### 7.3 Change Password (No Logout)
+
+* غيّر كلمة المرور → success ✅
+* جرّب refresh مباشرة بعدها بنفس session → لازم ينجح ✅
+* جرّب oldPassword غلط → 401 OLD_PASSWORD_WRONG ✅
+* جرّب login بكلمة المرور القديمة → يفشل ✅
+* login بالجديدة → ينجح ✅
+
+---
+
+## 8) ترتيب التنفيذ (خطة عمل يوم/جلسة واحدة)
+
+1. إنشاء folder `src/school/profile/` + module/controller/service
+2. إضافة DTOs + validations
+3. إضافة endpoints الثلاثة + guards
+4. إضافة constants للأخطاء
+5. Postman/Insomnia tests
+6. بعدها نربط Flutter: شاشة profile + edit + change password
+
+---
+
+## 9) ملاحظة صغيرة مهمة: Owner vs School Users
+
+أنت طلبك الآن واضح: “الملف الشخصي للمستخدم داخل المدرسة”.
+المالك لديك له مسار مختلف (`owner/`)، فخلي Profile المدرسة مستقل.
+
+---
+
+إذا أعطيتني الآن **ملفات auth الحالية** (أسماءها موجودة عندك):
+
+* `school-auth.service.ts`
+* `school-jwt.strategy.ts`
+* `current-user.decorator.ts`
+* `school-context.guard.ts`
+
+سأعطيك مباشرة:
+
+* أسماء الملفات النهائية + محتوى كل ملف (Controller/Service/DTO/Module) بنفس ستايل مشروعك وأكواد الأخطاء.

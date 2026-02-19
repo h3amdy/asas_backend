@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-
+import {OWNER_AUTH_ERRORS} from "./constants";
 import { PrismaService } from '../../prisma/prisma.service';
 import { OwnerLoginDto } from './dto/owner-login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -29,7 +29,7 @@ export class AuthService {
 
     // 2) نتأكد أنه موجود و نوعه OWNER
     if (!user || user.userType !== 'OWNER') {
-      throw new UnauthorizedException('البريد أو كلمة السر غير صحيحة');
+      throw new UnauthorizedException(OWNER_AUTH_ERRORS.INVALID_CREDENTIALS);
     }
 
     // 3) نتحقق من كلمة السر

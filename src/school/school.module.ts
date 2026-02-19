@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { SchoolAuthModule } from './auth/school-auth.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { SchoolCommonModule } from './common/school-common.module';
+import { ProfileModule } from './profile/profile.module';
 
 /**
  * 🆕 وحدة المدرسة الرئيسية
@@ -10,7 +11,7 @@ import { SchoolCommonModule } from './common/school-common.module';
  */
 
 @Module({
-    imports: [SchoolAuthModule, SessionsModule, SchoolCommonModule],
+    imports: [SchoolAuthModule, SessionsModule, SchoolCommonModule, ProfileModule],
 })
 export class SchoolModule { }
 
