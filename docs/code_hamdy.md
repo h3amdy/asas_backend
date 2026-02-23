@@ -1,268 +1,839 @@
-تمام — خلّينا نعمل **خطة سيرفر كاملة** لميزة:
+نعم 👍 فهمت تمامًا ما تريد.
 
-1. **جلب الملف الشخصي (My Profile)**
-2. **تعديل الملف الشخصي**
-3. **تغيير كلمة المرور “بدون خروج” وبدون أي حركة في الجلسات** ✅
+أنت تريد أن يصبح السيرفر قادرًا على:
 
-وسأبني الخطة على هيكل مشروعك الحالي (school/auth + guards + decorators + prisma).
+1. 🔹 جلب الصفوف الرسمية من `GradeDictionary`
+2. 🔹 إضافة صف للمدرسة من القاموس الرسمي
+3. 🔹 إضافة صف مخصص (Local)
+4. 🔹 منع التكرار (لا يمكن إضافة نفس الصف الرسمي مرتين لنفس المدرسة)
+5. 🔹 دعم المعالج (Wizard) في اختيار صفوف جاهزة أو إنشاء مخصصة
 
-> ملاحظة مهمة: “بدون خروج” معناها **لا نعمل revoke للجلسة الحالية ولا نلغي باقي الجلسات**. فقط نغيّر `password_hash`.
-> (هذا أقل أمانًا من المعتاد، لكنه يطابق طلبك للمـVP. لاحقًا Phase 2 ممكن تضيف خيار “logoutAllDevices”.)
-
----
-
-## 0) أين نضع هذه الميزة داخل مشروعك؟
-
-بما أنك عندك `src/school/` للأدوار (ADMIN/TEACHER/STUDENT/PARENT)، فالميزة تكون هنا:
-
-```
-src/school/profile/
-  profile.module.ts
-  profile.controller.ts
-  profile.service.ts
-  dto/
-    update-my-profile.dto.ts
-    change-my-password.dto.ts
-```
-
-وتتسجل في `school.module.ts` أو `app.module.ts` حسب تجميعك.
+والآن سنراجع الكود الحالي ونعدّله ليصبح Production-ready.
 
 ---
 
-## 1) Endpoints النهائية (واضحة وثابتة)
+# 🎯 أولًا: هل الكود الحالي يدعم هذا؟
 
-### ✅ 1.1 جلب ملفي
+## createGrade الحالي:
 
-**GET** `/api/v1/school/profile/me`
-حماية: `SchoolJwtAuthGuard` + `SchoolContextGuard`
+```ts
+dictionaryId: dto.dictionaryId ?? null,
+isLocal: dto.isLocal ?? (dto.dictionaryId ? false : true),
+```
 
-**Response 200**
+هذا يسمح:
+
+* بإنشاء صف من القاموس (dictionaryId موجود)
+* أو صف مخصص (dictionaryId = null + isLocal = true)
+
+✅ جيد.
+
+لكن يوجد 3 مشاكل مهمة:
+
+---
+
+# ⚠️ المشكلة 1 — لا يوجد Endpoint لجلب القاموس
+
+لا يوجد:
+
+```http
+GET /school/manager/grade-dictionary
+```
+
+لا يمكن للـ Flutter عرض الصفوف الرسمية للاختيار.
+
+---
+
+# ⚠️ المشكلة 2 — لا يوجد منع لإضافة نفس الصف الرسمي مرتين
+
+حاليًا يمكن:
+
+* إضافة dictionaryId = 5
+* ثم إعادة إضافته مرة أخرى
+
+لا يوجد unique constraint يمنع ذلك.
+
+---
+
+# ⚠️ المشكلة 3 — createGrade لا يتحقق من صحة dictionaryId
+
+لو أرسل Flutter:
 
 ```json
-{
-  "uuid": "user-uuid",
-  "userType": "TEACHER",
-  "code": 1001,
-  "name": "أحمد محمد",
-  "displayName": "أحمد",
-  "gender": "M",
-  "phone": "777...",
-  "email": "a@..",
-  "province": "...",
-  "district": "...",
-  "addressArea": "...",
-  "addressDetails": "...",
-  "updatedAt": "2026-02-14T..."
+{ "dictionaryId": 9999 }
+```
+
+والـ ID غير موجود → سيحدث خطأ ForeignKey 500.
+
+---
+
+# 🏗 الحل المعماري الصحيح
+
+سنضيف:
+
+1️⃣ Endpoint لجلب GradeDictionary
+2️⃣ Unique constraint لمنع تكرار الصف الرسمي
+3️⃣ تحقق منطقي في السيرفر قبل الإنشاء
+
+---
+
+# ✅ أول تعديل — منع تكرار الصف الرسمي
+
+في Prisma:
+
+```prisma
+model SchoolGrade {
+  ...
+  @@unique([schoolId, dictionaryId], map: "uq_school_dictionary_grade")
 }
 ```
 
-> لا ترجع `passwordHash` نهائيًا.
+لكن ⚠️ يجب أن يكون:
 
----
+* dictionaryId nullable
+* والـ unique يعمل فقط إذا dictionaryId != null
 
-### ✅ 1.2 تعديل ملفي
+في PostgreSQL نحتاج partial unique index:
 
-**PATCH** `/api/v1/school/profile/me`
-حماية: `SchoolJwtAuthGuard` + `SchoolContextGuard`
-
-**Body (كلها اختيارية)**
-
-* `displayName`
-* `gender`
-* `email`
-* `province`
-* `district`
-* `addressArea`
-* `addressDetails`
-
-> *لا تسمح بتعديل*: `userType`, `code`, `schoolId`, `isActive`… إلخ.
-
-**Response 200**: نفس شكل `GET /me`
-
----
-
-### ✅ 1.3 تغيير كلمة المرور بدون خروج
-
-**POST** `/api/v1/school/profile/change-password`
-حماية: `SchoolJwtAuthGuard` + `SchoolContextGuard`
-
-**Body**
-
-```json
-{ "oldPassword": "...", "newPassword": "..." }
+```sql
+CREATE UNIQUE INDEX uq_school_dictionary_grade
+ON school_grades (school_id, dictionary_id)
+WHERE dictionary_id IS NOT NULL AND is_deleted = false;
 ```
 
-**Response 200**
+🔥 هذا مهم جدًا.
 
-```json
-{ "success": true }
+---
+
+# ✅ ثاني تعديل — إضافة GradeDictionary Endpoint
+
+## Controller
+
+```ts
+@Get('/dictionary')
+listDictionary() {
+  return this.service.listGradeDictionary();
+}
 ```
 
-> لا revoke ولا logout ولا invalidate tokens.
-> (يبقى access token صالح لحد exp، والrefresh شغال.)
+---
+
+## Service
+
+```ts
+async listGradeDictionary() {
+  return this.prisma.gradeDictionary.findMany({
+    where: {
+      isDeleted: false,
+      isActive: true,
+    },
+    orderBy: { sortOrder: 'asc' },
+  });
+}
+```
+
+الآن Flutter يمكنه عرض الصفوف الرسمية.
 
 ---
 
-## 2) Guards و Context: كيف نضمن المستخدم صح؟
+# ✅ ثالث تعديل — تحسين createGrade
 
-أنت عندك:
+نعدل createGrade ليصبح احترافيًا:
 
-* `SchoolJwtStrategy` تتحقق من الجلسة في DB (ممتاز)
-* `SchoolContextGuard` يطابق `x-school-uuid` مع `sc` داخل JWT
+```ts
+async createGrade(schoolId: number, dto: CreateGradeDto) {
+  try {
+    return await this.prisma.$transaction(async (tx) => {
 
-إذًا في profile endpoints:
+      // 🔍 إذا كان من القاموس
+      if (dto.dictionaryId) {
+        const dictionary = await tx.gradeDictionary.findFirst({
+          where: {
+            id: dto.dictionaryId,
+            isDeleted: false,
+            isActive: true,
+          },
+        });
 
-* نستخدم `@CurrentUser()` (payload فيه `sub`, `sc`, `sid`, `ut`, `uc?`)
-* نستخدم prisma لجلب user بناءً على `sub` + (schoolId matching)
+        if (!dictionary) {
+          throw new BadRequestException('INVALID_DICTIONARY_GRADE');
+        }
 
-قاعدة ذهبية في كل عمليات profile:
+        // تحقق من عدم إضافته مسبقًا
+        const exists = await tx.schoolGrade.findFirst({
+          where: {
+            schoolId,
+            dictionaryId: dto.dictionaryId,
+            isDeleted: false,
+          },
+        });
 
-* تأكد من `user.uuid = sub`
-* وتأكد أن `user.school.uuid = sc` (أو `schoolId` يطابق المدرسة)
+        if (exists) {
+          throw new ConflictException('GRADE_ALREADY_ADDED');
+        }
 
----
+        // إذا لم يرسل displayName نأخذه من القاموس
+        dto.displayName = dto.displayName ?? dictionary.defaultName;
+        dto.shortName = dto.shortName ?? dictionary.shortName;
+      }
 
-## 3) DTOs (Validation) — قواعد واضحة
+      const grade = await tx.schoolGrade.create({
+        data: {
+          schoolId,
+          dictionaryId: dto.dictionaryId ?? null,
+          displayName: dto.displayName,
+          shortName: dto.shortName,
+          sortOrder: dto.sortOrder,
+          isLocal: dto.dictionaryId ? false : true,
+        },
+      });
 
-### 3.1 UpdateMyProfileDto
+      await tx.section.create({
+        data: {
+          gradeId: grade.id,
+          name: 'أ',
+          orderIndex: 1,
+        },
+      });
 
-* `displayName`: optional, min 2 max 50
-* `gender`: optional (يفضل enum لاحقًا، حاليًا string مقبول)
-* `email`: optional, isEmail
-* العناوين: optional max lengths
-
-**مهم**: لا تقبل `name` إذا أنت تعتبره “اسم رسمي” غير قابل للتعديل (قرار منك).
-إذا تريد تسمح بتعديله، أضفه صراحة واعتبره “اسم المستخدم”.
-
----
-
-### 3.2 ChangeMyPasswordDto
-
-* `oldPassword`: required min 6
-* `newPassword`: required min 8 (أنصح 8 على الأقل)
-* rule: `newPassword != oldPassword`
-
----
-
-## 4) Service Logic بالتفصيل (بدون تعقيد)
-
-### 4.1 getMe(userPayload)
-
-1. prisma.user.findFirst:
-
-   * where: uuid=sub AND isDeleted=false
-   * include: school (للتحقق)
-2. تأكد user.isActive=true وإلا throw `USER_INACTIVE` (أنت أصلاً تعملها في strategy غالبًا)
-3. return safe mapped object
-
----
-
-### 4.2 updateMe(userPayload, dto)
-
-1. fetch user by uuid=sub + isDeleted=false
-2. build `data` object فقط من الحقول المسموحة والتي جاءت فعلًا
-3. prisma.user.update({ where: { id }, data })
-4. return safe user
-
-> لو `email` تريد uniqueness داخل المدرسة أو platform: ضع سياسة الآن:
-
-* إذا تريد فريد داخل المدرسة: index لاحق
-* أو اتركه بلا uniqueness (أسهل MVP)
-
----
-
-### 4.3 changePassword(userPayload, dto) **بدون خروج**
-
-1. fetch user (uuid=sub)
-2. compare bcrypt(oldPassword, user.passwordHash)
-
-   * إذا خطأ → `INVALID_CREDENTIALS` أو `OLD_PASSWORD_WRONG`
-3. hash newPassword
-4. prisma.user.update({ data: { passwordHash: newHash } })
-5. (اختياري) سجل audit log لاحقًا
-6. return `{ success: true }`
-
-✅ لا تعمل:
-
-* revoke session
-* تغيير refreshTokenHash
-* logoutAll
+      return grade;
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new ConflictException('GRADE_NAME_DUPLICATE');
+    }
+    throw e;
+  }
+}
+```
 
 ---
 
-## 5) أخطاء موحدة (Constants) — مهم للـ Flutter
+# 🎯 الآن السيرفر أصبح يدعم:
 
-أضف في `src/school/auth/constants.ts` أو ملف جديد `profile.constants.ts`:
-
-* `OLD_PASSWORD_WRONG` (401)
-* `NEW_PASSWORD_SAME_AS_OLD` (400)
-* `PROFILE_UPDATE_NOT_ALLOWED_FIELD` (400) (لو احتجته)
-* `USER_NOT_FOUND` (404) (موجود لديك)
-* `USER_INACTIVE` (403) (موجود لديك)
-
-وخلي الاستجابات مثل نظامك: message = code ثابت.
-
----
-
-## 6) Prisma / DB: هل نحتاج migrations؟
-
-للـ profile: **لا**
-لتغيير كلمة المرور: **لا**
-
-**لكن** (مهم للمصادقة عمومًا):
-
-* نفّذ Partial Unique Index لهاتف ولي الأمر داخل المدرسة (كما في ERD) — هذا يخص login أكثر من profile، لكن وجوده ممتاز.
+| الحالة                     | مدعومة |
+| -------------------------- | ------ |
+| إضافة صف رسمي              | ✅      |
+| إضافة صف مخصص              | ✅      |
+| منع تكرار الصف الرسمي      | ✅      |
+| جلب القاموس الرسمي         | ✅      |
+| التحقق من صحة dictionaryId | ✅      |
+| إنشاء شعبة افتراضية        | ✅      |
 
 ---
 
-## 7) Testing Checklist (قبل ربط Flutter)
+# 🧠 الآن كيف سيعمل Wizard؟
 
-### 7.1 Profile Me
+في خطوة الصفوف:
 
-* سجل دخول Teacher → GET profile/me ✅
-* جرّب header مدرسة مختلفة → `SCHOOL_SCOPE_MISMATCH` ✅
-* جرّب user inactive → `USER_INACTIVE` ✅
+1️⃣ GET /grades/dictionary
+2️⃣ عرض:
 
-### 7.2 Update
+* الصفوف الرسمية (Checkbox list)
+* زر "إضافة صف مخصص"
 
-* عدّل displayName فقط → يرجع updatedAt جديد ✅
-* جرّب إرسال `userType` في body → لازم ValidationPipe يمنعه (whitelist + forbidNonWhitelisted) ✅
+3️⃣ عند الإرسال:
 
-### 7.3 Change Password (No Logout)
-
-* غيّر كلمة المرور → success ✅
-* جرّب refresh مباشرة بعدها بنفس session → لازم ينجح ✅
-* جرّب oldPassword غلط → 401 OLD_PASSWORD_WRONG ✅
-* جرّب login بكلمة المرور القديمة → يفشل ✅
-* login بالجديدة → ينجح ✅
+* POST لكل صف مختار من القاموس
+* POST لكل صف مخصص
 
 ---
 
-## 8) ترتيب التنفيذ (خطة عمل يوم/جلسة واحدة)
+# 🚀 الآن سؤال مهم
 
-1. إنشاء folder `src/school/profile/` + module/controller/service
-2. إضافة DTOs + validations
-3. إضافة endpoints الثلاثة + guards
-4. إضافة constants للأخطاء
-5. Postman/Insomnia tests
-6. بعدها نربط Flutter: شاشة profile + edit + change password
+هل تريد:
+
+1️⃣ أن نضيف أيضًا bulk add endpoint
+مثل:
+
+```http
+POST /grades/bulk
+```
+
+لإضافة عدة صفوف دفعة واحدة
+
+2️⃣ أم نكتفي بالإنشاء الفردي داخل Wizard؟
+
+إذا كان النظام Offline-first
+أنصح جدًا بعمل bulk endpoint 🔥
 
 ---
 
-## 9) ملاحظة صغيرة مهمة: Owner vs School Users
+# 🎯 الخلاصة
 
-أنت طلبك الآن واضح: “الملف الشخصي للمستخدم داخل المدرسة”.
-المالك لديك له مسار مختلف (`owner/`)، فخلي Profile المدرسة مستقل.
+نعم فهمت المطلوب.
+
+الكود الحالي يحتاج:
+
+* إضافة GradeDictionary endpoint
+* إضافة unique partial index
+* تعديل createGrade للتحقق المنطقي
+* (اختياري) bulk endpoint
 
 ---
 
-إذا أعطيتني الآن **ملفات auth الحالية** (أسماءها موجودة عندك):
+إذا وافقت،
+سأكتب لك الآن:
 
-* `school-auth.service.ts`
-* `school-jwt.strategy.ts`
-* `current-user.decorator.ts`
-* `school-context.guard.ts`
+* نسخة migration SQL جاهزة
+* الكود النهائي كامل لـ GradesService بعد التعديل
+* اقتراح bulk endpoint احترافي
 
-سأعطيك مباشرة:
+اختر نكمل أي اتجاه 🔥
+ممتاز 🔥
+الـ **Bulk Endpoint** هنا ليس تحسينًا تجميليًا — بل قرار معماري مهم جدًا للـ Wizard + Offline-first + Atomic safety.
 
-* أسماء الملفات النهائية + محتوى كل ملف (Controller/Service/DTO/Module) بنفس ستايل مشروعك وأكواد الأخطاء.
+سأعطيك الآن تصميم احترافي Production-Grade.
+
+---
+
+# 🎯 الهدف من Bulk Grades Endpoint
+
+بدل أن يقوم الـ Wizard بـ:
+
+```text
+POST grade 1
+POST grade 2
+POST grade 3
+```
+
+نريد:
+
+```http
+POST /school/manager/grades/bulk
+```
+
+وكل شيء يتم داخل Transaction واحدة.
+
+---
+
+# ✅ لماذا Bulk مهم؟
+
+| بدون Bulk                                 | مع Bulk                         |
+| ----------------------------------------- | ------------------------------- |
+| يمكن أن يفشل الصف الثالث بعد نجاح الأولين | إما كل الصفوف تنجح أو كلها تفشل |
+| احتمال نظام نصف مهيأ                      | Atomic 100%                     |
+| طلبات كثيرة                               | طلب واحد                        |
+| صعب دعم Offline                           | أسهل دعم Offline                |
+
+---
+
+# 🏗 التصميم النهائي للـ Endpoint
+
+## 🔹 Endpoint
+
+```http
+POST /school/manager/grades/bulk
+```
+
+---
+
+## 🔹 Request Body
+
+```json
+{
+  "grades": [
+    {
+      "dictionaryId": 5,
+      "sortOrder": 1
+    },
+    {
+      "dictionaryId": 6,
+      "sortOrder": 2
+    },
+    {
+      "displayName": "الصف التمهيدي",
+      "shortName": "تمهيدي",
+      "sortOrder": 0
+    }
+  ]
+}
+```
+
+لاحظ:
+
+* الصف الرسمي → dictionaryId فقط
+* الصف المخصص → displayName
+
+---
+
+# 🧱 DTO
+
+## CreateGradeBulkDto
+
+```ts
+// dto/create-grade-bulk.dto.ts
+
+import { ValidateNested, IsArray } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CreateGradeDto } from './grades.dto';
+
+export class CreateGradeBulkDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateGradeDto)
+  grades!: CreateGradeDto[];
+}
+```
+
+---
+
+# 🧠 Controller
+
+```ts
+@Post('/bulk')
+createBulk(
+  @Req() req: any,
+  @Body() dto: CreateGradeBulkDto,
+) {
+  return this.service.createGradesBulk(req.schoolContext.id, dto.grades);
+}
+```
+
+---
+
+# 🚀 Service — الاحترافي الحقيقي
+
+```ts
+async createGradesBulk(
+  schoolId: number,
+  grades: CreateGradeDto[],
+) {
+  if (!grades.length) {
+    throw new BadRequestException('EMPTY_GRADES_LIST');
+  }
+
+  return this.prisma.$transaction(async (tx) => {
+
+    const createdGrades = [];
+
+    for (const dto of grades) {
+
+      // 🔎 إذا كان من القاموس
+      if (dto.dictionaryId) {
+        const dictionary = await tx.gradeDictionary.findFirst({
+          where: {
+            id: dto.dictionaryId,
+            isDeleted: false,
+            isActive: true,
+          },
+        });
+
+        if (!dictionary) {
+          throw new BadRequestException(
+            `INVALID_DICTIONARY_GRADE_${dto.dictionaryId}`,
+          );
+        }
+
+        const exists = await tx.schoolGrade.findFirst({
+          where: {
+            schoolId,
+            dictionaryId: dto.dictionaryId,
+            isDeleted: false,
+          },
+        });
+
+        if (exists) {
+          throw new ConflictException(
+            `GRADE_ALREADY_ADDED_${dto.dictionaryId}`,
+          );
+        }
+
+        dto.displayName = dto.displayName ?? dictionary.defaultName;
+        dto.shortName = dto.shortName ?? dictionary.shortName;
+      }
+
+      // 🔎 إذا كان مخصص
+      if (!dto.dictionaryId && !dto.displayName) {
+        throw new BadRequestException('DISPLAY_NAME_REQUIRED');
+      }
+
+      const grade = await tx.schoolGrade.create({
+        data: {
+          schoolId,
+          dictionaryId: dto.dictionaryId ?? null,
+          displayName: dto.displayName,
+          shortName: dto.shortName,
+          sortOrder: dto.sortOrder,
+          isLocal: dto.dictionaryId ? false : true,
+        },
+      });
+
+      await tx.section.create({
+        data: {
+          gradeId: grade.id,
+          name: 'أ',
+          orderIndex: 1,
+        },
+      });
+
+      createdGrades.push(grade);
+    }
+
+    return createdGrades;
+  });
+}
+```
+
+---
+
+# 🔐 لماذا هذا احترافي جدًا؟
+
+✔ Transaction واحدة
+✔ يمنع تكرار الصف الرسمي
+✔ يتحقق من صحة القاموس
+✔ يدعم صفوف مخصصة
+✔ ينشئ الشعبة الافتراضية
+✔ يرجع قائمة الصفوف التي تم إنشاؤها
+
+---
+
+# 🧠 تحسين متقدم (اختياري لكن قوي)
+
+بدل أن يتوقف عند أول خطأ، يمكن إرجاع تقرير أخطاء:
+
+```json
+{
+  "success": false,
+  "errors": [
+    { "dictionaryId": 5, "error": "GRADE_ALREADY_ADDED" },
+    { "displayName": "X", "error": "DUPLICATE_NAME" }
+  ]
+}
+```
+
+لكن هذا يكسر Atomic behavior.
+
+في مرحلة Wizard الأولى:
+
+⚡ الأفضل Atomic.
+
+---
+
+# 📊 ماذا عن الأداء؟
+
+لو أرسل Wizard 12 صفًا:
+
+* سيتم تنفيذ 12 عمليات create
+* داخل transaction واحدة
+* آمن تمامًا
+
+ممتاز.
+
+---
+
+# 🎯 الآن نقطة مهمة جدًا
+
+بما أننا سنستخدم Bulk للصفوف،
+هل نريد أيضًا:
+
+```http
+POST /academic-years/bulk
+```
+
+لإنشاء السنة + الفصول دفعة واحدة؟
+
+إذا أردنا Wizard احترافي حقيقي:
+
+الأفضل أن يكون لدينا:
+
+```http
+POST /setup/academic-initialization
+```
+
+ينشئ:
+
+* الصفوف
+* السنة
+* الفصول
+
+في Transaction واحدة 🔥🔥🔥
+
+---
+
+# 🏆 السؤال الكبير الآن
+
+هل تريد:
+
+1️⃣ نكتفي بـ Bulk Grades
+2️⃣ نضيف Bulk AcademicYears
+3️⃣ نبني Endpoint شامل InitialAcademicSetup
+(أفضل حل هندسي)
+
+أنا شخصيًا أنصح بالحل الثالث للـ Wizard.
+
+اختر الاتجاه وسأبنيه لك احترافيًا جدًا 🚀
+ممتاز 🔥
+الآن دخلنا في قرار معماري مهم جدًا.
+
+سأعطيك مقارنة واضحة ثم أبني لك **التصميم الاحترافي الصحيح**.
+
+---
+
+# 🎯 أولاً — Bulk AcademicYears
+
+## الفكرة
+
+```http
+POST /school/manager/academic-years/bulk
+```
+
+Request:
+
+```json
+{
+  "year": {
+    "name": "2025-2026",
+    "terms": [
+      { "name": "الفصل الأول", "orderIndex": 1 },
+      { "name": "الفصل الثاني", "orderIndex": 2 }
+    ]
+  }
+}
+```
+
+## هل هذا مفيد؟
+
+بصراحة: ❌ لا كثيرًا.
+
+لأن:
+
+* السنة دائمًا واحدة في البداية
+* الفصول تُنشأ أصلاً داخل createYear
+* لا يوجد سيناريو تحتاج فيه عدة سنوات دفعة واحدة
+
+إذن Bulk AcademicYears ليس له قيمة حقيقية في Wizard.
+
+---
+
+# 🏆 الحل الاحترافي الحقيقي
+
+# 🔥 3️⃣ InitialAcademicSetup Endpoint
+
+هذا هو الحل المعماري الصحيح.
+
+بدل:
+
+* Bulk Grades
+* Bulk Year
+* عدة Requests
+
+ننشئ Endpoint واحد:
+
+```http
+POST /school/manager/setup/academic-initialization
+```
+
+ينشئ:
+
+* الصفوف
+* الشعب الافتراضية
+* السنة
+* الفصول
+* تعيين السنة الحالية
+* تعيين الفصل الحالي
+
+داخل Transaction واحدة.
+
+---
+
+# 🎯 لماذا هذا أفضل؟
+
+| الحل                 | Atomic | سهل للـ Wizard | أداء  | نظافة معمارية |
+| -------------------- | ------ | -------------- | ----- | ------------- |
+| Bulk Grades فقط      | ❌      | ❌              | متوسط | متوسط         |
+| Bulk AcademicYears   | ❌      | ❌              | متوسط | متوسط         |
+| InitialAcademicSetup | ✅      | ✅              | ممتاز | ممتاز         |
+
+---
+
+# 🧠 تصميم Endpoint الاحترافي
+
+## 🔹 Request
+
+```json
+{
+  "grades": [
+    { "dictionaryId": 5, "sortOrder": 1 },
+    { "dictionaryId": 6, "sortOrder": 2 },
+    { "displayName": "التمهيدي", "sortOrder": 0 }
+  ],
+  "year": {
+    "name": "2025-2026",
+    "startDate": "2025-09-01",
+    "endDate": "2026-06-30",
+    "terms": [
+      { "name": "الفصل الأول", "orderIndex": 1 },
+      { "name": "الفصل الثاني", "orderIndex": 2 }
+    ]
+  }
+}
+```
+
+---
+
+# 🧱 DTO
+
+```ts
+export class AcademicInitializationDto {
+  @ValidateNested({ each: true })
+  @Type(() => CreateGradeDto)
+  grades!: CreateGradeDto[];
+
+  @ValidateNested()
+  @Type(() => CreateYearDto)
+  year!: CreateYearDto;
+}
+```
+
+---
+
+# 🚀 Service — Production-Grade Implementation
+
+```ts
+async initializeAcademic(
+  schoolId: number,
+  dto: AcademicInitializationDto,
+) {
+  return this.prisma.$transaction(async (tx) => {
+
+    // 1️⃣ تحقق من عدم وجود إعداد سابق
+    const existingYear = await tx.year.findFirst({
+      where: { schoolId, isDeleted: false },
+    });
+
+    if (existingYear) {
+      throw new ConflictException('ACADEMIC_ALREADY_INITIALIZED');
+    }
+
+    // 2️⃣ إنشاء الصفوف
+    for (const gradeDto of dto.grades) {
+
+      if (gradeDto.dictionaryId) {
+        const dictionary = await tx.gradeDictionary.findFirst({
+          where: {
+            id: gradeDto.dictionaryId,
+            isDeleted: false,
+            isActive: true,
+          },
+        });
+
+        if (!dictionary) {
+          throw new BadRequestException('INVALID_DICTIONARY_GRADE');
+        }
+
+        gradeDto.displayName ??= dictionary.defaultName;
+        gradeDto.shortName ??= dictionary.shortName;
+      }
+
+      const grade = await tx.schoolGrade.create({
+        data: {
+          schoolId,
+          dictionaryId: gradeDto.dictionaryId ?? null,
+          displayName: gradeDto.displayName,
+          shortName: gradeDto.shortName,
+          sortOrder: gradeDto.sortOrder,
+          isLocal: gradeDto.dictionaryId ? false : true,
+        },
+      });
+
+      await tx.section.create({
+        data: {
+          gradeId: grade.id,
+          name: 'أ',
+          orderIndex: 1,
+        },
+      });
+    }
+
+    // 3️⃣ إنشاء السنة
+    const year = await tx.year.create({
+      data: {
+        schoolId,
+        name: dto.year.name,
+        startDate: dto.year.startDate
+          ? new Date(dto.year.startDate)
+          : null,
+        endDate: dto.year.endDate
+          ? new Date(dto.year.endDate)
+          : null,
+        isCurrent: true,
+      },
+    });
+
+    // 4️⃣ إنشاء الفصول
+    for (const term of dto.year.terms ?? []) {
+      await tx.term.create({
+        data: {
+          yearId: year.id,
+          name: term.name,
+          orderIndex: term.orderIndex,
+          startDate: term.startDate
+            ? new Date(term.startDate)
+            : null,
+          endDate: term.endDate
+            ? new Date(term.endDate)
+            : null,
+          isCurrent: term.orderIndex === 1,
+        },
+      });
+    }
+
+    return { success: true };
+  });
+}
+```
+
+---
+
+# 🔐 لماذا هذا احترافي جدًا؟
+
+✔ Transaction واحدة
+✔ لا يمكن أن يبقى النظام نصف مهيأ
+✔ يمنع التهيئة مرتين
+✔ بسيط جدًا للـ Flutter
+✔ جاهز للـ Offline Queue
+✔ جاهز للتوسع
+
+---
+
+# 🎯 كيف سيستخدمه Wizard؟
+
+في Flutter:
+
+```dart
+await setupRepository.initializeAcademic(draft);
+ref.invalidate(setupStatusProvider);
+goToDashboard();
+```
+
+انتهى.
+
+لا داعي:
+
+* bulk grades
+* bulk years
+* تنسيق معقد
+
+---
+
+# 🏆 القرار النهائي
+
+لو تريد نظام احترافي حقيقي:
+
+❌ لا تبني Bulk AcademicYears
+❌ لا تعتمد فقط على Bulk Grades
+✅ ابنِ InitialAcademicSetup Endpoint
+
+---
+
+# 🚀 سؤال مهم الآن
+
+هل تريد أن:
+
+1️⃣ نعيد تنظيم SetupService ليحتوي هذا endpoint
+2️⃣ ننشئ SetupInitializationModule منفصل
+3️⃣ نعيد تصميم SetupGate ليعتمد على هذا بالكامل
+4️⃣ نضيف حماية تمنع أي CRUD قبل التهيئة
+
+اختر الاتجاه الذي نكمله الآن 🔥

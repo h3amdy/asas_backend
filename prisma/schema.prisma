@@ -23,6 +23,7 @@ enum AppType {
   PUBLIC
   PRIVATE
 }
+
 enum DeviceType {
   ANDROID
   IOS
@@ -34,16 +35,35 @@ enum RevokeReason {
   PASSWORD_CHANGED
   ADMIN_REVOKE
 }
+
 enum DeliveryPolicy {
   OPEN
   SCHEDULED
   MANUAL
 }
+
+enum EnrollmentStatus {
+  ACTIVE
+  PROMOTED
+  REPEATED
+  TRANSFERRED_OUT
+  DROPPED
+}
+
+enum ScopeType {
+  SUPERVISE
+}
+
+enum SubjectSectionRole {
+  PRIMARY
+  ASSISTANT
+}
+
 // =========================
 // MODELS
 // =========================
 
-// المستخدمون (المالك + مدراء المدارس + بقية الأنواع مستقبلاً)
+// المستخدمون
 model User {
   id           Int      @id @default(autoincrement())
   uuid         String   @unique @default(uuid())
@@ -52,7 +72,7 @@ model User {
   school       School?  @relation(fields: [schoolId], references: [id])
 
   userType     UserType @map("user_type")
-  code         Int?     // (في V9.3 مكتوب code int unique per school — الأفضل enforce لاحقًا بمؤشر)
+  code         Int?
   name         String
   displayName  String?  @map("display_name")
   gender       String?
@@ -60,45 +80,44 @@ model User {
   phone        String?
   email        String?
 
-  province        String?
-  district        String?
-  addressArea     String? @map("address_area")
-  addressDetails  String? @map("address_details")
+  province       String?
+  district       String?
+  addressArea    String? @map("address_area")
+  addressDetails String? @map("address_details")
 
   passwordHash String @map("password_hash")
 
-  isActive     Boolean @map("is_active")
+  isActive  Boolean  @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  devices  UserDevice[]
+  sessions AuthSession[]
 
-  isDeleted    Boolean  @default(false) @map("is_deleted")
-  deletedAt    DateTime? @map("deleted_at")
-
-  devices      UserDevice[]
-  sessions     AuthSession[]
+  // Role-specific profile (1:1)
+  student Student?
+  parent  Parent?
+  teacher Teacher?
 
   @@index([schoolId], map: "users_school_id_idx")
- 
-
   @@map("users")
 }
 
-
-
+// المدارس
 model School {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
   name        String
-  displayName String?  // NEW (DBML: display_name)
+  displayName String?
   schoolCode  Int      @unique
   appType     AppType
 
-  phone         String?
-  email         String?
-  
-  logoMediaAssetId Int? // NEW (FK لاحقًا على media_assets)
+  phone            String?
+  email            String?
+  logoMediaAssetId Int?
 
   address       String?
   province      String?
@@ -123,32 +142,420 @@ model School {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  users        User[]
   authSessions AuthSession[]
+  years        Year[]
+  schoolGrades SchoolGrade[]
+  subjects     Subject[]
 }
-
 
 // قاموس الصفوف العام
 model GradeDictionary {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
-  code        String  @unique // مثل G01
-  defaultName String  // مثل "الصف الأول الأساسي"
-  shortName   String? // مثل "أ.أ" أو "أ.ث"
-  stage       String? // تمهيدي/أساسي/ثانوي...
+  code        String  @unique
+  defaultName String
+  shortName   String?
+  stage       String?
   sortOrder   Int     @default(0)
   isActive    Boolean @default(true)
 
-  /// 🔄 حذف منطقي + دعم المزامنة
   isDeleted Boolean  @default(false)
   deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  schoolGrades     SchoolGrade[]
+  subjectDictionary SubjectDictionary[]
 }
 
-// أجهزة المستخدمين (لـ FCM لاحقاً)
+// =========================
+// ACADEMIC STRUCTURE
+// =========================
+
+// السنوات الدراسية
+model Year {
+  id        Int    @id @default(autoincrement())
+  uuid      String @unique @default(uuid())
+
+  schoolId  Int    @map("school_id")
+  school    School @relation(fields: [schoolId], references: [id])
+
+  name      String
+  startDate DateTime? @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
+  isCurrent Boolean   @default(false) @map("is_current")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  terms       Term[]
+  enrollments StudentEnrollment[]
+
+  @@index([schoolId], map: "years_school_id_idx")
+  @@map("years")
+}
+
+// الفصول الدراسية
+model Term {
+  id        Int    @id @default(autoincrement())
+  uuid      String @unique @default(uuid())
+
+  yearId    Int    @map("year_id")
+  year      Year   @relation(fields: [yearId], references: [id])
+
+  name      String
+  orderIndex Int   @map("order_index")
+  startDate DateTime? @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
+  isCurrent Boolean   @default(false) @map("is_current")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([yearId], map: "terms_year_id_idx")
+  @@map("terms")
+}
+
+// صفوف المدرسة
+model SchoolGrade {
+  id           Int    @id @default(autoincrement())
+  uuid         String @unique @default(uuid())
+
+  schoolId     Int    @map("school_id")
+  school       School @relation(fields: [schoolId], references: [id])
+
+  dictionaryId Int?   @map("dictionary_id")
+  dictionary   GradeDictionary? @relation(fields: [dictionaryId], references: [id])
+
+  displayName  String @map("display_name")
+  shortName    String? @map("short_name")
+  sortOrder    Int    @map("sort_order")
+  isLocal      Boolean @default(false) @map("is_local")
+  isActive     Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  sections     Section[]
+  enrollments  StudentEnrollment[]
+  subjects     Subject[]
+  teacherScopes TeacherScope[]
+
+  @@index([schoolId], map: "school_grades_school_id_idx")
+  @@index([dictionaryId], map: "school_grades_dictionary_id_idx")
+  @@map("school_grades")
+}
+
+// الشُعب
+model Section {
+  id         Int    @id @default(autoincrement())
+  uuid       String @unique @default(uuid())
+
+  gradeId    Int    @map("grade_id")
+  grade      SchoolGrade @relation(fields: [gradeId], references: [id])
+
+  name       String
+  orderIndex Int    @map("order_index")
+  isActive   Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  enrollments     StudentEnrollment[]
+  subjectSections SubjectSection[]
+  teacherScopes   TeacherScope[]
+
+  @@index([gradeId], map: "sections_grade_id_idx")
+  @@map("sections")
+}
+
+// =========================
+// USER ROLE PROFILES
+// =========================
+
+// بيانات الطالب الإضافية
+model Student {
+  userId    Int    @id @map("user_id")
+  user      User   @relation(fields: [userId], references: [id])
+  uuid      String @unique @default(uuid())
+
+  birthDate DateTime? @map("birth_date") @db.Date
+
+  enrollments   StudentEnrollment[]
+  parentLinks   ParentStudent[]
+
+  @@map("students")
+}
+
+// بيانات ولي الأمر
+model Parent {
+  userId Int    @id @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+  uuid   String @unique @default(uuid())
+
+  childLinks ParentStudent[]
+
+  @@map("parents")
+}
+
+// بيانات المعلم الإضافية
+model Teacher {
+  userId       Int     @id @map("user_id")
+  user         User    @relation(fields: [userId], references: [id])
+  uuid         String  @unique @default(uuid())
+
+  hireDate       DateTime? @map("hire_date") @db.Date
+  isSupervisor   Boolean   @default(false) @map("is_supervisor")
+  specialization String?
+  qualification  String?
+  experience     String?
+  notes          String?
+
+  scopes              TeacherScope[]
+  extraPermissions    TeacherExtraPermission?
+  subjectSectionTeachers SubjectSectionTeacher[]
+
+  @@map("teachers")
+}
+
+// =========================
+// ENROLLMENT & RELATIONSHIPS
+// =========================
+
+// قيد الطالب عبر السنوات
+model StudentEnrollment {
+  id        Int    @id @default(autoincrement())
+  uuid      String @unique @default(uuid())
+
+  studentId Int    @map("student_id")
+  student   Student @relation(fields: [studentId], references: [userId])
+
+  yearId    Int    @map("year_id")
+  year      Year   @relation(fields: [yearId], references: [id])
+
+  gradeId   Int    @map("grade_id")
+  grade     SchoolGrade @relation(fields: [gradeId], references: [id])
+
+  sectionId Int    @map("section_id")
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  status    EnrollmentStatus @default(ACTIVE)
+  isCurrent Boolean @default(true) @map("is_current")
+
+  joinedAt  DateTime? @map("joined_at") @db.Date
+  leftAt    DateTime? @map("left_at") @db.Date
+  notes     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([studentId, yearId], map: "student_enrollments_student_year_key")
+  @@index([studentId, isCurrent], map: "student_enrollments_student_current_idx")
+  @@index([yearId, sectionId], map: "student_enrollments_year_section_idx")
+  @@index([updatedAt], map: "student_enrollments_updated_at_idx")
+  @@map("student_enrollments")
+}
+
+// ربط ولي أمر بطالب
+model ParentStudent {
+  id        Int    @id @default(autoincrement())
+  uuid      String @unique @default(uuid())
+
+  parentId  Int    @map("parent_id")
+  parent    Parent @relation(fields: [parentId], references: [userId])
+
+  studentId Int    @map("student_id")
+  student   Student @relation(fields: [studentId], references: [userId])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([parentId, studentId], map: "parent_students_parent_student_key")
+  @@index([parentId, isDeleted], map: "parent_students_parent_deleted_idx")
+  @@map("parent_students")
+}
+
+// =========================
+// TEACHER SCOPES & PERMISSIONS
+// =========================
+
+// نطاق إشراف المعلم
+model TeacherScope {
+  id        Int    @id @default(autoincrement())
+  uuid      String @unique @default(uuid())
+
+  teacherId Int    @map("teacher_id")
+  teacher   Teacher @relation(fields: [teacherId], references: [userId])
+
+  gradeId   Int    @map("grade_id")
+  grade     SchoolGrade @relation(fields: [gradeId], references: [id])
+
+  sectionId Int?   @map("section_id")
+  section   Section? @relation(fields: [sectionId], references: [id])
+
+  scopeType ScopeType @default(SUPERVISE) @map("scope_type")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([teacherId, updatedAt], map: "teacher_scopes_teacher_updated_idx")
+  @@map("teacher_scopes")
+}
+
+// صلاحيات المعلم الإضافية (1:1)
+model TeacherExtraPermission {
+  teacherId Int     @id @map("teacher_id")
+  teacher   Teacher @relation(fields: [teacherId], references: [userId])
+  uuid      String  @unique @default(uuid())
+
+  canManageSubjects  Boolean @default(false) @map("can_manage_subjects")
+  canManageTimetable Boolean @default(false) @map("can_manage_timetable")
+  canManageStudents  Boolean @default(false) @map("can_manage_students")
+  canManageParents   Boolean @default(false) @map("can_manage_parents")
+  canViewReports     Boolean @default(false) @map("can_view_reports")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("teacher_extra_permissions")
+}
+
+// =========================
+// SUBJECTS & ASSIGNMENT
+// =========================
+
+// قاموس المواد الرسمي
+model SubjectDictionary {
+  id                Int    @id @default(autoincrement())
+  uuid              String @unique @default(uuid())
+
+  gradeDictionaryId Int    @map("grade_dictionary_id")
+  gradeDictionary   GradeDictionary @relation(fields: [gradeDictionaryId], references: [id])
+
+  code              String? @unique
+  defaultName       String  @map("default_name")
+  shortName         String? @map("short_name")
+  sortOrder         Int     @default(0) @map("sort_order")
+
+  isActive             Boolean @default(true) @map("is_active")
+  coverMediaAssetId    Int?    @map("cover_media_asset_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  subjects Subject[]
+
+  @@index([gradeDictionaryId, sortOrder], map: "subject_dictionary_grade_sort_idx")
+  @@map("subject_dictionary")
+}
+
+// مواد المدرسة
+model Subject {
+  id           Int    @id @default(autoincrement())
+  uuid         String @unique @default(uuid())
+
+  schoolId     Int    @map("school_id")
+  school       School @relation(fields: [schoolId], references: [id])
+
+  gradeId      Int    @map("grade_id")
+  grade        SchoolGrade @relation(fields: [gradeId], references: [id])
+
+  dictionaryId Int?   @map("dictionary_id")
+  dictionary   SubjectDictionary? @relation(fields: [dictionaryId], references: [id])
+
+  displayName       String @map("display_name")
+  shortName         String? @map("short_name")
+  coverMediaAssetId Int?   @map("cover_media_asset_id")
+
+  isActive  Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  subjectSections SubjectSection[]
+
+  @@index([schoolId, gradeId], map: "subjects_school_grade_idx")
+  @@index([dictionaryId], map: "subjects_dictionary_id_idx")
+  @@map("subjects")
+}
+
+// تقديم المادة داخل الشعبة
+model SubjectSection {
+  id        Int    @id @default(autoincrement())
+  uuid      String @unique @default(uuid())
+
+  subjectId Int    @map("subject_id")
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  sectionId Int    @map("section_id")
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  isActive  Boolean @default(true) @map("is_active")
+  notes     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  teachers SubjectSectionTeacher[]
+
+  @@unique([subjectId, sectionId], map: "subject_sections_subject_section_key")
+  @@index([updatedAt], map: "subject_sections_updated_at_idx")
+  @@map("subject_sections")
+}
+
+// إسناد المعلم للمادة داخل شعبة
+model SubjectSectionTeacher {
+  id               Int    @id @default(autoincrement())
+  uuid             String @unique @default(uuid())
+
+  subjectSectionId Int    @map("subject_section_id")
+  subjectSection   SubjectSection @relation(fields: [subjectSectionId], references: [id])
+
+  teacherId        Int    @map("teacher_id")
+  teacher          Teacher @relation(fields: [teacherId], references: [userId])
+
+  role     SubjectSectionRole? @default(PRIMARY)
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([subjectSectionId, teacherId], map: "subject_section_teachers_ss_teacher_key")
+  @@index([teacherId, updatedAt], map: "subject_section_teachers_teacher_updated_idx")
+  @@map("subject_section_teachers")
+}
+
+// =========================
+// DEVICES & SESSIONS
+// =========================
+
+// أجهزة المستخدمين
 model UserDevice {
   id                Int      @id @default(autoincrement())
   uuid              String   @unique @default(uuid())
@@ -161,24 +568,19 @@ model UserDevice {
   deviceType        DeviceType @map("device_type")
 
   lastSeenAt        DateTime? @map("last_seen_at")
-  isActive          Boolean @default(true)  @map("is_active") 
+  isActive          Boolean @default(true) @map("is_active")
 
   sessions          AuthSession[]
 
-  // ✅ لا تجعل fingerprint فريد عالميًا
   @@unique([userId, deviceFingerprint], map: "user_devices_user_device_fp_key")
-
-  // ✅ لا تجعل pushToken unique
   @@index([pushToken], map: "user_devices_push_token_idx")
-
-  // فهارس
   @@index([userId], map: "user_devices_user_id_idx")
   @@index([deviceFingerprint], map: "user_devices_device_fp_idx")
 
   @@map("user_devices")
 }
 
-
+// جلسات المصادقة
 model AuthSession {
   id               Int       @id @default(autoincrement())
   uuid             String    @unique @default(uuid())
@@ -196,9 +598,7 @@ model AuthSession {
 
   createdAt        DateTime  @default(now()) @map("created_at")
   lastSeenAt       DateTime? @map("last_seen_at")
-
   expiresAt        DateTime  @map("expires_at")
-
   revokedAt        DateTime? @map("revoked_at")
   revokeReason     RevokeReason? @map("revoke_reason")
 

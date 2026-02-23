@@ -90,7 +90,7 @@ asas_backend/
 │   │   └── status.service.ts               # منطق جلب حالة المدرسة
 │   │
 │   ├── 📂 school/                          # 🆕 وحدة أدوار المدرسة (ADMIN/TEACHER/STUDENT/PARENT)
-│   │   ├── school.module.ts                # الوحدة الرئيسية: تجميع auth + sessions + common
+│   │   ├── school.module.ts                # الوحدة الرئيسية: تجميع auth + sessions + common + profile + manager
 │   │   │
 │   │   ├── 📂 auth/                        # 🔐 مصادقة مستخدمي المدرسة
 │   │   │   ├── school-auth.module.ts       # وحدة المصادقة مع JWT
@@ -116,6 +116,17 @@ asas_backend/
 │   │   │       ├── update-profile.dto.ts   # DTO: تعديل البيانات
 │   │   │       └── change-password.dto.ts  # DTO: تغيير كلمة المرور
 │   │   │
+│   │   ├── 📂 manager/                      # 🏫 وحدة إدارة المدير (ADMIN فقط)
+│   │   │   ├── manager.module.ts           # الوحدة الرئيسية للمدير
+│   │   │   ├── 📂 school-info/             # تعديل بيانات المدرسة
+│   │   │   ├── 📂 grades/                  # إدارة الصفوف والشُعب
+│   │   │   ├── 📂 academic-years/          # إدارة السنوات والفصول
+│   │   │   ├── 📂 students/                # إدارة الطلاب
+│   │   │   ├── 📂 parents/                 # إدارة أولياء الأمور
+│   │   │   ├── 📂 teachers/                # إدارة المعلمين
+│   │   │   ├── 📂 subjects/                # إدارة المواد والإسناد
+│   │   │   └── 📂 setup/                   # 🎯 حالة التهيئة الأكاديمية
+│   │   │
 │   │   ├── 📂 sessions/                    # 🔄 إدارة الجلسات والأجهزة
 │   │   │   ├── sessions.module.ts          # وحدة الجلسات
 │   │   │   └── sessions.service.ts         # خدمة auth_sessions + user_devices
@@ -124,7 +135,8 @@ asas_backend/
 │   │       ├── school-common.module.ts     # وحدة المكونات المشتركة
 │   │       ├── constants.ts                # ثوابت Headers (x-school-uuid)
 │   │       ├── 📂 guards/
-│   │       │   └── school-context.guard.ts # 🛡️ حارس سياق المدرسة
+│   │       │   ├── school-context.guard.ts # 🛡️ حارس سياق المدرسة
+│   │       │   └── roles.guard.ts          # 🛡️ حارس الأدوار (@Roles)
 │   │       └── 📂 decorators/
 │   │           ├── current-user.decorator.ts  # @CurrentUser()
 │   │           └── school-context.decorator.ts # @SchoolCtx()
@@ -662,6 +674,54 @@ GET /public/schools/search?q=النور&limit=5
 |-------|---------|-------|
 | `401` | `OLD_PASSWORD_WRONG` | كلمة المرور القديمة غير صحيحة |
 | `400` | `NEW_PASSWORD_SAME_AS_OLD` | كلمة المرور الجديدة مطابقة للقديمة |
+
+---
+
+### 🏫 إدارة المدرسة (Manager APIs — ADMIN فقط)
+
+> 📖 **وثيقة تفصيلية:** راجع [`MANAGER_README.md`](file:///Users/hamdy/development/Projects/asas_backend/docs/MANAGER_README.md) للتفاصيل الكاملة.
+
+**الحماية:** JWT + SchoolContext + `@Roles('ADMIN')`
+
+| فئة | Method | Endpoint | الوصف |
+|------|--------|----------|-------|
+| **بيانات المدرسة** | `GET` | `/school/manager/school-info` | عرض بيانات المدرسة |
+| | `PATCH` | `/school/manager/school-info` | تعديل بيانات المدرسة |
+| **الصفوف** | `GET` | `/school/manager/grades` | قائمة الصفوف |
+| | `POST` | `/school/manager/grades` | إنشاء صف (+ شعبة افتراضية) |
+| | `PATCH` | `/school/manager/grades/:id` | تعديل صف |
+| | `DELETE` | `/school/manager/grades/:id` | حذف صف (شرط عدم وجود طلاب) |
+| **الشُعب** | `GET` | `/school/manager/grades/:id/sections` | قائمة الشُعب |
+| | `POST` | `/school/manager/grades/:id/sections` | إنشاء شعبة |
+| | `PATCH` | `/school/manager/grades/sections/:id` | تعديل شعبة |
+| | `DELETE` | `/school/manager/grades/sections/:id` | حذف شعبة |
+| **السنوات** | `GET` | `/school/manager/academic-years` | قائمة السنوات |
+| | `POST` | `/school/manager/academic-years` | إنشاء سنة (+ فصول) |
+| | `GET` | `/school/manager/academic-years/current` | السنة الحالية |
+| | `PATCH` | `/school/manager/academic-years/:id` | تعديل سنة |
+| | `POST` | `/school/manager/academic-years/:id/advance-term` | التقدم للفصل التالي |
+| **الطلاب** | `GET` | `/school/manager/students` | قائمة الطلاب (فلترة بصف/شعبة) |
+| | `POST` | `/school/manager/students` | إنشاء طالب |
+| | `GET` | `/school/manager/students/:uuid` | ملف الطالب |
+| | `PATCH` | `/school/manager/students/:uuid` | تعديل بيانات |
+| | `POST` | `/school/manager/students/:uuid/transfer` | نقل لصف/شعبة |
+| | `POST` | `/school/manager/students/:uuid/reset-password` | إعادة تعيين كلمة المرور |
+| **أولياء الأمور** | `GET` | `/school/manager/parents` | قائمة أولياء الأمور |
+| | `POST` | `/school/manager/parents` | إنشاء ولي أمر |
+| | `GET` | `/school/manager/parents/:uuid` | ملف ولي الأمر |
+| | `POST` | `/school/manager/parents/:uuid/link-children` | ربط أبناء |
+| | `DELETE` | `/school/manager/parents/:uuid/children/:id` | فك ربط ابن |
+| **المعلمين** | `GET` | `/school/manager/teachers` | قائمة المعلمين |
+| | `POST` | `/school/manager/teachers` | إنشاء معلم |
+| | `GET` | `/school/manager/teachers/:uuid` | ملف المعلم |
+| | `POST` | `/school/manager/teachers/:uuid/supervisor` | تعيين/إلغاء مشرف |
+| | `POST` | `/school/manager/teachers/:uuid/extra-permissions` | صلاحيات إضافية |
+| | `POST` | `/school/manager/teachers/:uuid/scopes` | إضافة نطاق إشراف |
+| **المواد** | `GET` | `/school/manager/subjects` | قائمة المواد |
+| | `POST` | `/school/manager/subjects` | إنشاء مادة (+ إسناد للشُعب) |
+| | `POST` | `/school/manager/subjects/:id/sections` | إسناد لشُعب إضافية |
+| | `POST` | `/school/manager/subjects/subject-sections/:id/teachers` | إسناد معلم لمادة |
+| **التهيئة** | `GET` | `/school/manager/setup/status` | حالة تهيئة المدرسة |
 
 ---
 

@@ -21,9 +21,7 @@ cd /www/node-projects/asas-backend
 
 git pull origin main
 
-إن كان الفرع مختلفًا:
 
-git pull origin dev
 
 
 ---

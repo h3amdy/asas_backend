@@ -2,7 +2,7 @@
 1. README.md
 
 
-2. DEPLOY.md (أو deploy_instructions.md)
+2. DEPLOY.md 
 
 
 
