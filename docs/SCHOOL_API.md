@@ -122,6 +122,43 @@
 
 ---
 
+## 📅 السياق الأكاديمي (جميع الأدوار)
+
+**الحماية:** `JWT + SchoolContext` (بدون تقييد دور)
+
+| Method | Endpoint | الوصف |
+|--------|----------|-------|
+| `GET` | `/school/academic-context` | السنة الحالية + الفصل الحالي |
+
+### `GET /school/academic-context`
+
+**UC-CTX-060** — يُستخدم في الشاشة الرئيسية لعرض مؤشر السنة/الفصل.
+
+**Response:** `200 OK`
+```json
+{
+  "academicYear": {
+    "uuid": "year-uuid",
+    "name": "2025/2026",
+    "startDate": "2025-09-01T00:00:00.000Z",
+    "endDate": "2026-06-30T00:00:00.000Z"
+  },
+  "term": {
+    "uuid": "term-uuid",
+    "name": "الفصل الأول",
+    "orderIndex": 1,
+    "startDate": "2025-09-01T00:00:00.000Z",
+    "endDate": "2025-12-31T00:00:00.000Z"
+  }
+}
+```
+
+> إذا المدرسة **غير مهيأة** → `{ "academicYear": null, "term": null }`
+
+> 💡 **Flutter:** يمكن حساب "المتبقي حتى نهاية الفصل" محلياً من `term.endDate`.
+
+---
+
 ## 🏫 Manager APIs (ADMIN فقط)
 
 **الحماية:** `JWT + SchoolContext + @Roles('ADMIN')`
