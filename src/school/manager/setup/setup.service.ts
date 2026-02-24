@@ -8,8 +8,9 @@ import type { AcademicInitializationDto } from './dto/academic-initialization.dt
 export class SetupService {
     constructor(private readonly prisma: PrismaService) { }
 
+    // ==================== حالة التهيئة ====================
+
     async getSetupStatus(schoolId: number): Promise<SetupStatusDto> {
-        // 1️⃣ السنة الحالية + الفصل الحالي
         const currentYear = await this.prisma.year.findFirst({
             where: { schoolId, isCurrent: true, isDeleted: false },
             include: {
@@ -21,22 +22,18 @@ export class SetupService {
         const termsCount = currentYear?.terms.length ?? 0;
         const currentTerm = currentYear?.terms.find((t) => t.isCurrent);
 
-        // 2️⃣ الصفوف
         const gradesCount = await this.prisma.schoolGrade.count({
             where: { schoolId, isDeleted: false },
         });
 
-        // 3️⃣ الشُعب
         const sectionsCount = await this.prisma.section.count({
             where: { grade: { schoolId }, isDeleted: false },
         });
 
-        // 4️⃣ المعلمين
         const teachersCount = await this.prisma.user.count({
             where: { schoolId, userType: 'TEACHER', isDeleted: false, isActive: true },
         });
 
-        // 5️⃣ المواد
         const subjectsCount = await this.prisma.subject.count({
             where: { schoolId, isDeleted: false },
         });
@@ -69,79 +66,109 @@ export class SetupService {
         };
     }
 
+    // ==================== التهيئة الأولى ====================
+
     async initializeAcademic(schoolId: number, dto: AcademicInitializationDto) {
+        // ───── التحقق المسبق (خارج Transaction) ─────
+
+        // 1. ترتيب الفصول + التحقق من التسلسل الزمني
+        const sortedTerms = [...dto.year.terms].sort((a, b) => a.orderIndex - b.orderIndex);
+
+        for (let i = 0; i < sortedTerms.length; i++) {
+            const term = sortedTerms[i];
+            const start = new Date(term.startDate);
+            const end = new Date(term.endDate);
+
+            if (end <= start) {
+                throw new BadRequestException(`TERM_${term.orderIndex}_END_BEFORE_START`);
+            }
+
+            if (i > 0) {
+                const prevEnd = new Date(sortedTerms[i - 1].endDate);
+                if (start <= prevEnd) {
+                    throw new BadRequestException(
+                        `TERM_${term.orderIndex}_OVERLAPS_WITH_TERM_${sortedTerms[i - 1].orderIndex}`,
+                    );
+                }
+            }
+        }
+
+        // 2. الصف المخصص يجب أن يحتوي displayName و stage
+        for (const g of dto.grades) {
+            if (!g.dictionaryId) {
+                if (!g.displayName) throw new BadRequestException('DISPLAY_NAME_REQUIRED');
+                if (!g.stage) throw new BadRequestException('STAGE_REQUIRED_FOR_CUSTOM_GRADE');
+            }
+        }
+
+        // 3. حساب تواريخ السنة تلقائياً من الفصول
+        const yearStartDate = new Date(sortedTerms[0].startDate);
+        const yearEndDate = new Date(sortedTerms[sortedTerms.length - 1].endDate);
+
+        // ───── Transaction ─────
         return this.prisma.$transaction(async (tx) => {
-            // 1. تحقق من عدم وجود إعداد سابق
+            // 4. تحقق من عدم وجود إعداد سابق
             const existingYear = await tx.year.findFirst({
                 where: { schoolId, isDeleted: false },
             });
-
             if (existingYear) {
                 throw new ConflictException('ACADEMIC_ALREADY_INITIALIZED');
             }
 
-            // 2. إنشاء الصفوف
+            // 5. إنشاء الصفوف
             for (const gradeDto of dto.grades) {
+                let stage = gradeDto.stage as any;
+
                 if (gradeDto.dictionaryId) {
                     const dictionary = await tx.gradeDictionary.findFirst({
                         where: { id: gradeDto.dictionaryId, isDeleted: false, isActive: true },
                     });
-
                     if (!dictionary) {
                         throw new BadRequestException(`INVALID_DICTIONARY_GRADE_${gradeDto.dictionaryId}`);
                     }
 
                     gradeDto.displayName = gradeDto.displayName ?? dictionary.defaultName;
                     gradeDto.shortName = gradeDto.shortName ?? (dictionary.shortName ?? undefined);
-                }
-
-                if (!gradeDto.dictionaryId && !gradeDto.displayName) {
-                    throw new BadRequestException('DISPLAY_NAME_REQUIRED');
+                    stage = gradeDto.stage ?? (dictionary.stage as any) ?? null;
                 }
 
                 const grade = await tx.schoolGrade.create({
                     data: {
                         schoolId,
                         dictionaryId: gradeDto.dictionaryId ?? null,
-                        displayName: gradeDto.displayName,
+                        displayName: gradeDto.displayName!,
                         shortName: gradeDto.shortName,
                         sortOrder: gradeDto.sortOrder,
-                        isLocal: gradeDto.dictionaryId ? false : true,
+                        stage: stage ?? null,
+                        isLocal: !gradeDto.dictionaryId,
                     },
                 });
 
-                // إنشاء شعبة "أ"
                 await tx.section.create({
                     data: { gradeId: grade.id, name: 'أ', orderIndex: 1 },
                 });
             }
 
-            // 3. إنشاء السنة
+            // 6. إنشاء السنة (التواريخ من الفصول)
             const year = await tx.year.create({
                 data: {
                     schoolId,
                     name: dto.year.name,
-                    startDate: dto.year.startDate ? new Date(dto.year.startDate) : null,
-                    endDate: dto.year.endDate ? new Date(dto.year.endDate) : null,
+                    startDate: yearStartDate,
+                    endDate: yearEndDate,
                     isCurrent: true,
                 },
             });
 
-            // 4. إنشاء الفصول
-            const termsCount = dto.year.terms?.length ?? dto.year.termsCount ?? 2;
-            const termsToCreate = dto.year.terms ?? Array.from({ length: termsCount }, (_, i) => ({
-                name: `الفصل ${i + 1}`,
-                orderIndex: i + 1,
-            }));
-
-            for (const term of termsToCreate) {
+            // 7. إنشاء الفصول
+            for (const term of sortedTerms) {
                 await tx.term.create({
                     data: {
                         yearId: year.id,
                         name: term.name,
                         orderIndex: term.orderIndex,
-                        startDate: (term as any).startDate ? new Date((term as any).startDate) : null,
-                        endDate: (term as any).endDate ? new Date((term as any).endDate) : null,
+                        startDate: new Date(term.startDate),
+                        endDate: new Date(term.endDate),
                         isCurrent: term.orderIndex === 1,
                     },
                 });
@@ -150,4 +177,5 @@ export class SetupService {
             return { success: true };
         });
     }
+
 }

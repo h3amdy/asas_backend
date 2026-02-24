@@ -59,6 +59,13 @@ enum SubjectSectionRole {
   ASSISTANT
 }
 
+enum GradeStage {
+  KG
+  BASIC
+  SECONDARY
+  OTHER
+}
+
 // =========================
 // MODELS
 // =========================
@@ -157,7 +164,7 @@ model GradeDictionary {
   code        String  @unique
   defaultName String
   shortName   String?
-  stage       String?
+  stage       GradeStage?
   sortOrder   Int     @default(0)
   isActive    Boolean @default(true)
 
@@ -237,6 +244,7 @@ model SchoolGrade {
   displayName  String @map("display_name")
   shortName    String? @map("short_name")
   sortOrder    Int    @map("sort_order")
+  stage        GradeStage? @map("stage")
   isLocal      Boolean @default(false) @map("is_local")
   isActive     Boolean @default(true) @map("is_active")
 

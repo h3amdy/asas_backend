@@ -12,10 +12,7 @@ export class GradesService {
 
     async listGradeDictionary() {
         return this.prisma.gradeDictionary.findMany({
-            where: {
-                isDeleted: false,
-                isActive: true,
-            },
+            where: { isDeleted: false, isActive: true },
             orderBy: { sortOrder: 'asc' },
         });
     }
@@ -30,7 +27,10 @@ export class GradesService {
                 _count: { select: { sections: { where: { isDeleted: false } } } },
                 sections: {
                     where: { isDeleted: false },
-                    select: { id: true, name: true, orderIndex: true, _count: { select: { enrollments: { where: { isDeleted: false, isCurrent: true } } } } },
+                    select: {
+                        id: true, name: true, orderIndex: true,
+                        _count: { select: { enrollments: { where: { isDeleted: false, isCurrent: true } } } },
+                    },
                 },
             },
         });
@@ -39,36 +39,33 @@ export class GradesService {
     async createGrade(schoolId: number, dto: CreateGradeDto) {
         try {
             const gradeId = await this.prisma.$transaction(async (tx) => {
-                // 1. تحقق من القاموس إذا كان هناك dictionaryId
                 if (dto.dictionaryId) {
                     const dictionary = await tx.gradeDictionary.findFirst({
                         where: { id: dto.dictionaryId, isDeleted: false, isActive: true },
                     });
-
                     if (!dictionary) {
                         throw new BadRequestException('INVALID_DICTIONARY_GRADE');
                     }
-
-                    // لا حاجة لـ findFirst لمنع التكرار لأن قاعدة البيانات لديها Unique constraint للـ schoolId + dictionaryId
-                    // سيتكفل الـ P2002 error بالمنع.
-
                     dto.displayName = dto.displayName ?? dictionary.defaultName;
                     dto.shortName = dto.shortName ?? (dictionary.shortName ?? undefined);
                 }
 
-                // 2. إنشاء الصف
+                if (!dto.dictionaryId && !dto.displayName) {
+                    throw new BadRequestException('DISPLAY_NAME_REQUIRED');
+                }
+
                 const grade = await tx.schoolGrade.create({
                     data: {
                         schoolId,
                         dictionaryId: dto.dictionaryId ?? null,
-                        displayName: dto.displayName,
+                        displayName: dto.displayName!,
                         shortName: dto.shortName,
                         sortOrder: dto.sortOrder,
-                        isLocal: dto.isLocal ?? (dto.dictionaryId ? false : true),
+                        stage: (dto.stage as any) ?? null,
+                        isLocal: dto.isLocal ?? !dto.dictionaryId,
                     },
                 });
 
-                // 3. إنشاء شعبة افتراضية "أ"
                 await tx.section.create({
                     data: { gradeId: grade.id, name: 'أ', orderIndex: 1 },
                 });
@@ -96,19 +93,16 @@ export class GradesService {
 
         try {
             const createdIds = await this.prisma.$transaction(async (tx) => {
-                const createdGradeIds: number[] = [];
+                const ids: number[] = [];
 
                 for (const dto of grades) {
                     if (dto.dictionaryId) {
                         const dictionary = await tx.gradeDictionary.findFirst({
                             where: { id: dto.dictionaryId, isDeleted: false, isActive: true },
                         });
-
                         if (!dictionary) {
                             throw new BadRequestException(`INVALID_DICTIONARY_GRADE_${dto.dictionaryId}`);
                         }
-
-                        // نأخذ القيم الافتراضية إذا لم تُرسل
                         dto.displayName = dto.displayName ?? dictionary.defaultName;
                         dto.shortName = dto.shortName ?? (dictionary.shortName ?? undefined);
                     }
@@ -121,22 +115,22 @@ export class GradesService {
                         data: {
                             schoolId,
                             dictionaryId: dto.dictionaryId ?? null,
-                            displayName: dto.displayName,
+                            displayName: dto.displayName!,
                             shortName: dto.shortName,
                             sortOrder: dto.sortOrder,
-                            isLocal: dto.dictionaryId ? false : true,
+                            stage: (dto.stage as any) ?? null,
+                            isLocal: !dto.dictionaryId,
                         },
                     });
 
-                    // إنشاء شعبة "أ" التلقائية
                     await tx.section.create({
                         data: { gradeId: grade.id, name: 'أ', orderIndex: 1 },
                     });
 
-                    createdGradeIds.push(grade.id);
+                    ids.push(grade.id);
                 }
 
-                return createdGradeIds;
+                return ids;
             });
 
             return this.prisma.schoolGrade.findMany({
@@ -147,7 +141,6 @@ export class GradesService {
                     sections: { where: { isDeleted: false }, select: { id: true, name: true, orderIndex: true } },
                 },
             });
-
         } catch (e) {
             if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
                 const target = (e.meta?.target as string[]) ?? [];
@@ -159,7 +152,6 @@ export class GradesService {
             throw e;
         }
     }
-
 
     async getGradeById(gradeId: number) {
         const grade = await this.prisma.schoolGrade.findFirst({
@@ -228,12 +220,8 @@ export class GradesService {
         } catch (e) {
             if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
                 const target = (e.meta?.target as string[]) ?? [];
-                if (target.includes('name')) {
-                    throw new ConflictException('SECTION_NAME_DUPLICATE');
-                }
-                if (target.includes('order_index')) {
-                    throw new ConflictException('SECTION_ORDER_DUPLICATE');
-                }
+                if (target.includes('name')) throw new ConflictException('SECTION_NAME_DUPLICATE');
+                if (target.includes('order_index')) throw new ConflictException('SECTION_ORDER_DUPLICATE');
                 throw new ConflictException('SECTION_DUPLICATE');
             }
             throw e;

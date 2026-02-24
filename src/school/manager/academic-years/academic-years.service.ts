@@ -21,34 +21,48 @@ export class AcademicYearsService {
 
     /**
      * 🔒 Transaction: إنشاء سنة + إلغاء الحالية + إنشاء فصول
-     * يمنع race condition عند طلبين متزامنين (partial unique index)
+     * تواريخ السنة تُشتق دائماً من الفصول إذا أُرسلت تواريخ
      */
     async createYear(schoolId: number, dto: CreateYearDto) {
         const yearId = await this.prisma.$transaction(async (tx) => {
-            // 1️⃣ إلغاء السنة الحالية (قبل الإنشاء لتجنب conflict مع unique index)
+            // 1️⃣ إلغاء السنة الحالية
             await tx.year.updateMany({
                 where: { schoolId, isCurrent: true, isDeleted: false },
                 data: { isCurrent: false },
             });
 
-            // 2️⃣ إنشاء السنة الجديدة
-            const year = await tx.year.create({
-                data: {
-                    schoolId,
-                    name: dto.name,
-                    startDate: dto.startDate ? new Date(dto.startDate) : null,
-                    endDate: dto.endDate ? new Date(dto.endDate) : null,
-                    isCurrent: true,
-                },
-            });
-
-            // 3️⃣ إنشاء الفصول
+            // 2️⃣ تجهيز الفصول
             const termsCount = dto.terms?.length ?? dto.termsCount ?? 2;
             const termsToCreate = dto.terms ?? Array.from({ length: termsCount }, (_, i) => ({
                 name: TERM_NAMES[i] ?? `الفصل ${i + 1}`,
                 orderIndex: i + 1,
             }));
 
+            // 3️⃣ حساب تواريخ السنة من الفصول (إذا وجدت تواريخ)
+            const termDates = termsToCreate
+                .filter((t: any) => t.startDate && t.endDate)
+                .map((t: any) => ({ start: new Date(t.startDate), end: new Date(t.endDate) }));
+
+            let yearStart: Date | null = null;
+            let yearEnd: Date | null = null;
+
+            if (termDates.length > 0) {
+                yearStart = termDates.reduce((min, t) => t.start < min ? t.start : min, termDates[0].start);
+                yearEnd = termDates.reduce((max, t) => t.end > max ? t.end : max, termDates[0].end);
+            }
+
+            // 4️⃣ إنشاء السنة
+            const year = await tx.year.create({
+                data: {
+                    schoolId,
+                    name: dto.name,
+                    startDate: yearStart,
+                    endDate: yearEnd,
+                    isCurrent: true,
+                },
+            });
+
+            // 5️⃣ إنشاء الفصول
             for (const t of termsToCreate) {
                 await tx.term.create({
                     data: {
@@ -87,11 +101,10 @@ export class AcademicYearsService {
     }
 
     async getCurrentYear(schoolId: number) {
-        const year = await this.prisma.year.findFirst({
+        return this.prisma.year.findFirst({
             where: { schoolId, isCurrent: true, isDeleted: false },
             include: { terms: { where: { isDeleted: false }, orderBy: { orderIndex: 'asc' } } },
         });
-        return year;
     }
 
     async updateTerm(termId: number, dto: UpdateTermDto) {
@@ -105,7 +118,6 @@ export class AcademicYearsService {
 
     /**
      * 🔒 Transaction: التقدم للفصل التالي
-     * يعدّل سجلين (الحالي + التالي) بشكل atomic
      */
     async advanceToNextTerm(yearId: number) {
         await this.prisma.$transaction(async (tx) => {

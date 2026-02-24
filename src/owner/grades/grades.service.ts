@@ -10,7 +10,7 @@ import { UpdateGradeDto } from './dto/update-grade.dto';
 
 @Injectable()
 export class GradesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async findAll() {
     return this.prisma.gradeDictionary.findMany({
@@ -36,7 +36,7 @@ export class GradesService {
       code: dto.code,
       defaultName: dto.defaultName,
       shortName: dto.shortName ?? null,
-      stage: dto.stage ?? null,
+      stage: (dto.stage as any) ?? null,
       sortOrder: dto.sortOrder ?? 0,
       isActive: true,
       isDeleted: false,
@@ -64,7 +64,7 @@ export class GradesService {
     if (dto.code !== undefined) data.code = dto.code;
     if (dto.defaultName !== undefined) data.defaultName = dto.defaultName;
     if (dto.shortName !== undefined) data.shortName = dto.shortName;
-    if (dto.stage !== undefined) data.stage = dto.stage;
+    if (dto.stage !== undefined) data.stage = dto.stage as any;
     if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
 
     return this.prisma.gradeDictionary.update({

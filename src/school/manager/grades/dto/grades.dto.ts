@@ -1,5 +1,5 @@
 // src/school/manager/grades/dto/grades.dto.ts
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateGradeDto {
@@ -7,11 +7,12 @@ export class CreateGradeDto {
     @IsInt()
     dictionaryId?: number;
 
+    @IsOptional()
     @IsString()
     @MinLength(2)
     @MaxLength(80)
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-    displayName!: string;
+    displayName?: string;
 
     @IsOptional()
     @IsString()
@@ -25,6 +26,10 @@ export class CreateGradeDto {
     @IsOptional()
     @IsBoolean()
     isLocal?: boolean;
+
+    @IsOptional()
+    @IsEnum(['KG', 'BASIC', 'SECONDARY', 'OTHER'])
+    stage?: string;
 }
 
 export class UpdateGradeDto {

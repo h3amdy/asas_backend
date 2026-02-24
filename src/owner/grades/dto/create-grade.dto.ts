@@ -1,5 +1,5 @@
 // src/grades/dto/create-grade.dto.ts
-import { IsString, IsOptional, IsInt, Min, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsEnum, Min, MaxLength } from 'class-validator';
 
 export class CreateGradeDto {
   @IsString()
@@ -16,9 +16,8 @@ export class CreateGradeDto {
   shortName?: string; // مثال: "أ.أ" أو "أ.ث"  👈 NEW
 
   @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  stage?: string; // تمهيدي / أساسي / ثانوي ...
+  @IsEnum(['KG', 'BASIC', 'SECONDARY', 'OTHER'])
+  stage?: string; // KG / BASIC / SECONDARY / OTHER
 
   @IsOptional()
   @IsInt()

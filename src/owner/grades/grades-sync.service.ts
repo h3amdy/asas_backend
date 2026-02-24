@@ -10,7 +10,7 @@ const GRADE_RETENTION_DAYS = 90; // مدة الاحتفاظ قبل الحذف ا
 
 @Injectable()
 export class GradesSyncService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   // ==============
   // SYNC – PULL
@@ -111,7 +111,7 @@ export class GradesSyncService {
         code: change.code,
         defaultName: change.defaultName,
         shortName: change.shortName ?? null,
-        stage: change.stage ?? null,
+        stage: (change.stage as any) ?? null,
         sortOrder: change.sortOrder ?? existing?.sortOrder ?? 0,
         isActive: typeof change.isActive === 'boolean'
           ? change.isActive

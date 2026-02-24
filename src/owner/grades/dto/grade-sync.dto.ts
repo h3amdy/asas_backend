@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsBooleanString,
   IsDateString,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -31,8 +32,7 @@ export class GradeSyncItemDto {
   shortName?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(50)
+  @IsEnum(['KG', 'BASIC', 'SECONDARY', 'OTHER'])
   stage?: string;
 
   @IsOptional()
