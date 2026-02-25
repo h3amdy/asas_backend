@@ -3,8 +3,6 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateYearDto, UpdateYearDto, UpdateTermDto } from './dto/academic-years.dto';
 
-const TERM_NAMES = ['الفصل الأول', 'الفصل الثاني', 'الفصل الثالث'];
-
 @Injectable()
 export class AcademicYearsService {
     constructor(private readonly prisma: PrismaService) { }
@@ -21,9 +19,31 @@ export class AcademicYearsService {
 
     /**
      * 🔒 Transaction: إنشاء سنة + إلغاء الحالية + إنشاء فصول
-     * تواريخ السنة تُشتق دائماً من الفصول إذا أُرسلت تواريخ
+     * تواريخ الفصول إجبارية دائماً — لا توجد تواريخ للسنة
      */
     async createYear(schoolId: number, dto: CreateYearDto) {
+        // التحقق من التسلسل الزمني للفصول
+        const sortedTerms = [...dto.terms].sort((a, b) => a.orderIndex - b.orderIndex);
+
+        for (let i = 0; i < sortedTerms.length; i++) {
+            const term = sortedTerms[i];
+            const start = new Date(term.startDate);
+            const end = new Date(term.endDate);
+
+            if (end <= start) {
+                throw new BadRequestException(`TERM_${term.orderIndex}_END_BEFORE_START`);
+            }
+
+            if (i > 0) {
+                const prevEnd = new Date(sortedTerms[i - 1].endDate);
+                if (start <= prevEnd) {
+                    throw new BadRequestException(
+                        `TERM_${term.orderIndex}_OVERLAPS_WITH_TERM_${sortedTerms[i - 1].orderIndex}`,
+                    );
+                }
+            }
+        }
+
         const yearId = await this.prisma.$transaction(async (tx) => {
             // 1️⃣ إلغاء السنة الحالية
             await tx.year.updateMany({
@@ -31,46 +51,24 @@ export class AcademicYearsService {
                 data: { isCurrent: false },
             });
 
-            // 2️⃣ تجهيز الفصول
-            const termsCount = dto.terms?.length ?? dto.termsCount ?? 2;
-            const termsToCreate = dto.terms ?? Array.from({ length: termsCount }, (_, i) => ({
-                name: TERM_NAMES[i] ?? `الفصل ${i + 1}`,
-                orderIndex: i + 1,
-            }));
-
-            // 3️⃣ حساب تواريخ السنة من الفصول (إذا وجدت تواريخ)
-            const termDates = termsToCreate
-                .filter((t: any) => t.startDate && t.endDate)
-                .map((t: any) => ({ start: new Date(t.startDate), end: new Date(t.endDate) }));
-
-            let yearStart: Date | null = null;
-            let yearEnd: Date | null = null;
-
-            if (termDates.length > 0) {
-                yearStart = termDates.reduce((min, t) => t.start < min ? t.start : min, termDates[0].start);
-                yearEnd = termDates.reduce((max, t) => t.end > max ? t.end : max, termDates[0].end);
-            }
-
-            // 4️⃣ إنشاء السنة
+            // 2️⃣ إنشاء السنة (بدون تواريخ — مشتقة من الفصول)
             const year = await tx.year.create({
                 data: {
                     schoolId,
                     name: dto.name,
-                    startDate: yearStart,
-                    endDate: yearEnd,
                     isCurrent: true,
                 },
             });
 
-            // 5️⃣ إنشاء الفصول
-            for (const t of termsToCreate) {
+            // 3️⃣ إنشاء الفصول (تواريخ إجبارية)
+            for (const t of sortedTerms) {
                 await tx.term.create({
                     data: {
                         yearId: year.id,
                         name: t.name,
                         orderIndex: t.orderIndex,
-                        startDate: (t as any).startDate ? new Date((t as any).startDate) : null,
-                        endDate: (t as any).endDate ? new Date((t as any).endDate) : null,
+                        startDate: new Date(t.startDate),
+                        endDate: new Date(t.endDate),
                         isCurrent: t.orderIndex === 1,
                     },
                 });
@@ -79,25 +77,26 @@ export class AcademicYearsService {
             return year.id;
         });
 
-        return this.getYearById(yearId);
+        return this.getYearById(schoolId, yearId);
     }
 
-    async getYearById(yearId: number) {
+    async getYearById(schoolId: number, yearId: number) {
         const year = await this.prisma.year.findFirst({
-            where: { id: yearId, isDeleted: false },
+            where: { id: yearId, schoolId, isDeleted: false },
             include: { terms: { where: { isDeleted: false }, orderBy: { orderIndex: 'asc' } } },
         });
         if (!year) throw new NotFoundException('YEAR_NOT_FOUND');
         return year;
     }
 
-    async updateYear(yearId: number, dto: UpdateYearDto) {
+    async updateYear(schoolId: number, yearId: number, dto: UpdateYearDto) {
+        const year = await this.prisma.year.findFirst({ where: { id: yearId, schoolId, isDeleted: false } });
+        if (!year) throw new NotFoundException('YEAR_NOT_FOUND');
+
         const data: Record<string, any> = {};
         if (dto.name !== undefined) data.name = dto.name;
-        if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
-        if (dto.endDate !== undefined) data.endDate = new Date(dto.endDate);
         await this.prisma.year.update({ where: { id: yearId }, data });
-        return this.getYearById(yearId);
+        return this.getYearById(schoolId, yearId);
     }
 
     async getCurrentYear(schoolId: number) {
@@ -107,7 +106,12 @@ export class AcademicYearsService {
         });
     }
 
-    async updateTerm(termId: number, dto: UpdateTermDto) {
+    async updateTerm(schoolId: number, termId: number, dto: UpdateTermDto) {
+        const term = await this.prisma.term.findFirst({
+            where: { id: termId, isDeleted: false, year: { schoolId, isDeleted: false } },
+        });
+        if (!term) throw new NotFoundException('TERM_NOT_FOUND');
+
         const data: Record<string, any> = {};
         if (dto.name !== undefined) data.name = dto.name;
         if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
@@ -119,7 +123,10 @@ export class AcademicYearsService {
     /**
      * 🔒 Transaction: التقدم للفصل التالي
      */
-    async advanceToNextTerm(yearId: number) {
+    async advanceToNextTerm(schoolId: number, yearId: number) {
+        const year = await this.prisma.year.findFirst({ where: { id: yearId, schoolId, isDeleted: false } });
+        if (!year) throw new NotFoundException('YEAR_NOT_FOUND');
+
         await this.prisma.$transaction(async (tx) => {
             const terms = await tx.term.findMany({
                 where: { yearId, isDeleted: false },
@@ -135,6 +142,6 @@ export class AcademicYearsService {
             await tx.term.update({ where: { id: terms[currentIdx + 1].id }, data: { isCurrent: true } });
         });
 
-        return this.getYearById(yearId);
+        return this.getYearById(schoolId, yearId);
     }
 }

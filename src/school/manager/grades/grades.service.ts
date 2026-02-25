@@ -73,7 +73,7 @@ export class GradesService {
                 return grade.id;
             });
 
-            return this.getGradeById(gradeId);
+            return this.getGradeById(schoolId, gradeId);
         } catch (e) {
             if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
                 const target = (e.meta?.target as string[]) ?? [];
@@ -153,9 +153,9 @@ export class GradesService {
         }
     }
 
-    async getGradeById(gradeId: number) {
+    async getGradeById(schoolId: number, gradeId: number) {
         const grade = await this.prisma.schoolGrade.findFirst({
-            where: { id: gradeId, isDeleted: false },
+            where: { id: gradeId, schoolId, isDeleted: false },
             include: {
                 sections: { where: { isDeleted: false }, orderBy: { orderIndex: 'asc' } },
                 _count: { select: { sections: { where: { isDeleted: false } } } },
@@ -165,7 +165,10 @@ export class GradesService {
         return grade;
     }
 
-    async updateGrade(gradeId: number, dto: UpdateGradeDto) {
+    async updateGrade(schoolId: number, gradeId: number, dto: UpdateGradeDto) {
+        const grade = await this.prisma.schoolGrade.findFirst({ where: { id: gradeId, schoolId, isDeleted: false } });
+        if (!grade) throw new NotFoundException('GRADE_NOT_FOUND');
+
         try {
             const data: Record<string, any> = {};
             if (dto.displayName !== undefined) data.displayName = dto.displayName;
@@ -173,7 +176,7 @@ export class GradesService {
             if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
 
             await this.prisma.schoolGrade.update({ where: { id: gradeId }, data });
-            return this.getGradeById(gradeId);
+            return this.getGradeById(schoolId, gradeId);
         } catch (e) {
             if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
                 throw new ConflictException('GRADE_NAME_DUPLICATE');
@@ -182,7 +185,10 @@ export class GradesService {
         }
     }
 
-    async deleteGrade(gradeId: number) {
+    async deleteGrade(schoolId: number, gradeId: number) {
+        const grade = await this.prisma.schoolGrade.findFirst({ where: { id: gradeId, schoolId, isDeleted: false } });
+        if (!grade) throw new NotFoundException('GRADE_NOT_FOUND');
+
         const hasSections = await this.prisma.section.count({
             where: { gradeId, isDeleted: false, enrollments: { some: { isDeleted: false } } },
         });
@@ -195,14 +201,20 @@ export class GradesService {
         return { success: true };
     }
 
-    async toggleGradeActive(gradeId: number, isActive: boolean) {
+    async toggleGradeActive(schoolId: number, gradeId: number, isActive: boolean) {
+        const grade = await this.prisma.schoolGrade.findFirst({ where: { id: gradeId, schoolId, isDeleted: false } });
+        if (!grade) throw new NotFoundException('GRADE_NOT_FOUND');
+
         await this.prisma.schoolGrade.update({ where: { id: gradeId }, data: { isActive } });
-        return this.getGradeById(gradeId);
+        return this.getGradeById(schoolId, gradeId);
     }
 
     // ========== SECTIONS ==========
 
-    async listSections(gradeId: number) {
+    async listSections(schoolId: number, gradeId: number) {
+        const grade = await this.prisma.schoolGrade.findFirst({ where: { id: gradeId, schoolId, isDeleted: false } });
+        if (!grade) throw new NotFoundException('GRADE_NOT_FOUND');
+
         return this.prisma.section.findMany({
             where: { gradeId, isDeleted: false },
             orderBy: { orderIndex: 'asc' },
@@ -212,7 +224,10 @@ export class GradesService {
         });
     }
 
-    async createSection(gradeId: number, dto: CreateSectionDto) {
+    async createSection(schoolId: number, gradeId: number, dto: CreateSectionDto) {
+        const grade = await this.prisma.schoolGrade.findFirst({ where: { id: gradeId, schoolId, isDeleted: false } });
+        if (!grade) throw new NotFoundException('GRADE_NOT_FOUND');
+
         try {
             return await this.prisma.section.create({
                 data: { gradeId, name: dto.name, orderIndex: dto.orderIndex },
@@ -228,7 +243,12 @@ export class GradesService {
         }
     }
 
-    async updateSection(sectionId: number, dto: UpdateSectionDto) {
+    async updateSection(schoolId: number, sectionId: number, dto: UpdateSectionDto) {
+        const section = await this.prisma.section.findFirst({
+            where: { id: sectionId, isDeleted: false, grade: { schoolId, isDeleted: false } },
+        });
+        if (!section) throw new NotFoundException('SECTION_NOT_FOUND');
+
         try {
             const data: Record<string, any> = {};
             if (dto.name !== undefined) data.name = dto.name;
@@ -242,7 +262,12 @@ export class GradesService {
         }
     }
 
-    async deleteSection(sectionId: number) {
+    async deleteSection(schoolId: number, sectionId: number) {
+        const section = await this.prisma.section.findFirst({
+            where: { id: sectionId, isDeleted: false, grade: { schoolId, isDeleted: false } },
+        });
+        if (!section) throw new NotFoundException('SECTION_NOT_FOUND');
+
         const hasStudents = await this.prisma.studentEnrollment.count({
             where: { sectionId, isDeleted: false, isCurrent: true },
         });
@@ -253,5 +278,24 @@ export class GradesService {
             data: { isDeleted: true, deletedAt: new Date() },
         });
         return { success: true };
+    }
+
+    async toggleSectionActive(schoolId: number, sectionId: number, isActive: boolean) {
+        const section = await this.prisma.section.findFirst({
+            where: { id: sectionId, isDeleted: false, grade: { schoolId, isDeleted: false } },
+        });
+        if (!section) throw new NotFoundException('SECTION_NOT_FOUND');
+
+        await this.prisma.section.update({
+            where: { id: sectionId },
+            data: { isActive },
+        });
+
+        return this.prisma.section.findFirst({
+            where: { id: sectionId },
+            include: {
+                _count: { select: { enrollments: { where: { isDeleted: false, isCurrent: true } } } },
+            },
+        });
     }
 }

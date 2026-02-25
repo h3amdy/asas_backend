@@ -49,8 +49,8 @@ export class SetupService {
 
         return {
             hasCurrentYear,
-            currentYearId: currentYear?.id,
-            currentTermId: currentTerm?.id,
+            currentYearUuid: currentYear?.uuid,
+            currentTermUuid: currentTerm?.uuid,
             termsCount,
             hasGrades,
             gradesCount,
@@ -101,9 +101,6 @@ export class SetupService {
             }
         }
 
-        // 3. حساب تواريخ السنة تلقائياً من الفصول
-        const yearStartDate = new Date(sortedTerms[0].startDate);
-        const yearEndDate = new Date(sortedTerms[sortedTerms.length - 1].endDate);
 
         // ───── Transaction ─────
         return this.prisma.$transaction(async (tx) => {
@@ -149,13 +146,11 @@ export class SetupService {
                 });
             }
 
-            // 6. إنشاء السنة (التواريخ من الفصول)
+            // 6. إنشاء السنة (بدون تواريخ)
             const year = await tx.year.create({
                 data: {
                     schoolId,
                     name: dto.year.name,
-                    startDate: yearStartDate,
-                    endDate: yearEndDate,
                     isCurrent: true,
                 },
             });

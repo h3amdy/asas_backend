@@ -24,20 +24,22 @@ export class AcademicYearsController {
     }
 
     @Get(':yearId')
-    getOne(@Param('yearId', ParseIntPipe) id: number) { return this.service.getYearById(id); }
+    getOne(@Req() req: any, @Param('yearId', ParseIntPipe) id: number) {
+        return this.service.getYearById(req.schoolContext.id, id);
+    }
 
     @Patch(':yearId')
-    update(@Param('yearId', ParseIntPipe) id: number, @Body() dto: UpdateYearDto) {
-        return this.service.updateYear(id, dto);
+    update(@Req() req: any, @Param('yearId', ParseIntPipe) id: number, @Body() dto: UpdateYearDto) {
+        return this.service.updateYear(req.schoolContext.id, id, dto);
     }
 
     @Post(':yearId/advance-term')
-    advanceTerm(@Param('yearId', ParseIntPipe) id: number) {
-        return this.service.advanceToNextTerm(id);
+    advanceTerm(@Req() req: any, @Param('yearId', ParseIntPipe) id: number) {
+        return this.service.advanceToNextTerm(req.schoolContext.id, id);
     }
 
     @Patch('terms/:termId')
-    updateTerm(@Param('termId', ParseIntPipe) id: number, @Body() dto: UpdateTermDto) {
-        return this.service.updateTerm(id, dto);
+    updateTerm(@Req() req: any, @Param('termId', ParseIntPipe) id: number, @Body() dto: UpdateTermDto) {
+        return this.service.updateTerm(req.schoolContext.id, id, dto);
     }
 }

@@ -24,8 +24,6 @@ export class AcademicContextService {
             academicYear: {
                 uuid: year.uuid,
                 name: year.name,
-                startDate: year.startDate,
-                endDate: year.endDate,
             },
             term: currentTerm
                 ? {

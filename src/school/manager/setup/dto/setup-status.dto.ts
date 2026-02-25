@@ -2,8 +2,8 @@
 
 export class SetupStatusDto {
     hasCurrentYear!: boolean;
-    currentYearId?: number;
-    currentTermId?: number;
+    currentYearUuid?: string;
+    currentTermUuid?: string;
     termsCount!: number;
 
     hasGrades!: boolean;

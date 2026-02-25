@@ -139,9 +139,7 @@
 {
   "academicYear": {
     "uuid": "year-uuid",
-    "name": "2025/2026",
-    "startDate": "2025-09-01T00:00:00.000Z",
-    "endDate": "2026-06-30T00:00:00.000Z"
+    "name": "2025/2026"
   },
   "term": {
     "uuid": "term-uuid",
@@ -180,6 +178,7 @@
 | | `POST` | `/school/manager/grades/:id/sections` | إنشاء شعبة |
 | | `PATCH` | `/school/manager/grades/sections/:id` | تعديل شعبة |
 | | `DELETE` | `/school/manager/grades/sections/:id` | حذف شعبة |
+| | `PATCH` | `/school/manager/grades/sections/:id/toggle-active` | تفعيل/إيقاف شعبة |
 | **السنوات** | `GET` | `/school/manager/academic-years` | قائمة السنوات |
 | | `POST` | `/school/manager/academic-years` | إنشاء سنة (+ فصول) |
 | | `GET` | `/school/manager/academic-years/current` | السنة الحالية |

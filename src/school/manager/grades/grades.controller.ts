@@ -34,44 +34,53 @@ export class GradesController {
     }
 
     @Get(':id')
-    getGrade(@Param('id', ParseIntPipe) id: number) {
-        return this.service.getGradeById(id);
+    getGrade(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+        return this.service.getGradeById(req.schoolContext.id, id);
     }
 
     @Patch(':id')
-    updateGrade(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateGradeDto) {
-        return this.service.updateGrade(id, dto);
+    updateGrade(@Req() req: any, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateGradeDto) {
+        return this.service.updateGrade(req.schoolContext.id, id, dto);
     }
 
     @Delete(':id')
-    deleteGrade(@Param('id', ParseIntPipe) id: number) {
-        return this.service.deleteGrade(id);
+    deleteGrade(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+        return this.service.deleteGrade(req.schoolContext.id, id);
     }
 
     @Patch(':id/toggle-active')
-    toggleGradeActive(@Param('id', ParseIntPipe) id: number, @Body('isActive') isActive: boolean) {
-        return this.service.toggleGradeActive(id, isActive);
+    toggleGradeActive(@Req() req: any, @Param('id', ParseIntPipe) id: number, @Body('isActive') isActive: boolean) {
+        return this.service.toggleGradeActive(req.schoolContext.id, id, isActive);
     }
 
     // ========== SECTIONS ==========
 
     @Get(':id/sections')
-    listSections(@Param('id', ParseIntPipe) id: number) {
-        return this.service.listSections(id);
+    listSections(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+        return this.service.listSections(req.schoolContext.id, id);
     }
 
     @Post(':id/sections')
-    createSection(@Param('id', ParseIntPipe) id: number, @Body() dto: CreateSectionDto) {
-        return this.service.createSection(id, dto);
+    createSection(@Req() req: any, @Param('id', ParseIntPipe) id: number, @Body() dto: CreateSectionDto) {
+        return this.service.createSection(req.schoolContext.id, id, dto);
     }
 
     @Patch('sections/:sectionId')
-    updateSection(@Param('sectionId', ParseIntPipe) sectionId: number, @Body() dto: UpdateSectionDto) {
-        return this.service.updateSection(sectionId, dto);
+    updateSection(@Req() req: any, @Param('sectionId', ParseIntPipe) sectionId: number, @Body() dto: UpdateSectionDto) {
+        return this.service.updateSection(req.schoolContext.id, sectionId, dto);
     }
 
     @Delete('sections/:sectionId')
-    deleteSection(@Param('sectionId', ParseIntPipe) sectionId: number) {
-        return this.service.deleteSection(sectionId);
+    deleteSection(@Req() req: any, @Param('sectionId', ParseIntPipe) sectionId: number) {
+        return this.service.deleteSection(req.schoolContext.id, sectionId);
+    }
+
+    @Patch('sections/:sectionId/toggle-active')
+    toggleSectionActive(
+        @Req() req: any,
+        @Param('sectionId', ParseIntPipe) sectionId: number,
+        @Body('isActive') isActive: boolean,
+    ) {
+        return this.service.toggleSectionActive(req.schoolContext.id, sectionId, isActive);
     }
 }

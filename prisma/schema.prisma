@@ -182,7 +182,7 @@ model GradeDictionary {
 // ACADEMIC STRUCTURE
 // =========================
 
-// السنوات الدراسية
+// السنوات الدراسية (التواريخ تُشتق من الفصول)
 model Year {
   id        Int    @id @default(autoincrement())
   uuid      String @unique @default(uuid())
@@ -191,8 +191,6 @@ model Year {
   school    School @relation(fields: [schoolId], references: [id])
 
   name      String
-  startDate DateTime? @map("start_date") @db.Date
-  endDate   DateTime? @map("end_date") @db.Date
   isCurrent Boolean   @default(false) @map("is_current")
 
   createdAt DateTime @default(now()) @map("created_at")
