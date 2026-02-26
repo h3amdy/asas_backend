@@ -1,6 +1,6 @@
 Project AsassSchoolAdmin {
   database_type: 'PostgreSQL'
-  Note: 'Version V9.3 '
+  Note: 'Version V9.4 '
 }
 
 //////////////////////////////////////////////////////
@@ -51,34 +51,33 @@ Table schools {
 }
 
 
-// جدول السنوات الدراسية
+// جدول السنوات الدراسية (التواريخ تُشتق من الفصول — لا يوجد start_date/end_date)
 Table years {
   id          int [pk, increment]
   uuid        varchar [unique]
   school_id   int
   name        varchar         // e.g. "2025/2026"
-  start_date  date
-  end_date    date
   is_current  boolean
 
-created_at datetime
+  created_at datetime
   updated_at datetime
   is_deleted boolean [default: false]
   deleted_at datetime [null]
 }
 
 
-// جدول الفصول الدراسية
+// جدول الفصول الدراسية (التواريخ إجبارية دائماً)
 Table terms {
   id          int [pk, increment]
   uuid        varchar [unique]
   year_id     int
   name        varchar         // "الفصل الأول"
   order_index int             // 1..3
-  start_date  date    [null]
-  end_date    date    [null]
+  start_date  date            // إجباري
+  end_date    date            // إجباري
   is_current  boolean
-created_at datetime
+
+  created_at datetime
   updated_at datetime
   is_deleted boolean [default: false]
   deleted_at datetime [null]
@@ -256,10 +255,11 @@ Table grade_dictionary {
   code         varchar        // e.g. "G01"
   short_name   varchar [null]  // مثل "أ.أ" أو "أ.ث"
   default_name varchar
-  stage        varchar    // تمهيدي/أساسي/إعدادي/ثانوي
+  stage        varchar [null]  // GradeStage enum: KG / BASIC / SECONDARY / OTHER
   sort_order   int
   is_active    boolean
-created_at datetime
+
+  created_at datetime
   updated_at datetime
   is_deleted boolean [default: false]
   deleted_at datetime [null]
@@ -271,12 +271,15 @@ Table school_grades {
   id             int [pk, increment]
   uuid           varchar [unique]
   school_id      int
-  dictionary_id  int          // null = صف محلي
+  dictionary_id  int [null]   // null = صف محلي
   display_name   varchar
+  short_name     varchar [null]
   sort_order     int
+  stage          varchar [null]  // GradeStage enum: KG / BASIC / SECONDARY / OTHER
   is_local       boolean      // true = صف مخصص
   is_active      boolean
-created_at datetime
+
+  created_at datetime
   updated_at datetime
   is_deleted boolean [default: false]
   deleted_at datetime [null]
@@ -1011,8 +1014,9 @@ Table user_devices {
 
   indexes {
     (user_id)
-    (device_fingerprint) [unique]
-    (push_token) [unique]
+    (user_id, device_fingerprint) [unique]
+    (device_fingerprint)
+    (push_token)
   }
 }
 

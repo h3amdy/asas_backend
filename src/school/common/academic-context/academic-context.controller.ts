@@ -15,7 +15,7 @@ export class AcademicContextController {
 
     @Get()
     async getContext(@Req() req: any) {
-        const schoolId: number = req.schoolContext.schoolId;
+        const schoolId: number = req.schoolContext.id;
         return this.service.getContext(schoolId);
     }
 }
