@@ -48,6 +48,7 @@ export class GradesService {
                     }
                     dto.displayName = dto.displayName ?? dictionary.defaultName;
                     dto.shortName = dto.shortName ?? (dictionary.shortName ?? undefined);
+                    dto.stage = dto.stage ?? (dictionary.stage as any) ?? undefined;
                 }
 
                 if (!dto.dictionaryId && !dto.displayName) {
@@ -105,6 +106,7 @@ export class GradesService {
                         }
                         dto.displayName = dto.displayName ?? dictionary.defaultName;
                         dto.shortName = dto.shortName ?? (dictionary.shortName ?? undefined);
+                        dto.stage = dto.stage ?? (dictionary.stage as any) ?? undefined;
                     }
 
                     if (!dto.dictionaryId && !dto.displayName) {
