@@ -1,284 +1,85 @@
-ممتاز 👌 الآن هذا تفكير نظام تعليمي حقيقي.
-
-قرارك أقوى معماريًا من التصميم السابق:
-
-* ✅ الفصول هي المصدر الزمني الحقيقي
-* ✅ السنة تُشتق من الفصول
-* ✅ الصف المحلي يجب أن يحدد المرحلة
-* ✅ الترتيب إلزامي ومنضبط
-
-هذا صحيح 100%.
-
-سأعطيك **التعديلات الدقيقة التي يجب تنفيذها في السيرفر**.
-
----
-
-# 🎯 أولاً: تعديل فلسفة السنة والفصول
-
-## القرار الجديد
-
-* لا يوجد `termsCount`
-* لا يوجد auto-generated terms
-* يجب إرسال:
-
-  * startDate + endDate لكل فصل
-* startDate للسنة = أصغر startDate للفصول
-* endDate للسنة = أكبر endDate للفصول
-
-هذا تصميم صحيح تربويًا.
-
----
-
-# 🧠 التعديل المطلوب في DTO
-
-## AcademicInitializationDto يجب أن يصبح:
-
-```ts
-year: {
-  name: string;
-  terms: {
-    name: string;
-    orderIndex: number;
-    startDate: string;
-    endDate: string;
-  }[];
-}
-```
-
-❌ احذف:
-
-```ts
-termsCount
+ممتاز 👍 الآن فهمت قصدك بد
+prisma/seed-grade-dictionary.ts
 ```
 
 ---
 
-# 🧠 تحقق إلزامي جديد
-
-داخل initializeAcademic أضف:
+# 🧩 المحتوى المناسب لسكيمتك الحالية (بدون أي تغيير)
 
 ```ts
-if (!dto.year?.terms?.length) {
-  throw new BadRequestException('TERMS_REQUIRED');
-}
-```
+import { PrismaClient } from '@prisma/client';
 
-ثم تحقق:
+const prisma = new PrismaClient();
 
-```ts
-for (const term of dto.year.terms) {
-  if (!term.startDate || !term.endDate) {
-    throw new BadRequestException('TERM_DATES_REQUIRED');
+async function main() {
+  const grades = [
+    { code: 'KG1', name: 'التمهيدي', short: 'تمهيدي', stage: 'KG', order: 1 },
+    { code: 'KG2', name: 'الروضة', short: 'روضة', stage: 'KG', order: 2 },
+
+    { code: 'B01', name: 'الأول الأساسي', short: '1 أساسي', stage: 'أساسي', order: 3 },
+    { code: 'B02', name: 'الثاني الأساسي', short: '2 أساسي', stage: 'أساسي', order: 4 },
+    { code: 'B03', name: 'الثالث الأساسي', short: '3 أساسي', stage: 'أساسي', order: 5 },
+    { code: 'B04', name: 'الرابع الأساسي', short: '4 أساسي', stage: 'أساسي', order: 6 },
+    { code: 'B05', name: 'الخامس الأساسي', short: '5 أساسي', stage: 'أساسي', order: 7 },
+    { code: 'B06', name: 'السادس الأساسي', short: '6 أساسي', stage: 'أساسي', order: 8 },
+    { code: 'B07', name: 'السابع الأساسي', short: '7 أساسي', stage: 'أساسي', order: 9 },
+    { code: 'B08', name: 'الثامن الأساسي', short: '8 أساسي', stage: 'أساسي', order: 10 },
+    { code: 'B09', name: 'التاسع الأساسي', short: '9 أساسي', stage: 'أساسي', order: 11 },
+
+    { code: 'S01', name: 'الأول الثانوي', short: '1 ثانوي', stage: 'ثانوي', order: 12 },
+    { code: 'S02', name: 'الثاني الثانوي', short: '2 ثانوي', stage: 'ثانوي', order: 13 },
+    { code: 'S03', name: 'الثالث الثانوي', short: '3 ثانوي', stage: 'ثانوي', order: 14 },
+  ];
+
+  for (const g of grades) {
+    await prisma.gradeDictionary.upsert({
+      where: { code: g.code },
+      update: {
+        defaultName: g.name,
+        shortName: g.short,
+        stage: g.stage,
+        sortOrder: g.order,
+        isActive: true,
+      },
+      create: {
+        code: g.code,
+        defaultName: g.name,
+        shortName: g.short,
+        stage: g.stage,
+        sortOrder: g.order,
+        isActive: true,
+      },
+    });
   }
 
-  if (new Date(term.startDate) >= new Date(term.endDate)) {
-    throw new BadRequestException('INVALID_TERM_DATE_RANGE');
-  }
+  console.log('✅ GradeDictionary seeded successfully');
 }
+
+main()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());
 ```
 
 ---
 
-# 🧠 تحقق من تداخل الفصول
-
-يجب منع overlap:
-
-```ts
-const sorted = [...dto.year.terms].sort((a,b)=>a.orderIndex-b.orderIndex);
-
-for (let i=0;i<sorted.length-1;i++){
-  const currentEnd = new Date(sorted[i].endDate);
-  const nextStart = new Date(sorted[i+1].startDate);
-
-  if (currentEnd > nextStart) {
-    throw new BadRequestException('TERM_DATE_OVERLAP');
-  }
-}
-```
-
-هذا مهم جداً.
-
----
-
-# 🎯 اشتقاق السنة من الفصول
-
-بدلاً من:
-
-```ts
-startDate: dto.year.startDate
-endDate: dto.year.endDate
-```
-
-يصبح:
-
-```ts
-const startDate = new Date(
-  Math.min(...dto.year.terms.map(t => new Date(t.startDate).getTime()))
-);
-
-const endDate = new Date(
-  Math.max(...dto.year.terms.map(t => new Date(t.endDate).getTime()))
-);
-```
-
-ثم:
-
-```ts
-const year = await tx.year.create({
-  data: {
-    schoolId,
-    name: dto.year.name,
-    startDate,
-    endDate,
-    isCurrent: true,
-  },
-});
-```
-
----
-
-# 🎯 الآن بخصوص الصفوف المخصصة
-
-قرارك صحيح:
-
-> الصف المحلي يجب أن يحتوي stage إلزاميًا
-
----
-
-# 🧠 تعديل SchoolGrade
+# 🏗 الخطوة 2: ربط seed في package.json
 
 أضف:
 
-```ts
-stage: string
-```
-
-في Prisma model.
-
----
-
-# 🧠 في initializeAcademic
-
-بدلاً من:
-
-```ts
-if (!gradeDto.dictionaryId && !gradeDto.displayName) {
-  throw new BadRequestException('DISPLAY_NAME_REQUIRED');
-}
-```
-
-يصبح:
-
-```ts
-if (!gradeDto.dictionaryId) {
-  if (!gradeDto.displayName) {
-    throw new BadRequestException('DISPLAY_NAME_REQUIRED');
-  }
-
-  if (!gradeDto.stage) {
-    throw new BadRequestException('STAGE_REQUIRED');
-  }
+```json
+"prisma": {
+  "seed": "ts-node prisma/seed-grade-dictionary.ts"
 }
 ```
 
 ---
 
-# 🎯 عند الإنشاء من القاموس
+# 🏗 الخطوة 3: التنفيذ
 
-انسخ stage:
-
-```ts
-stage: dictionary.stage,
-```
-
-وعند الصف المحلي:
-
-```ts
-stage: gradeDto.stage,
+```bash
+npx prisma db seed
 ```
 
 ---
 
-# 🎯 الترتيب (sortOrder)
-
-يجب:
-
-1️⃣ التأكد من أنه موجود
-2️⃣ التأكد أنه رقم موجب
-3️⃣ التأكد من عدم تكراره داخل نفس الطلب
-
-أضف:
-
-```ts
-const orders = dto.grades.map(g => g.sortOrder);
-
-if (new Set(orders).size !== orders.length) {
-  throw new BadRequestException('DUPLICATE_SORT_ORDER');
-}
-```
-
----
-
-# 🎯 تحقق من تكرار dictionaryId داخل نفس الطلب
-
-```ts
-const dictionaryIds = dto.grades
-  .filter(g => g.dictionaryId)
-  .map(g => g.dictionaryId);
-
-if (new Set(dictionaryIds).size !== dictionaryIds.length) {
-  throw new BadRequestException('DUPLICATE_DICTIONARY_GRADE');
-}
-```
-
----
-
-# 🔥 تحقق إلزامي آخر
-
-منع مصفوفة فارغة:
-
-```ts
-if (!dto.grades?.length) {
-  throw new BadRequestException('EMPTY_GRADES_LIST');
-}
-```
-
----
-
-# 🧠 الشكل النهائي الصحيح للتهيئة
-
-## الصفوف
-
-* dictionaryId أو displayName + stage
-* sortOrder إلزامي
-* no duplicates
-
-## السنة
-
-* name إلزامي
-
-## الفصول
-
-* startDate إلزامي
-* endDate إلزامي
-* لا تداخل
-* اشتقاق السنة من الفصول
-
----
-
-# 🎯 النتيجة
-
-بعد هذه التعديلات:
-
-* لا توجد سنة بدون تواريخ حقيقية
-* لا يوجد فصل بدون زمن
-* لا يوجد صف بلا مرحلة
-* لا يوجد ترتيب مكرر
-* لا يوجد overlap زمني
-
-النظام يصبح أكاديمي فعلاً وليس شكلي.
-
----
-
-إذا أردت الآن
-أعيد كتابة initializeAcademic بالكامل وفق التصميم الصحيح النهائي 👌
+# 🔒 لماذا هذه الطريقة هي المثالية في مشروعك؟
