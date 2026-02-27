@@ -53,3 +53,15 @@ export class UpdateTermDto {
     @IsDateString()
     endDate?: string;
 }
+
+export class AddTermDto {
+    @IsString()
+    @MinLength(2)
+    name!: string;
+
+    @IsDateString()
+    startDate!: string;
+
+    @IsDateString()
+    endDate!: string;
+}

@@ -1,7 +1,7 @@
 // src/school/manager/academic-years/academic-years.service.ts
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { CreateYearDto, UpdateYearDto, UpdateTermDto } from './dto/academic-years.dto';
+import { CreateYearDto, UpdateYearDto, UpdateTermDto, AddTermDto } from './dto/academic-years.dto';
 
 @Injectable()
 export class AcademicYearsService {
@@ -112,12 +112,119 @@ export class AcademicYearsService {
         });
         if (!term) throw new NotFoundException('TERM_NOT_FOUND');
 
+        // 🛡️ SRS §7.1-3: لا يُعدّل فصل منتهٍ
+        if (term.endDate && term.endDate < new Date() && !term.isCurrent) {
+            throw new BadRequestException('TERM_ALREADY_FINISHED');
+        }
+
+        // 🛡️ SRS §7.1-4: لا يُعدّل startDate لفصل حالي
+        if (term.isCurrent && dto.startDate !== undefined) {
+            throw new BadRequestException('CANNOT_CHANGE_START_DATE_OF_CURRENT_TERM');
+        }
+
         const data: Record<string, any> = {};
         if (dto.name !== undefined) data.name = dto.name;
         if (dto.startDate !== undefined) data.startDate = new Date(dto.startDate);
         if (dto.endDate !== undefined) data.endDate = new Date(dto.endDate);
+
+        // 🛡️ SRS §7.1-5: endDate > startDate
+        const finalStart = data.startDate ?? term.startDate;
+        const finalEnd = data.endDate ?? term.endDate;
+        if (finalStart && finalEnd && finalEnd <= finalStart) {
+            throw new BadRequestException('END_DATE_BEFORE_START_DATE');
+        }
+
+        // 🛡️ SRS §5.2: كشف تداخل التواريخ مع فصول أخرى
+        if (finalStart && finalEnd) {
+            const overlapping = await this.prisma.term.findFirst({
+                where: {
+                    yearId: term.yearId,
+                    id: { not: termId },
+                    isDeleted: false,
+                    startDate: { lt: finalEnd },
+                    endDate: { gt: finalStart },
+                },
+            });
+            if (overlapping) {
+                throw new ConflictException('TERM_OVERLAP');
+            }
+        }
+
         await this.prisma.term.update({ where: { id: termId }, data });
         return this.prisma.term.findUnique({ where: { id: termId } });
+    }
+
+    /**
+     * UC-T06: إضافة فصل دراسي إلى سنة قائمة
+     */
+    async addTerm(schoolId: number, yearId: number, dto: AddTermDto) {
+        const year = await this.prisma.year.findFirst({
+            where: { id: yearId, schoolId, isDeleted: false },
+        });
+        if (!year) throw new NotFoundException('YEAR_NOT_FOUND');
+
+        // 🛡️ السنة يجب أن تكون حالية
+        if (!year.isCurrent) {
+            throw new BadRequestException('YEAR_NOT_CURRENT');
+        }
+
+        const start = new Date(dto.startDate);
+        const end = new Date(dto.endDate);
+
+        // 🛡️ endDate > startDate
+        if (end <= start) {
+            throw new BadRequestException('END_DATE_BEFORE_START_DATE');
+        }
+
+        // جلب الفصول الحالية
+        const existingTerms = await this.prisma.term.findMany({
+            where: { yearId, isDeleted: false },
+            orderBy: { orderIndex: 'asc' },
+        });
+
+        // 🛡️ حد أقصى 3 فصول
+        if (existingTerms.length >= 3) {
+            throw new ConflictException('MAX_TERMS_LIMIT');
+        }
+
+        // 🛡️ الفصل الجديد يجب أن يكون بعد آخر فصل
+        if (existingTerms.length > 0) {
+            const lastTerm = existingTerms[existingTerms.length - 1];
+            if (lastTerm.endDate && start <= lastTerm.endDate) {
+                throw new ConflictException('TERM_DATE_OVERLAP');
+            }
+        }
+
+        // 🛡️ كشف تداخل عام
+        const overlapping = await this.prisma.term.findFirst({
+            where: {
+                yearId,
+                isDeleted: false,
+                startDate: { lt: end },
+                endDate: { gt: start },
+            },
+        });
+        if (overlapping) {
+            throw new ConflictException('TERM_DATE_OVERLAP');
+        }
+
+        // حساب orderIndex تلقائياً
+        const maxOrder = existingTerms.length > 0
+            ? Math.max(...existingTerms.map(t => t.orderIndex))
+            : 0;
+
+        await this.prisma.term.create({
+            data: {
+                yearId,
+                name: dto.name,
+                orderIndex: maxOrder + 1,
+                startDate: start,
+                endDate: end,
+                isCurrent: false,
+            },
+        });
+
+        return this.getYearById(schoolId, yearId);
     }
 
     /**
@@ -126,6 +233,11 @@ export class AcademicYearsService {
     async advanceToNextTerm(schoolId: number, yearId: number) {
         const year = await this.prisma.year.findFirst({ where: { id: yearId, schoolId, isDeleted: false } });
         if (!year) throw new NotFoundException('YEAR_NOT_FOUND');
+
+        // 🛡️ SRS §7.2-1: التقدم فقط في السنة الحالية
+        if (!year.isCurrent) {
+            throw new BadRequestException('YEAR_NOT_CURRENT');
+        }
 
         await this.prisma.$transaction(async (tx) => {
             const terms = await tx.term.findMany({

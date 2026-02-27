@@ -1,7 +1,7 @@
 // src/school/manager/academic-years/academic-years.controller.ts
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { AcademicYearsService } from './academic-years.service';
-import { CreateYearDto, UpdateYearDto, UpdateTermDto } from './dto/academic-years.dto';
+import { CreateYearDto, UpdateYearDto, UpdateTermDto, AddTermDto } from './dto/academic-years.dto';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
@@ -41,5 +41,10 @@ export class AcademicYearsController {
     @Patch('terms/:termId')
     updateTerm(@Req() req: any, @Param('termId', ParseIntPipe) id: number, @Body() dto: UpdateTermDto) {
         return this.service.updateTerm(req.schoolContext.id, id, dto);
+    }
+
+    @Post(':yearId/terms')
+    addTerm(@Req() req: any, @Param('yearId', ParseIntPipe) yearId: number, @Body() dto: AddTermDto) {
+        return this.service.addTerm(req.schoolContext.id, yearId, dto);
     }
 }

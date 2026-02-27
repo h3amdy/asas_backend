@@ -355,6 +355,8 @@ Transaction واحدة. فشل أي صف → Rollback الكل.
 
 ## 7. الفصول الدراسية
 
+> ⚠️ **حد أقصى 3 فصول** لكل سنة دراسية.
+
 ### `PATCH /academic-years/terms/:termId` — تعديل فصل
 
 ```json
@@ -365,17 +367,66 @@ Transaction واحدة. فشل أي صف → Rollback الكل.
 }
 ```
 
+> 🛡️ **قواعد التعديل:**
+> - **لا يُعدّل فصل منتهٍ** (`endDate` في الماضي وليس الحالي)
+> - **لا يُغيّر `startDate`** للفصل الحالي (`isCurrent: true`)
+> - **`endDate` يجب أن يكون بعد `startDate`**
+> - **يتحقق من عدم التداخل** مع فصول أخرى في نفس السنة
+
+| الكود | HTTP | السبب |
+|-------|------|-------|
+| `TERM_NOT_FOUND` | `404` | فصل غير موجود |
+| `TERM_ALREADY_FINISHED` | `400` | الفصل منتهٍ |
+| `CANNOT_CHANGE_START_DATE_OF_CURRENT_TERM` | `400` | محاولة تغيير بداية الفصل الحالي |
+| `END_DATE_BEFORE_START_DATE` | `400` | النهاية قبل البداية |
+| `TERM_OVERLAP` | `409` | تداخل مع فصل آخر |
+
+---
+
+### `POST /academic-years/:yearId/terms` — إضافة فصل لسنة قائمة
+
+```json
+{
+  "name": "الفصل الثالث",
+  "startDate": "2026-04-01",
+  "endDate": "2026-06-30"
+}
+```
+
+> `orderIndex` يُحسب تلقائياً (آخر ترتيب + 1). الفصل الجديد **لا يكون حالياً**.
+
+> 🛡️ **الشروط:**
+> - السنة يجب أن تكون **حالية** (`isCurrent: true`)
+> - **حد أقصى 3 فصول** لكل سنة
+> - الفصل الجديد يجب أن يكون **بعد آخر فصل زمنياً**
+> - لا يوجد **تداخل زمني** مع الفصول القائمة
+
+| الكود | HTTP | السبب |
+|-------|------|-------|
+| `YEAR_NOT_FOUND` | `404` | سنة غير موجودة |
+| `YEAR_NOT_CURRENT` | `400` | السنة ليست الحالية |
+| `MAX_TERMS_LIMIT` | `409` | تجاوز الحد الأقصى (3 فصول) |
+| `END_DATE_BEFORE_START_DATE` | `400` | النهاية قبل البداية |
+| `TERM_DATE_OVERLAP` | `409` | تداخل زمني مع فصل قائم |
+
+---
+
 ### `POST /academic-years/:yearId/advance-term` — التقدم للفصل التالي
 
 **🔒 Transaction:** يُلغي الفصل الحالي ويُفعّل التالي.
 
+> 🛡️ يعمل فقط على **السنة الحالية**.
+
 | خطأ | HTTP | السبب |
 |-----|------|-------|
+| `YEAR_NOT_CURRENT` | `400` | السنة ليست الحالية |
 | `NO_NEXT_TERM` | `400` | الفصل الحالي هو الأخير |
 
 ---
 
 ## 8. أكواد الأخطاء
+
+### التهيئة والصفوف
 
 | الكود | HTTP | الـ Endpoint | الوصف |
 |-------|------|-------------|-------|
@@ -386,18 +437,30 @@ Transaction واحدة. فشل أي صف → Rollback الكل.
 | `STAGE_REQUIRED_FOR_CUSTOM_GRADE` | `400` | initialization | صف مخصص بدون `stage` |
 | `EMPTY_GRADES_LIST` | `400` | grades/bulk | قائمة فارغة |
 | `GRADE_HAS_STUDENTS` | `400` | DELETE grades | صف فيه طلاب |
-| `GRADE_NOT_FOUND` | `404` | grades | صف غير موجود أو ليس تابعاً لمدرستك |
-| `SECTION_HAS_STUDENTS` | `400` | DELETE sections | شعبة فيها طلاب |
-| `SECTION_NOT_FOUND` | `404` | sections | شعبة غير موجودة |
-| `NO_NEXT_TERM` | `400` | advance-term | لا يوجد فصل تالي |
-| `YEAR_NOT_FOUND` | `404` | academic-years | سنة غير موجودة |
-| `TERM_NOT_FOUND` | `404` | terms | فصل غير موجود |
-| `TERM_n_END_BEFORE_START` | `400` | initialization / createYear | نهاية فصل قبل بدايته |
-| `TERM_n_OVERLAPS_WITH_TERM_m` | `400` | initialization / createYear | تداخل زمني |
+| `GRADE_NOT_FOUND` | `404` | grades | صف غير موجود |
 | `GRADE_DICTIONARY_ALREADY_ADDED` | `409` | grades | صف رسمي مكرر |
 | `GRADE_NAME_DUPLICATE` | `409` | grades | اسم صف مكرر |
+| `SECTION_HAS_STUDENTS` | `400` | DELETE sections | شعبة فيها طلاب |
+| `SECTION_NOT_FOUND` | `404` | sections | شعبة غير موجودة |
 | `SECTION_NAME_DUPLICATE` | `409` | sections | اسم شعبة مكرر |
 | `SECTION_ORDER_DUPLICATE` | `409` | sections | ترتيب شعبة مكرر |
+
+### السنوات والفصول
+
+| الكود | HTTP | الـ Endpoint | الوصف |
+|-------|------|-------------|-------|
+| `YEAR_NOT_FOUND` | `404` | academic-years | سنة غير موجودة |
+| `YEAR_NOT_CURRENT` | `400` | addTerm / advance-term | السنة ليست الحالية |
+| `TERM_NOT_FOUND` | `404` | updateTerm | فصل غير موجود |
+| `TERM_ALREADY_FINISHED` | `400` | updateTerm | الفصل منتهٍ لا يقبل التعديل |
+| `CANNOT_CHANGE_START_DATE_OF_CURRENT_TERM` | `400` | updateTerm | لا يمكن تغيير بداية الفصل الحالي |
+| `END_DATE_BEFORE_START_DATE` | `400` | updateTerm / addTerm | النهاية قبل البداية |
+| `TERM_OVERLAP` | `409` | updateTerm | تداخل مع فصل آخر |
+| `MAX_TERMS_LIMIT` | `409` | addTerm | تجاوز الحد الأقصى (3 فصول) |
+| `TERM_DATE_OVERLAP` | `409` | addTerm | تداخل زمني مع فصل قائم |
+| `NO_NEXT_TERM` | `400` | advance-term | لا يوجد فصل تالي |
+| `TERM_n_END_BEFORE_START` | `400` | createYear / initialization | نهاية فصل قبل بدايته |
+| `TERM_n_OVERLAPS_WITH_TERM_m` | `400` | createYear / initialization | تداخل زمني بين فصلين |
 
 ---
 
@@ -430,8 +493,9 @@ flowchart TD
 | تعديل صف/شعبة | `PATCH /grades/:id` | |
 | حذف صف/شعبة | `DELETE /grades/:id` | فقط إذا فارغ |
 | إنشاء سنة جديدة | `POST /academic-years` | مع فصولها |
-| تعديل فصل | `PATCH /academic-years/terms/:id` | |
-| التقدم للفصل التالي | `POST /academic-years/:id/advance-term` | |
+| إضافة فصل لسنة قائمة | `POST /academic-years/:id/terms` | حد أقصى 3 فصول |
+| تعديل فصل | `PATCH /academic-years/terms/:id` | لا يُعدّل المنتهي |
+| التقدم للفصل التالي | `POST /academic-years/:id/advance-term` | السنة الحالية فقط |
 
 ---
 
