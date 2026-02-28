@@ -1,3 +1,5 @@
+//docs/
+
 # ⚙️ الإعدادات الأكاديمية — Academic Setup Guide
 
 > التهيئة الأولية، الصفوف والشُعب، السنوات والفصول الدراسية.
@@ -424,6 +426,20 @@ Transaction واحدة. فشل أي صف → Rollback الكل.
 
 ---
 
+### `DELETE /academic-years/terms/:termId` — حذف فصل (Soft Delete)
+
+> 🛡️ **الشروط:**
+> - الفصل **لا يكون الحالي** (`isCurrent: false`)
+> - السنة يجب أن تبقى **بفصل واحد على الأقل**
+
+**Response:** `200 OK` — `{ "success": true }`
+
+| الكود | HTTP | السبب |
+|-------|------|-------|
+| `TERM_NOT_FOUND` | `404` | فصل غير موجود |
+| `CANNOT_DELETE_CURRENT_TERM` | `400` | لا يمكن حذف الفصل الحالي |
+| `LAST_TERM_CANNOT_BE_DELETED` | `400` | آخر فصل لا يُحذف |
+
 ## 8. أكواد الأخطاء
 
 ### التهيئة والصفوف
@@ -459,6 +475,8 @@ Transaction واحدة. فشل أي صف → Rollback الكل.
 | `MAX_TERMS_LIMIT` | `409` | addTerm | تجاوز الحد الأقصى (3 فصول) |
 | `TERM_DATE_OVERLAP` | `409` | addTerm | تداخل زمني مع فصل قائم |
 | `NO_NEXT_TERM` | `400` | advance-term | لا يوجد فصل تالي |
+| `CANNOT_DELETE_CURRENT_TERM` | `400` | deleteTerm | لا يمكن حذف الفصل الحالي |
+| `LAST_TERM_CANNOT_BE_DELETED` | `400` | deleteTerm | آخر فصل لا يُحذف |
 | `TERM_n_END_BEFORE_START` | `400` | createYear / initialization | نهاية فصل قبل بدايته |
 | `TERM_n_OVERLAPS_WITH_TERM_m` | `400` | createYear / initialization | تداخل زمني بين فصلين |
 
@@ -495,6 +513,7 @@ flowchart TD
 | إنشاء سنة جديدة | `POST /academic-years` | مع فصولها |
 | إضافة فصل لسنة قائمة | `POST /academic-years/:id/terms` | حد أقصى 3 فصول |
 | تعديل فصل | `PATCH /academic-years/terms/:id` | لا يُعدّل المنتهي |
+| حذف فصل | `DELETE /academic-years/terms/:id` | ليس الحالي وليس الأخير |
 | التقدم للفصل التالي | `POST /academic-years/:id/advance-term` | السنة الحالية فقط |
 
 ---

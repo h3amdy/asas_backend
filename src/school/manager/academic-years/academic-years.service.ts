@@ -256,4 +256,42 @@ export class AcademicYearsService {
 
         return this.getYearById(schoolId, yearId);
     }
+
+    /**
+     * 🗑️ حذف فصل (Soft Delete)
+     */
+    async deleteTerm(schoolId: number, termId: number) {
+        const term = await this.prisma.term.findFirst({
+            where: { id: termId, isDeleted: false, year: { schoolId, isDeleted: false } },
+        });
+        if (!term) throw new NotFoundException('TERM_NOT_FOUND');
+
+        // 🛡️ لا يُحذف الفصل الحالي
+        if (term.isCurrent) {
+            throw new BadRequestException('CANNOT_DELETE_CURRENT_TERM');
+        }
+
+        // 🛡️ INV-05: لا يُحذف فصل منتهٍ أو بدأ
+        if (term.endDate && term.endDate < new Date()) {
+            throw new BadRequestException('CANNOT_DELETE_FINISHED_TERM');
+        }
+        if (term.startDate && term.startDate < new Date()) {
+            throw new BadRequestException('CANNOT_DELETE_STARTED_TERM');
+        }
+
+        // 🛡️ السنة يجب أن تبقى بفصل واحد على الأقل
+        const termsCount = await this.prisma.term.count({
+            where: { yearId: term.yearId, isDeleted: false },
+        });
+        if (termsCount <= 1) {
+            throw new BadRequestException('LAST_TERM_CANNOT_BE_DELETED');
+        }
+
+        await this.prisma.term.update({
+            where: { id: termId },
+            data: { isDeleted: true, deletedAt: new Date() },
+        });
+
+        return { success: true };
+    }
 }

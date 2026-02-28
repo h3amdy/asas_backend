@@ -5,6 +5,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { SchoolCommonModule } from './common/school-common.module';
 import { ProfileModule } from './profile/profile.module';
 import { ManagerModule } from './manager/manager.module';
+import { MediaModule } from './media/media.module';
 
 /**
  * 🆕 وحدة المدرسة الرئيسية
@@ -12,8 +13,9 @@ import { ManagerModule } from './manager/manager.module';
  */
 
 @Module({
-    imports: [SchoolAuthModule, SessionsModule, SchoolCommonModule, ProfileModule, ManagerModule],
+    imports: [SchoolAuthModule, SessionsModule, SchoolCommonModule, ProfileModule, ManagerModule, MediaModule],
 })
 export class SchoolModule { }
+
 
 
