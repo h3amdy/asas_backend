@@ -23,35 +23,39 @@ export class SubjectsController {
     }
 
     @Get(':subjectId')
-    getOne(@Param('subjectId', ParseIntPipe) id: number) { return this.service.getSubjectById(id); }
+    getOne(@Req() req: any, @Param('subjectId', ParseIntPipe) id: number) {
+        return this.service.getSubjectById(req.schoolContext.id, id);
+    }
 
     @Patch(':subjectId')
-    update(@Param('subjectId', ParseIntPipe) id: number, @Body() dto: UpdateSubjectDto) {
-        return this.service.updateSubject(id, dto);
+    update(@Req() req: any, @Param('subjectId', ParseIntPipe) id: number, @Body() dto: UpdateSubjectDto) {
+        return this.service.updateSubject(req.schoolContext.id, id, dto);
     }
 
     @Delete(':subjectId')
-    delete(@Param('subjectId', ParseIntPipe) id: number) { return this.service.deleteSubject(id); }
+    delete(@Req() req: any, @Param('subjectId', ParseIntPipe) id: number) {
+        return this.service.deleteSubject(req.schoolContext.id, id);
+    }
 
     // Section assignments
     @Post(':subjectId/sections')
-    assignSections(@Param('subjectId', ParseIntPipe) id: number, @Body() dto: AssignSubjectSectionsDto) {
-        return this.service.assignToSections(id, dto);
+    assignSections(@Req() req: any, @Param('subjectId', ParseIntPipe) id: number, @Body() dto: AssignSubjectSectionsDto) {
+        return this.service.assignToSections(req.schoolContext.id, id, dto);
     }
 
     @Delete(':subjectId/sections/:sectionId')
-    removeSection(@Param('subjectId', ParseIntPipe) subjectId: number, @Param('sectionId', ParseIntPipe) sectionId: number) {
-        return this.service.removeFromSection(subjectId, sectionId);
+    removeSection(@Req() req: any, @Param('subjectId', ParseIntPipe) subjectId: number, @Param('sectionId', ParseIntPipe) sectionId: number) {
+        return this.service.removeFromSection(req.schoolContext.id, subjectId, sectionId);
     }
 
     // Teacher assignments
     @Post('subject-sections/:ssId/teachers')
-    assignTeacher(@Param('ssId', ParseIntPipe) ssId: number, @Body() dto: AssignTeacherDto) {
-        return this.service.assignTeacher(ssId, dto);
+    assignTeacher(@Req() req: any, @Param('ssId', ParseIntPipe) ssId: number, @Body() dto: AssignTeacherDto) {
+        return this.service.assignTeacher(req.schoolContext.id, ssId, dto);
     }
 
     @Delete('subject-sections/:ssId/teachers/:teacherId')
-    removeTeacher(@Param('ssId', ParseIntPipe) ssId: number, @Param('teacherId', ParseIntPipe) teacherId: number) {
-        return this.service.removeTeacher(ssId, teacherId);
+    removeTeacher(@Req() req: any, @Param('ssId', ParseIntPipe) ssId: number, @Param('teacherId', ParseIntPipe) teacherId: number) {
+        return this.service.removeTeacher(req.schoolContext.id, ssId, teacherId);
     }
 }
