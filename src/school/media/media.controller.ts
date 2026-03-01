@@ -3,7 +3,7 @@ import {
     Controller, Get, Param, Query, Req, Res, UseGuards,
     NotFoundException, Headers, StreamableFile,
 } from '@nestjs/common';
-import { Response, Request } from 'express';
+import type { Response, Request } from 'express';
 import { MediaService } from './media.service';
 import { SchoolJwtAuthGuard } from '../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../common/guards/school-context.guard';

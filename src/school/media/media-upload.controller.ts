@@ -1,9 +1,11 @@
 // src/school/media/media-upload.controller.ts
 import {
     Controller, Post, Get, Put, Param, Body, Req,
-    UseGuards, Headers, RawBodyRequest,
+    UseGuards, Headers,
+    UnauthorizedException, NotFoundException, BadRequestException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request } from 'express';
 import { MediaUploadService } from './media-upload.service';
 import { InitUploadSessionDto } from './dto/init-upload-session.dto';
 import { SchoolJwtAuthGuard } from '../auth/guards/school-jwt-auth.guard';
@@ -59,7 +61,10 @@ export class MediaUploadController {
         @Req() req: RawBodyRequest<Request>,
     ) {
         const schoolId = (req as any).schoolContext.id;
-        const chunk = req.body as Buffer;
+        const chunk = req.rawBody ?? req.body;
+        if (!chunk || !Buffer.isBuffer(chunk) || chunk.length === 0) {
+            throw new BadRequestException('EMPTY_CHUNK');
+        }
         return this.uploadService.uploadChunk(uuid, schoolId, contentRange, chunk);
     }
 
@@ -90,7 +95,7 @@ export class MediaUploadController {
         const userUuid = req.user?.sub;
 
         if (!userUuid) {
-            throw new Error('USER_UUID_NOT_IN_TOKEN');
+            throw new UnauthorizedException('USER_UUID_NOT_IN_TOKEN');
         }
 
         const user = await this.prisma.user.findUnique({
@@ -99,7 +104,7 @@ export class MediaUploadController {
         });
 
         if (!user) {
-            throw new Error('USER_NOT_FOUND');
+            throw new NotFoundException('USER_NOT_FOUND');
         }
 
         return user;

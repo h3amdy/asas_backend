@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from './storage.service';
 import { MediaKind, ProcessingStatus } from '@prisma/client';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 
 /**
  * 🔄 خدمة معالجة الوسائط (Variant Generation Pipeline)
@@ -94,7 +95,7 @@ export class MediaProcessingService {
         // Dynamic import sharp (ESM)
         const sharp = (await import('sharp')).default;
         const originalPath = this.storage.resolvePath(originalStorageKey);
-        const originalBuffer = await require('fs').promises.readFile(originalPath);
+        const originalBuffer = await fs.promises.readFile(originalPath);
 
         const variants: Record<string, any> = {};
 
@@ -149,6 +150,11 @@ export class MediaProcessingService {
             height: smallMeta.height,
         };
 
+        // 🧹 حذف الملف الأصلي (JPEG/PNG) بعد التحويل لـ WebP
+        if (originalStorageKey !== originalWebpKey) {
+            await this.storage.deleteFile(originalStorageKey);
+        }
+
         return variants;
     }
 
@@ -168,7 +174,7 @@ export class MediaProcessingService {
 
         // Read file for hashing + potential move
         const originalPath = this.storage.resolvePath(originalStorageKey);
-        const originalBuffer = await require('fs').promises.readFile(originalPath);
+        const originalBuffer = await fs.promises.readFile(originalPath);
 
         // Move original to final location if not already there
         if (originalStorageKey !== originalKey) {
@@ -184,13 +190,13 @@ export class MediaProcessingService {
             content_type: contentType,
         };
 
-        // 2) Low quality — for MVP, we just copy original
-        // TODO: Use ffmpeg for proper transcoding when available
+        // 2) Low quality variant
+        // TODO(MVP): حالياً = نسخة من original. لاحقاً: ffmpeg → Opus 64kbps
         //   const lowKey = this.storage.buildStorageKey(schoolUuid, assetUuid, 'low', 'opus');
         //   await this.transcodeAudio(originalPath, lowPath, '64k');
         variants['low'] = {
-            storage_key: originalKey, // Same as original for MVP
-            etag: originalEtag,       // Same content = same ETag
+            storage_key: originalKey, // Same as original (MVP)
+            etag: originalEtag,
             size_bytes: originalBuffer.length,
             content_type: contentType,
         };

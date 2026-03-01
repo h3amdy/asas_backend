@@ -45,6 +45,15 @@ export class MediaUploadService {
             });
         }
 
+        // Validate contentType matches kind
+        if (!this.isContentTypeValidForKind(dto.contentType, dto.kind)) {
+            throw new BadRequestException({
+                error: 'CONTENT_TYPE_MISMATCH',
+                kind: dto.kind,
+                content_type: dto.contentType,
+            });
+        }
+
         const chunkSize = dto.chunkSizeBytes || DEFAULT_CHUNK_SIZE;
         const expiresAt = new Date(Date.now() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
 
@@ -298,5 +307,14 @@ export class MediaUploadService {
             'audio/wav': 'wav', 'audio/mp4': 'm4a',
         };
         return map[contentType] || 'bin';
+    }
+
+    private isContentTypeValidForKind(contentType: string, kind: MediaKind): boolean {
+        const allowedPrefixes: Record<string, string> = {
+            IMAGE: 'image/',
+            AUDIO: 'audio/',
+        };
+        const prefix = allowedPrefixes[kind];
+        return prefix ? contentType.startsWith(prefix) : false;
     }
 }

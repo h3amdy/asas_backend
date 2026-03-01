@@ -60,7 +60,6 @@ export class MediaService {
             variants: clientVariants,
             processing_status: asset.processingStatus,
             updated_at: asset.updatedAt,
-            is_deleted: asset.isDeleted,
         };
     }
 
