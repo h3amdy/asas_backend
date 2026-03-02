@@ -72,7 +72,18 @@ export class SubjectsService {
         });
         if (existing) throw new ConflictException('SUBJECT_ALREADY_EXISTS');
 
-        // 3. إنشاء المادة
+        // 🛡️ 3. UUID → ID لغلاف المادة (إن وُجد)
+        let coverMediaAssetId: number | null = null;
+        if (dto.coverMediaAssetUuid) {
+            const asset = await this.prisma.mediaAsset.findUnique({
+                where: { uuid: dto.coverMediaAssetUuid },
+                select: { id: true },
+            });
+            if (!asset) throw new BadRequestException('COVER_MEDIA_ASSET_NOT_FOUND');
+            coverMediaAssetId = asset.id;
+        }
+
+        // 4. إنشاء المادة
         const subject = await this.prisma.subject.create({
             data: {
                 schoolId,
@@ -80,7 +91,7 @@ export class SubjectsService {
                 displayName: dto.displayName,
                 shortName: dto.shortName ?? null,
                 dictionaryId: dto.dictionaryId ?? null,
-                coverMediaAssetId: dto.coverMediaAssetId ?? null,
+                coverMediaAssetId,
             },
         });
 
@@ -124,7 +135,18 @@ export class SubjectsService {
         const data: Record<string, any> = {};
         if (dto.displayName !== undefined) data.displayName = dto.displayName;
         if (dto.shortName !== undefined) data.shortName = dto.shortName;
-        if (dto.coverMediaAssetId !== undefined) data.coverMediaAssetId = dto.coverMediaAssetId;
+        if (dto.coverMediaAssetUuid !== undefined) {
+            if (dto.coverMediaAssetUuid) {
+                const asset = await this.prisma.mediaAsset.findUnique({
+                    where: { uuid: dto.coverMediaAssetUuid },
+                    select: { id: true },
+                });
+                if (!asset) throw new BadRequestException('COVER_MEDIA_ASSET_NOT_FOUND');
+                data.coverMediaAssetId = asset.id;
+            } else {
+                data.coverMediaAssetId = null; // إزالة الغلاف
+            }
+        }
 
         await this.prisma.subject.update({ where: { id: subjectId }, data });
         return this.getSubjectById(schoolId, subjectId);

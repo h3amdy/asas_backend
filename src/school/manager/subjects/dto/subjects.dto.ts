@@ -1,5 +1,5 @@
 // src/school/manager/subjects/dto/subjects.dto.ts
-import { IsArray, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateSubjectDto {
@@ -23,8 +23,8 @@ export class CreateSubjectDto {
     dictionaryId?: number;
 
     @IsOptional()
-    @IsInt()
-    coverMediaAssetId?: number;
+    @IsUUID()
+    coverMediaAssetUuid?: string;
 }
 
 export class UpdateSubjectDto {
@@ -40,8 +40,8 @@ export class UpdateSubjectDto {
     shortName?: string;
 
     @IsOptional()
-    @IsInt()
-    coverMediaAssetId?: number;
+    @IsUUID()
+    coverMediaAssetUuid?: string;
 }
 
 export class AssignSubjectSectionsDto {
