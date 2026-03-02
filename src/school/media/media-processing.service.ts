@@ -51,10 +51,7 @@ export class MediaProcessingService {
                 variants = await this.processAudio(schoolUuid, assetUuid, originalStorageKey, contentType);
             }
 
-            // Read original file stats
-            const originalSize = await this.storage.getFileSize(originalStorageKey);
-
-            // Read processed original for asset-level ETag
+            // Get processed original variant info
             const processedOriginal = variants['original'];
 
             // Update MediaAsset with variants + final metadata
