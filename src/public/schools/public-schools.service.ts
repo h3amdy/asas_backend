@@ -28,6 +28,7 @@ export class PublicSchoolsService {
       deliveryPolicy: s.deliveryPolicy,
 
       logoMediaAssetId: s.logoMediaAssetId ?? null,
+      logoMediaAssetUuid: s.logoMediaAsset?.uuid ?? null,
       primaryColor: s.primaryColor ?? null,
       secondaryColor: s.secondaryColor ?? null,
       backgroundColor: s.backgroundColor ?? null,
@@ -68,6 +69,7 @@ export class PublicSchoolsService {
         address: true,
 
         logoMediaAssetId: true,
+        logoMediaAsset: { select: { uuid: true } },
         primaryColor: true,
         secondaryColor: true,
         backgroundColor: true,
@@ -107,6 +109,7 @@ export class PublicSchoolsService {
         address: true,
 
         logoMediaAssetId: true,
+        logoMediaAsset: { select: { uuid: true } },
         primaryColor: true,
         secondaryColor: true,
         backgroundColor: true,
@@ -146,6 +149,7 @@ export class PublicSchoolsService {
         deliveryPolicy: true,
 
         logoMediaAssetId: true,
+        logoMediaAsset: { select: { uuid: true } },
         primaryColor: true,
         secondaryColor: true,
         backgroundColor: true,

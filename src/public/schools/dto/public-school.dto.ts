@@ -17,6 +17,7 @@ export class PublicSchoolDto {
   deliveryPolicy!: 'OPEN' | 'SCHEDULED' | 'MANUAL';
 
   logoMediaAssetId!: number | null;
+  logoMediaAssetUuid!: string | null;
   primaryColor!: string | null;
   secondaryColor!: string | null;
   backgroundColor!: string | null;

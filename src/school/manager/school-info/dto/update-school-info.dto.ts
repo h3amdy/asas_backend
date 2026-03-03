@@ -1,5 +1,5 @@
 // src/school/manager/school-info/dto/update-school-info.dto.ts
-import { IsEmail, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class UpdateSchoolInfoDto {
@@ -41,7 +41,6 @@ export class UpdateSchoolInfoDto {
     address?: string;
 
     @IsOptional()
-    @IsInt()
-    @Min(1)
-    logoMediaAssetId?: number;
+    @IsUUID()
+    logoMediaAssetUuid?: string;
 }
