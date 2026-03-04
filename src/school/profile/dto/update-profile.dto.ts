@@ -1,5 +1,5 @@
 // src/school/profile/dto/update-profile.dto.ts
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 /**
@@ -48,4 +48,9 @@ export class UpdateProfileDto {
     @MaxLength(255)
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
     addressDetails?: string;
+
+    @IsOptional()
+    @ValidateIf((o) => o.avatarMediaAssetUuid !== null)
+    @IsUUID()
+    avatarMediaAssetUuid?: string | null;
 }

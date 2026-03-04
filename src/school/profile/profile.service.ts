@@ -26,6 +26,7 @@ const SAFE_USER_SELECT = {
     addressArea: true,
     addressDetails: true,
     updatedAt: true,
+    avatarMediaAsset: { select: { uuid: true } },
 } as const;
 
 @Injectable()
@@ -56,6 +57,7 @@ export class ProfileService {
             district: user.district ?? null,
             addressArea: user.addressArea ?? null,
             addressDetails: user.addressDetails ?? null,
+            avatarMediaAssetUuid: user.avatarMediaAsset?.uuid ?? null,
             updatedAt: user.updatedAt,
         };
     }
@@ -66,7 +68,7 @@ export class ProfileService {
     async updateMe(userUuid: string, dto: UpdateProfileDto) {
         const user = await this.prisma.user.findFirst({
             where: { uuid: userUuid, isDeleted: false },
-            select: { id: true },
+            select: { id: true, schoolId: true },
         });
 
         if (!user) throw new NotFoundException(SCHOOL_AUTH_ERRORS.USER_NOT_FOUND);
@@ -80,6 +82,28 @@ export class ProfileService {
         if (dto.district !== undefined) data.district = dto.district;
         if (dto.addressArea !== undefined) data.addressArea = dto.addressArea;
         if (dto.addressDetails !== undefined) data.addressDetails = dto.addressDetails;
+
+        // معالجة الصورة الشخصية
+        if (dto.avatarMediaAssetUuid !== undefined) {
+            if (dto.avatarMediaAssetUuid === null) {
+                // حذف الصورة
+                data.avatarMediaAssetId = null;
+            } else {
+                // تعيين صورة جديدة — resolve UUID → ID
+                const asset = await this.prisma.mediaAsset.findFirst({
+                    where: {
+                        uuid: dto.avatarMediaAssetUuid,
+                        schoolId: user.schoolId!,
+                        isDeleted: false,
+                    },
+                    select: { id: true },
+                });
+                if (!asset) {
+                    throw new BadRequestException('Media asset not found or does not belong to this school');
+                }
+                data.avatarMediaAssetId = asset.id;
+            }
+        }
 
         await this.prisma.user.update({
             where: { id: user.id },

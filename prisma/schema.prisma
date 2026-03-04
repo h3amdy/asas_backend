@@ -92,6 +92,9 @@ model User {
   addressArea    String? @map("address_area")
   addressDetails String? @map("address_details")
 
+  avatarMediaAssetId Int?        @map("avatar_media_asset_id")
+  avatarMediaAsset   MediaAsset? @relation("UserAvatar", fields: [avatarMediaAssetId], references: [id])
+
   passwordHash String @map("password_hash")
 
   isActive  Boolean  @map("is_active")
@@ -110,6 +113,7 @@ model User {
   teacher Teacher?
 
   @@index([schoolId], map: "users_school_id_idx")
+  @@index([avatarMediaAssetId], map: "users_avatar_media_asset_id_idx")
   @@map("users")
 }
 
@@ -686,6 +690,7 @@ model MediaAsset {
   schoolsAsLogo       School[]              @relation("SchoolLogo")
   subjectsAsCover     Subject[]             @relation("SubjectCover")
   subjectDictsAsCover SubjectDictionary[]   @relation("SubjectDictCover")
+  usersAsAvatar       User[]                @relation("UserAvatar")
 
   @@index([schoolId], map: "media_assets_school_id_idx")
   @@index([kind], map: "media_assets_kind_idx")
