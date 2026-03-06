@@ -49,7 +49,9 @@ export class SchoolJwtStrategy extends PassportStrategy(Strategy, 'school-jwt') 
 
     if (!session) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SESSION_NOT_FOUND);
     if (session.revokedAt) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SESSION_REVOKED);
-    if (session.expiresAt.getTime() <= Date.now()) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SESSION_EXPIRED);
+    // ✅ لا نفحص expiresAt هنا — الـ JWT نفسه لديه exp (15 دقيقة)
+    // Passport يتحقق منه تلقائياً (ignoreExpiration: false)
+    // expiresAt يُفحص فقط في validateAndRotateRefresh() عند التجديد
 
     // user check
     if (!session.user || session.user.isDeleted) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.USER_NOT_FOUND);
