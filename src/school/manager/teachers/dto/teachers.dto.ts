@@ -1,17 +1,21 @@
 // src/school/manager/teachers/dto/teachers.dto.ts
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
+// ─── SRS-TCH-02: Create Teacher ───────────────────────────
+
 export class CreateTeacherDto {
+    // ── البيانات الشخصية (users) ──
+
     @IsString()
     @MinLength(2)
     @MaxLength(80)
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
     name!: string;
 
-    @IsOptional()
     @IsString()
-    gender?: string;
+    @IsIn(['MALE', 'FEMALE'])
+    gender!: string;
 
     @IsString()
     @MinLength(6)
@@ -24,92 +28,124 @@ export class CreateTeacherDto {
 
     @IsOptional()
     @IsString()
-    specialization?: string;
+    @MaxLength(100)
+    province?: string;
 
     @IsOptional()
     @IsString()
-    qualification?: string;
+    @MaxLength(100)
+    district?: string;
 
     @IsOptional()
-    @IsDateString()
-    hireDate?: string;
+    @IsString()
+    @MaxLength(100)
+    addressArea?: string;
 
     @IsOptional()
     @IsString()
     @MinLength(6)
     password?: string;
-}
 
-export class UpdateTeacherDto {
-    @IsOptional()
-    @IsString()
-    @MinLength(2)
-    @MaxLength(80)
-    name?: string;
+    // ── البيانات المهنية (teachers) ──
 
     @IsOptional()
     @IsString()
-    gender?: string;
-
-    @IsOptional()
-    @IsString()
-    phone?: string;
-
-    @IsOptional()
-    @IsEmail()
-    email?: string;
-
-    @IsOptional()
-    @IsString()
+    @MaxLength(100)
     specialization?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(100)
     qualification?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(200)
     experience?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(500)
     notes?: string;
 }
 
-export class SetSupervisorDto {
-    @IsBoolean()
-    isSupervisor!: boolean;
+// ─── SRS-TCH-04: Update Teacher ───────────────────────────
+
+export class UpdateTeacherDto {
+    // ── البيانات الشخصية (users) ──
+
+    @IsOptional()
+    @IsString()
+    @MinLength(2)
+    @MaxLength(80)
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    name?: string;
+
+    @IsOptional()
+    @IsString()
+    @IsIn(['MALE', 'FEMALE'])
+    gender?: string;
+
+    @IsOptional()
+    @IsString()
+    @MinLength(6)
+    @MaxLength(20)
+    phone?: string;
+
+    @IsOptional()
+    @IsEmail()
+    email?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    province?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    district?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    addressArea?: string | null;
+
+    // ── البيانات المهنية (teachers) ──
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    specialization?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    qualification?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    experience?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(500)
+    notes?: string | null;
 }
 
-export class SetExtraPermissionsDto {
-    @IsOptional()
-    @IsBoolean()
-    canManageSubjects?: boolean;
+// ─── SRS-TCH-05: Reset Password ──────────────────────────
 
+export class ResetPasswordDto {
     @IsOptional()
-    @IsBoolean()
-    canManageTimetable?: boolean;
-
-    @IsOptional()
-    @IsBoolean()
-    canManageStudents?: boolean;
-
-    @IsOptional()
-    @IsBoolean()
-    canManageParents?: boolean;
-
-    @IsOptional()
-    @IsBoolean()
-    canViewReports?: boolean;
+    @IsString()
+    @MinLength(6)
+    newPassword?: string;
 }
 
-export class AddTeacherScopeDto {
-    @IsInt()
-    @Min(1)
-    gradeId!: number;
+// ─── SRS-TCH-07: Toggle Active ───────────────────────────
 
-    @IsOptional()
-    @IsInt()
-    @Min(1)
-    sectionId?: number;
+export class ToggleActiveDto {
+    @IsBoolean()
+    isActive!: boolean;
 }

@@ -1,62 +1,89 @@
 // src/school/manager/teachers/teachers.controller.ts
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { TeachersService } from './teachers.service';
-import { CreateTeacherDto, UpdateTeacherDto, SetSupervisorDto, SetExtraPermissionsDto, AddTeacherScopeDto } from './dto/teachers.dto';
+import { CreateTeacherDto, UpdateTeacherDto, ResetPasswordDto, ToggleActiveDto } from './dto/teachers.dto';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 
+/**
+ * 🧑‍🏫 API إدارة المعلمين — SRS-TCH
+ *
+ * Endpoints (7):
+ * ┌──────────┬────────────────────────────────────────┬──────────────┐
+ * │  Method  │  Route                                 │  SRS         │
+ * ├──────────┼────────────────────────────────────────┼──────────────┤
+ * │  GET     │  /school/manager/teachers              │  SRS-TCH-01  │
+ * │  POST    │  /school/manager/teachers              │  SRS-TCH-02  │
+ * │  GET     │  /school/manager/teachers/:uuid        │  SRS-TCH-03  │
+ * │  PATCH   │  /school/manager/teachers/:uuid        │  SRS-TCH-04  │
+ * │  PATCH   │  /school/manager/teachers/:uuid/toggle-active  │  SRS-TCH-07  │
+ * │  POST    │  /school/manager/teachers/:uuid/reset-password │  SRS-TCH-05  │
+ * │  GET     │  /school/manager/teachers/:uuid/credentials    │  SRS-TCH-06  │
+ * └──────────┴────────────────────────────────────────┴──────────────┘
+ */
 @Controller('school/manager/teachers')
 @UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
 @Roles('ADMIN')
 export class TeachersController {
     constructor(private readonly service: TeachersService) { }
 
+    // ─── SRS-TCH-01: List & Search ──────────────────────────
+
     @Get()
-    list(@Req() req: any, @Query('q') q?: string) {
-        return this.service.listTeachers(req.schoolContext.id, q);
+    list(
+        @Req() req: any,
+        @Query('search') search?: string,
+        @Query('is_supervisor') isSupervisor?: string,
+        @Query('is_active') isActive?: string,
+    ) {
+        return this.service.listTeachers(
+            req.schoolContext.id,
+            search,
+            isSupervisor !== undefined ? isSupervisor === 'true' : undefined,
+            isActive !== undefined ? isActive === 'true' : undefined,
+        );
     }
+
+    // ─── SRS-TCH-02: Create Teacher ─────────────────────────
 
     @Post()
     create(@Req() req: any, @Body() dto: CreateTeacherDto) {
         return this.service.createTeacher(req.schoolContext.id, dto);
     }
 
+    // ─── SRS-TCH-03: Teacher Profile ────────────────────────
+
     @Get(':uuid')
-    getProfile(@Param('uuid') uuid: string) { return this.service.getTeacherProfile(uuid); }
+    getProfile(@Param('uuid') uuid: string) {
+        return this.service.getTeacherProfile(uuid);
+    }
+
+    // ─── SRS-TCH-04: Update Teacher ─────────────────────────
 
     @Patch(':uuid')
     update(@Param('uuid') uuid: string, @Body() dto: UpdateTeacherDto) {
         return this.service.updateTeacher(uuid, dto);
     }
 
-    @Post(':uuid/supervisor')
-    setSupervisor(@Param('uuid') uuid: string, @Body() dto: SetSupervisorDto) {
-        return this.service.setSupervisor(uuid, dto);
-    }
-
-    @Post(':uuid/extra-permissions')
-    setExtraPermissions(@Param('uuid') uuid: string, @Body() dto: SetExtraPermissionsDto) {
-        return this.service.setExtraPermissions(uuid, dto);
-    }
-
-    @Post(':uuid/scopes')
-    addScope(@Param('uuid') uuid: string, @Body() dto: AddTeacherScopeDto) {
-        return this.service.addScope(uuid, dto);
-    }
-
-    @Delete('scopes/:scopeId')
-    removeScope(@Param('scopeId', ParseIntPipe) id: number) {
-        return this.service.removeScope(id);
-    }
+    // ─── SRS-TCH-07: Block/Unblock ──────────────────────────
 
     @Patch(':uuid/toggle-active')
-    toggleActive(@Param('uuid') uuid: string, @Body('isActive') isActive: boolean) {
-        return this.service.toggleActive(uuid, isActive);
+    toggleActive(@Param('uuid') uuid: string, @Body() dto: ToggleActiveDto) {
+        return this.service.toggleActive(uuid, dto.isActive);
     }
 
+    // ─── SRS-TCH-05: Reset Password ─────────────────────────
+
     @Post(':uuid/reset-password')
-    resetPassword(@Param('uuid') uuid: string, @Body('password') password?: string) {
-        return this.service.resetPassword(uuid, password);
+    resetPassword(@Param('uuid') uuid: string, @Body() dto: ResetPasswordDto) {
+        return this.service.resetPassword(uuid, dto.newPassword);
+    }
+
+    // ─── SRS-TCH-06: Get Credentials ────────────────────────
+
+    @Get(':uuid/credentials')
+    getCredentials(@Req() req: any, @Param('uuid') uuid: string) {
+        return this.service.getCredentials(uuid, req.schoolContext.id);
     }
 }
