@@ -1,7 +1,7 @@
 // src/school/manager/subjects/subjects.controller.ts
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { SubjectsService } from './subjects.service';
-import { CreateSubjectDto, UpdateSubjectDto, AssignSubjectSectionsDto, AssignTeacherDto } from './dto/subjects.dto';
+import { CreateSubjectDto, UpdateSubjectDto, AssignSubjectSectionsDto, AssignTeacherToSectionDto } from './dto/subjects.dto';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
@@ -48,14 +48,38 @@ export class SubjectsController {
         return this.service.removeFromSection(req.schoolContext.id, subjectId, sectionId);
     }
 
-    // Teacher assignments
-    @Post('subject-sections/:ssId/teachers')
-    assignTeacher(@Req() req: any, @Param('ssId', ParseIntPipe) ssId: number, @Body() dto: AssignTeacherDto) {
-        return this.service.assignTeacher(req.schoolContext.id, ssId, dto);
+    // ═══════ Teacher Assignment (ADM-052 — UUID-based) ═══════
+
+    @Get(':subjectUuid/assignment')
+    getAssignment(@Req() req: any, @Param('subjectUuid') subjectUuid: string) {
+        return this.service.getAssignment(req.schoolContext.id, subjectUuid);
     }
 
-    @Delete('subject-sections/:ssId/teachers/:teacherId')
-    removeTeacher(@Req() req: any, @Param('ssId', ParseIntPipe) ssId: number, @Param('teacherId', ParseIntPipe) teacherId: number) {
-        return this.service.removeTeacher(req.schoolContext.id, ssId, teacherId);
+    @Post(':subjectUuid/sections/:sectionId/assign-teacher')
+    assignTeacher(
+        @Req() req: any,
+        @Param('subjectUuid') subjectUuid: string,
+        @Param('sectionId', ParseIntPipe) sectionId: number,
+        @Body() dto: AssignTeacherToSectionDto,
+    ) {
+        return this.service.assignTeacherToSection(
+            req.schoolContext.id,
+            subjectUuid,
+            sectionId,
+            dto.teacherUuid,
+        );
+    }
+
+    @Delete(':subjectUuid/sections/:sectionId/unassign-teacher')
+    unassignTeacher(
+        @Req() req: any,
+        @Param('subjectUuid') subjectUuid: string,
+        @Param('sectionId', ParseIntPipe) sectionId: number,
+    ) {
+        return this.service.unassignTeacherFromSection(
+            req.schoolContext.id,
+            subjectUuid,
+            sectionId,
+        );
     }
 }

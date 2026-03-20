@@ -50,12 +50,7 @@ export class AssignSubjectSectionsDto {
     sectionIds!: number[];
 }
 
-export class AssignTeacherDto {
-    @IsInt()
-    @Min(1)
-    teacherUserId!: number;
-
-    @IsOptional()
-    @IsString()
-    role?: string;
+export class AssignTeacherToSectionDto {
+    @IsUUID()
+    teacherUuid!: string;
 }

@@ -1,7 +1,7 @@
 // src/school/manager/subjects/subjects.service.ts
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { CreateSubjectDto, UpdateSubjectDto, AssignSubjectSectionsDto, AssignTeacherDto } from './dto/subjects.dto';
+import { CreateSubjectDto, UpdateSubjectDto, AssignSubjectSectionsDto, AssignTeacherToSectionDto } from './dto/subjects.dto';
 
 @Injectable()
 export class SubjectsService {
@@ -201,35 +201,181 @@ export class SubjectsService {
         return { success: true };
     }
 
-    // ═══════ إسناد المعلمين ═══════
+    // ═══════ إسناد المعلمين (ADM-052 — UUID-based) ═══════
 
-    async assignTeacher(schoolId: number, subjectSectionId: number, dto: AssignTeacherDto) {
-        // 🛡️ التحقق من أن subject_section ينتمي لمدرسة المستخدم
-        const ss = await this.prisma.subjectSection.findFirst({
-            where: { id: subjectSectionId, isDeleted: false, subject: { schoolId, isDeleted: false } },
+    /**
+     * GET /subjects/:subjectUuid/assignment
+     * عرض شعب المادة مع حالة الإسناد
+     */
+    async getAssignment(schoolId: number, subjectUuid: string) {
+        const subject = await this.prisma.subject.findFirst({
+            where: { uuid: subjectUuid, schoolId, isDeleted: false },
+            include: {
+                grade: { select: { displayName: true } },
+                subjectSections: {
+                    where: { isDeleted: false },
+                    orderBy: { section: { orderIndex: 'asc' } },
+                    include: {
+                        section: { select: { id: true, name: true } },
+                        teachers: {
+                            where: { isDeleted: false, isActive: true },
+                            take: 1,
+                            include: {
+                                teacher: {
+                                    include: { user: { select: { uuid: true, name: true, code: true } } },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
         });
-        if (!ss) throw new NotFoundException('SUBJECT_SECTION_NOT_FOUND');
+        if (!subject) throw new NotFoundException('SUBJECT_NOT_FOUND');
 
-        const role = (dto.role === 'ASSISTANT' ? 'ASSISTANT' : 'PRIMARY') as any;
-        await this.prisma.subjectSectionTeacher.upsert({
-            where: { subjectSectionId_teacherId: { subjectSectionId, teacherId: dto.teacherUserId } },
-            create: { subjectSectionId, teacherId: dto.teacherUserId, role },
-            update: { role, isDeleted: false, deletedAt: null },
-        });
-        return { success: true };
+        return {
+            subjectUuid: subject.uuid,
+            displayName: subject.displayName,
+            grade: subject.grade,
+            sections: subject.subjectSections.map((ss) => ({
+                subjectSectionId: ss.id,
+                sectionId: ss.section.id,
+                sectionName: ss.section.name,
+                teacher: ss.teachers.length > 0
+                    ? {
+                        uuid: ss.teachers[0].teacher.user.uuid,
+                        name: ss.teachers[0].teacher.user.name,
+                        code: ss.teachers[0].teacher.user.code,
+                    }
+                    : null,
+            })),
+        };
     }
 
-    async removeTeacher(schoolId: number, subjectSectionId: number, teacherUserId: number) {
-        // 🛡️ التحقق
-        const ss = await this.prisma.subjectSection.findFirst({
-            where: { id: subjectSectionId, isDeleted: false, subject: { schoolId, isDeleted: false } },
+    /**
+     * POST /subjects/:subjectUuid/sections/:sectionId/assign-teacher
+     * إسناد أو تغيير معلم لشعبة
+     */
+    async assignTeacherToSection(
+        schoolId: number,
+        subjectUuid: string,
+        sectionId: number,
+        teacherUuid: string,
+    ) {
+        // 🛡️ 1. التحقق من المادة + الشعبة
+        const subjectSection = await this.prisma.subjectSection.findFirst({
+            where: {
+                sectionId,
+                isDeleted: false,
+                subject: { uuid: subjectUuid, schoolId, isDeleted: false },
+            },
+            include: {
+                teachers: {
+                    where: { isDeleted: false, isActive: true },
+                    take: 1,
+                    include: { teacher: { include: { user: { select: { uuid: true, name: true, code: true } } } } },
+                },
+            },
         });
-        if (!ss) throw new NotFoundException('SUBJECT_SECTION_NOT_FOUND');
+        if (!subjectSection) throw new NotFoundException('SECTION_NOT_FOUND');
 
-        await this.prisma.subjectSectionTeacher.updateMany({
-            where: { subjectSectionId, teacherId: teacherUserId, isDeleted: false },
-            data: { isDeleted: true, deletedAt: new Date() },
+        // 🛡️ 2. التحقق من المعلم (عبر User)
+        const user = await this.prisma.user.findFirst({
+            where: { uuid: teacherUuid, schoolId },
+            include: { teacher: true },
         });
+        if (!user || !user.teacher) throw new NotFoundException('TEACHER_NOT_FOUND');
+
+        // 3. حفظ المعلم السابق (إن وُجد)
+        let previousTeacher: { uuid: string; name: string; code: number } | null = null;
+        if (subjectSection.teachers.length > 0) {
+            const prev = subjectSection.teachers[0];
+            previousTeacher = {
+                uuid: prev.teacher.user.uuid,
+                name: prev.teacher.user.name,
+                code: prev.teacher.user.code ?? 0,
+            };
+
+            // إذا نفس المعلم → لا تغيير
+            if (previousTeacher!.uuid === teacherUuid) {
+                return {
+                    success: true,
+                    message: 'ALREADY_ASSIGNED',
+                    previousTeacher: null,
+                    newTeacher: previousTeacher!,
+                };
+            }
+
+            // soft delete المعلم السابق
+            await this.prisma.subjectSectionTeacher.updateMany({
+                where: {
+                    subjectSectionId: subjectSection.id,
+                    isDeleted: false,
+                },
+                data: { isDeleted: true, deletedAt: new Date(), isActive: false },
+            });
+        }
+
+        // 4. إسناد المعلم الجديد (upsert لمنع التكرار)
+        await this.prisma.subjectSectionTeacher.upsert({
+            where: {
+                subjectSectionId_teacherId: {
+                    subjectSectionId: subjectSection.id,
+                    teacherId: user.teacher.userId,
+                },
+            },
+            create: {
+                subjectSectionId: subjectSection.id,
+                teacherId: user.teacher.userId,
+                role: 'PRIMARY',
+            },
+            update: {
+                isDeleted: false,
+                deletedAt: null,
+                isActive: true,
+                role: 'PRIMARY',
+            },
+        });
+
+        return {
+            success: true,
+            previousTeacher,
+            newTeacher: {
+                uuid: user.uuid,
+                name: user.name,
+                code: user.code ?? 0,
+            },
+        };
+    }
+
+    /**
+     * DELETE /subjects/:subjectUuid/sections/:sectionId/unassign-teacher
+     * إزالة الإسناد
+     */
+    async unassignTeacherFromSection(
+        schoolId: number,
+        subjectUuid: string,
+        sectionId: number,
+    ) {
+        // 🛡️ التحقق
+        const subjectSection = await this.prisma.subjectSection.findFirst({
+            where: {
+                sectionId,
+                isDeleted: false,
+                subject: { uuid: subjectUuid, schoolId, isDeleted: false },
+            },
+        });
+        if (!subjectSection) throw new NotFoundException('SECTION_NOT_FOUND');
+
+        const result = await this.prisma.subjectSectionTeacher.updateMany({
+            where: {
+                subjectSectionId: subjectSection.id,
+                isDeleted: false,
+            },
+            data: { isDeleted: true, deletedAt: new Date(), isActive: false },
+        });
+
+        if (result.count === 0) throw new NotFoundException('ASSIGNMENT_NOT_FOUND');
+
         return { success: true };
     }
 }
