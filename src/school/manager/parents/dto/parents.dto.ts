@@ -93,8 +93,8 @@ export class UpdateParentDto {
 
 export class LinkChildrenDto {
     @IsArray()
-    @IsInt({ each: true })
-    studentUserIds!: number[];
+    @IsString({ each: true })
+    studentUuids!: string[];
 }
 
 // ─── SRS-PAR-06: Reset Password ───────────────────────────

@@ -88,8 +88,8 @@ export class ParentsController {
 
     // ─── SRS-PAR-08: Unlink Child ───────────────────────────
 
-    @Delete(':uuid/children/:studentId')
-    unlinkChild(@Param('uuid') uuid: string, @Param('studentId', ParseIntPipe) studentId: number) {
-        return this.service.unlinkChild(uuid, studentId);
+    @Delete(':uuid/children/:studentUuid')
+    unlinkChild(@Param('uuid') uuid: string, @Param('studentUuid') studentUuid: string) {
+        return this.service.unlinkChild(uuid, studentUuid);
     }
 }

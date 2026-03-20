@@ -240,28 +240,48 @@ export class ParentsService {
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
 
-        for (const studentId of dto.studentUserIds) {
+        // Resolve student UUIDs to user IDs
+        const students = await this.prisma.user.findMany({
+            where: {
+                uuid: { in: dto.studentUuids },
+                userType: 'STUDENT',
+                isDeleted: false,
+            },
+            select: { id: true, uuid: true },
+        });
+
+        if (students.length === 0) {
+            throw new NotFoundException('NO_VALID_STUDENTS_FOUND');
+        }
+
+        for (const student of students) {
             await this.prisma.parentStudent.upsert({
-                where: { parentId_studentId: { parentId: user.id, studentId } },
-                create: { parentId: user.id, studentId },
+                where: { parentId_studentId: { parentId: user.id, studentId: student.id } },
+                create: { parentId: user.id, studentId: student.id },
                 update: { isDeleted: false, deletedAt: null },
             });
         }
 
-        return { success: true, linked: dto.studentUserIds.length };
+        return { success: true, linked: students.length };
     }
 
     // ─── SRS-PAR-08: Unlink Child ───────────────────────────
 
-    async unlinkChild(userUuid: string, studentUserId: number) {
+    async unlinkChild(userUuid: string, studentUuid: string) {
         const user = await this.prisma.user.findFirst({
             where: { uuid: userUuid, userType: 'PARENT', isDeleted: false },
             select: { id: true },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
 
+        const student = await this.prisma.user.findFirst({
+            where: { uuid: studentUuid, userType: 'STUDENT', isDeleted: false },
+            select: { id: true },
+        });
+        if (!student) throw new NotFoundException('STUDENT_NOT_FOUND');
+
         await this.prisma.parentStudent.updateMany({
-            where: { parentId: user.id, studentId: studentUserId, isDeleted: false },
+            where: { parentId: user.id, studentId: student.id, isDeleted: false },
             data: { isDeleted: true, deletedAt: new Date() },
         });
         return { success: true };
