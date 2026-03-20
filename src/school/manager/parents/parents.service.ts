@@ -35,7 +35,7 @@ export class ParentsService {
                 } : {}),
             },
             select: {
-                uuid: true, name: true, phone: true, isActive: true, updatedAt: true,
+                uuid: true, name: true, phone: true, gender: true, isActive: true, updatedAt: true,
                 parent: {
                     select: { _count: { select: { childLinks: { where: { isDeleted: false } } } } },
                 },
@@ -153,6 +153,7 @@ export class ParentsService {
 
         const data: Record<string, any> = {};
         if (dto.name !== undefined) data.name = dto.name;
+        if (dto.gender !== undefined) data.gender = dto.gender;
         if (dto.phone !== undefined) data.phone = dto.phone;
         if (dto.email !== undefined) data.email = dto.email;
         if (dto.province !== undefined) data.province = dto.province;

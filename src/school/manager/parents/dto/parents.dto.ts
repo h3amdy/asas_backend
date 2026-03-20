@@ -60,6 +60,11 @@ export class UpdateParentDto {
 
     @IsOptional()
     @IsString()
+    @IsIn(['MALE', 'FEMALE'])
+    gender?: string;
+
+    @IsOptional()
+    @IsString()
     @MinLength(6)
     @MaxLength(20)
     phone?: string;
