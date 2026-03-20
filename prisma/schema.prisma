@@ -564,6 +564,9 @@ model SubjectSectionTeacher {
 
   @@unique([subjectSectionId, teacherId], map: "subject_section_teachers_ss_teacher_key")
   @@index([teacherId, updatedAt], map: "subject_section_teachers_teacher_updated_idx")
+  // ⚠️ Partial unique index (in migration SQL, not expressible in Prisma):
+  // UNIQUE ON (subject_section_id) WHERE is_deleted = false
+  // — ensures only ONE active teacher per subject-section
   @@map("subject_section_teachers")
 }
 
