@@ -13,9 +13,10 @@ export class CreateParentDto {
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
     name!: string;
 
+    @IsOptional()
     @IsString()
     @IsIn(['MALE', 'FEMALE'])
-    gender!: string;
+    gender?: string;
 
     @IsString()
     @MinLength(6)
