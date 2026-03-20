@@ -27,6 +27,9 @@ import { SubjectsService } from './subjects/subjects.service';
 import { SetupController } from './setup/setup.controller';
 import { SetupService } from './setup/setup.service';
 
+import { TimetableController } from './timetable/timetable.controller';
+import { TimetableService } from './timetable/timetable.service';
+
 /**
  * 🏫 وحدة المدير — تجمع كل APIs إدارة المدرسة
  * جميع الـ endpoints تتطلب دور ADMIN
@@ -42,6 +45,7 @@ import { SetupService } from './setup/setup.service';
         TeachersController,
         SubjectsController,
         SetupController,
+        TimetableController,
     ],
     providers: [
         SchoolInfoService,
@@ -52,6 +56,7 @@ import { SetupService } from './setup/setup.service';
         TeachersService,
         SubjectsService,
         SetupService,
+        TimetableService,
     ],
 })
 export class ManagerModule { }

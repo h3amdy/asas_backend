@@ -208,6 +208,7 @@ model Year {
 
   terms       Term[]
   enrollments StudentEnrollment[]
+  timetables  Timetable[]
 
   @@index([schoolId], map: "years_school_id_idx")
   @@map("years")
@@ -234,6 +235,8 @@ model Term {
 
   @@index([yearId], map: "terms_year_id_idx")
   @@map("terms")
+
+  timetables Timetable[]
 }
 
 // صفوف المدرسة
@@ -289,6 +292,7 @@ model Section {
   enrollments     StudentEnrollment[]
   subjectSections SubjectSection[]
   teacherScopes   TeacherScope[]
+  timetables      Timetable[]
 
   @@index([gradeId], map: "sections_grade_id_idx")
   @@map("sections")
@@ -537,6 +541,7 @@ model SubjectSection {
   deletedAt DateTime? @map("deleted_at")
 
   teachers SubjectSectionTeacher[]
+  timetableSlots TimetableSlot[]
 
   @@unique([subjectId, sectionId], map: "subject_sections_subject_section_key")
   @@index([updatedAt], map: "subject_sections_updated_at_idx")
@@ -568,6 +573,60 @@ model SubjectSectionTeacher {
   // UNIQUE ON (subject_section_id) WHERE is_deleted = false
   // — ensures only ONE active teacher per subject-section
   @@map("subject_section_teachers")
+}
+
+// =========================
+// TIMETABLE (ADM-060/061)
+// =========================
+
+// جدول الحصص — واحد لكل شعبة + سنة + فصل
+model Timetable {
+  id        Int    @id @default(autoincrement())
+  uuid      String @unique @default(uuid())
+
+  sectionId Int    @map("section_id")
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  yearId    Int    @map("year_id")
+  year      Year   @relation(fields: [yearId], references: [id])
+
+  termId    Int    @map("term_id")
+  term      Term   @relation(fields: [termId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  slots TimetableSlot[]
+
+  @@unique([sectionId, yearId, termId], map: "timetables_section_year_term_key")
+  @@index([yearId, termId], map: "timetables_year_term_idx")
+  @@map("timetables")
+}
+
+// حصة في الجدول — يوم + رقم حصة + مادة (المعلم يُحسم من ADM-052)
+model TimetableSlot {
+  id               Int    @id @default(autoincrement())
+  uuid             String @unique @default(uuid())
+
+  timetableId      Int    @map("timetable_id")
+  timetable        Timetable @relation(fields: [timetableId], references: [id])
+
+  weekday          Int    // 0=سبت, 1=أحد, 2=اثنين, 3=ثلاثاء, 4=أربعاء, 5=خميس
+  lessonNumber     Int    @map("lesson_number") // 1-8
+
+  subjectSectionId Int?   @map("subject_section_id")
+  subjectSection   SubjectSection? @relation(fields: [subjectSectionId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([timetableId, weekday, lessonNumber], map: "timetable_slots_unique_slot_key")
+  @@index([subjectSectionId], map: "timetable_slots_subject_section_idx")
+  @@map("timetable_slots")
 }
 
 // =========================
