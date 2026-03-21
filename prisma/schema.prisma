@@ -593,6 +593,11 @@ model Timetable {
   termId    Int    @map("term_id")
   term      Term   @relation(fields: [termId], references: [id])
 
+  // MVP: حفظ = نشر — مستقبلاً يمكن دعم Draft/Published
+  status         String   @default("PUBLISHED") @map("status")
+  publishedAt    DateTime? @map("published_at")
+  publishVersion Int      @default(1) @map("publish_version")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   isDeleted Boolean  @default(false) @map("is_deleted")
