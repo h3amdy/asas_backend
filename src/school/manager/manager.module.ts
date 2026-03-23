@@ -28,6 +28,7 @@ import { SetupController } from './setup/setup.controller';
 import { SetupService } from './setup/setup.service';
 
 import { TimetableController } from './timetable/timetable.controller';
+import { TeacherTimetableController } from './timetable/teacher-timetable.controller';
 import { TimetableService } from './timetable/timetable.service';
 
 /**
@@ -46,6 +47,7 @@ import { TimetableService } from './timetable/timetable.service';
         SubjectsController,
         SetupController,
         TimetableController,
+        TeacherTimetableController,
     ],
     providers: [
         SchoolInfoService,

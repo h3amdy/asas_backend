@@ -305,4 +305,99 @@ export class TimetableService {
             })),
         };
     }
+
+    // ═══════ جدول المعلم الأسبوعي (ADM-047) ═══════
+
+    /**
+     * GET — جلب كل حصص المعلم من كل الشعب في فصل معيّن
+     * يُستخدم لعرض الجدول الأسبوعي للمعلم
+     */
+    async getTeacherTimetable(
+        schoolId: number,
+        teacherUuid: string,
+        yearId: number,
+        termId: number,
+    ) {
+        // 1. التحقق من المعلم (schoolId على User وليس Teacher)
+        const teacher = await this.prisma.teacher.findFirst({
+            where: {
+                user: { uuid: teacherUuid, schoolId, isActive: true },
+            },
+            include: {
+                user: { select: { uuid: true, name: true, code: true } },
+            },
+        });
+        if (!teacher) throw new NotFoundException('TEACHER_NOT_FOUND');
+
+        // 2. جلب كل حصص المعلم عبر subject_section_teachers → timetable_slots
+        const slots = await this.prisma.timetableSlot.findMany({
+            where: {
+                isDeleted: false,
+                timetable: {
+                    yearId,
+                    termId,
+                    isDeleted: false,
+                    section: {
+                        isDeleted: false,
+                        grade: { schoolId, isDeleted: false },
+                    },
+                },
+                subjectSection: {
+                    isDeleted: false,
+                    teachers: {
+                        some: {
+                            teacherId: teacher.userId,  // PK في Teacher = userId
+                            isDeleted: false,
+                            isActive: true,
+                        },
+                    },
+                },
+            },
+            orderBy: [{ weekday: 'asc' }, { lessonNumber: 'asc' }],
+            include: {
+                subjectSection: {
+                    include: {
+                        subject: {
+                            select: {
+                                id: true,
+                                uuid: true,
+                                displayName: true,
+                                shortName: true,
+                            },
+                        },
+                        section: {
+                            select: {
+                                id: true,
+                                name: true,
+                                grade: { select: { displayName: true } },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        return {
+            teacherUuid: teacher.user.uuid,
+            teacherName: teacher.user.name,
+            teacherCode: teacher.user.code,
+            yearId,
+            termId,
+            slots: slots.map((slot) => ({
+                weekday: slot.weekday,
+                lessonNumber: slot.lessonNumber,
+                subject: slot.subjectSection ? {
+                    id: slot.subjectSection.subject.id,
+                    uuid: slot.subjectSection.subject.uuid,
+                    displayName: slot.subjectSection.subject.displayName,
+                    shortName: slot.subjectSection.subject.shortName,
+                } : null,
+                section: slot.subjectSection ? {
+                    id: slot.subjectSection.section.id,
+                    name: slot.subjectSection.section.name,
+                    gradeName: slot.subjectSection.section.grade.displayName,
+                } : null,
+            })),
+        };
+    }
 }
