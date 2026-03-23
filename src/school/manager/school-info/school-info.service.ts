@@ -33,6 +33,7 @@ export class SchoolInfoService {
         if (dto.district !== undefined) data.district = dto.district;
         if (dto.addressArea !== undefined) data.addressArea = dto.addressArea;
         if (dto.address !== undefined) data.address = dto.address;
+        if (dto.deliveryPolicy !== undefined) data.deliveryPolicy = dto.deliveryPolicy;
 
         // Logo: resolve UUID → ID, or null to remove
         if (dto.logoMediaAssetUuid !== undefined) {

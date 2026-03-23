@@ -1,5 +1,6 @@
 // src/school/manager/school-info/dto/update-school-info.dto.ts
-import { IsEmail, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { DeliveryPolicy } from '@prisma/client';
 import { Transform } from 'class-transformer';
 
 export class UpdateSchoolInfoDto {
@@ -43,4 +44,8 @@ export class UpdateSchoolInfoDto {
     @IsOptional()
     @IsUUID()
     logoMediaAssetUuid?: string;
+
+    @IsOptional()
+    @IsEnum(DeliveryPolicy)
+    deliveryPolicy?: DeliveryPolicy;
 }
