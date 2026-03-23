@@ -5,6 +5,8 @@ import { CreateTeacherDto, UpdateTeacherDto, ResetPasswordDto, ToggleActiveDto }
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
+import { ParseIntPipe } from '@nestjs/common';
+import { TimetableService } from '../timetable/timetable.service';
 
 /**
  * 🧑‍🏫 API إدارة المعلمين — SRS-TCH
@@ -26,7 +28,10 @@ import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 @UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
 @Roles('ADMIN')
 export class TeachersController {
-    constructor(private readonly service: TeachersService) { }
+    constructor(
+        private readonly service: TeachersService,
+        private readonly timetableService: TimetableService,
+    ) { }
 
     // ─── SRS-TCH-01: List & Search ──────────────────────────
 
@@ -85,5 +90,19 @@ export class TeachersController {
     @Get(':uuid/credentials')
     getCredentials(@Req() req: any, @Param('uuid') uuid: string) {
         return this.service.getCredentials(uuid, req.schoolContext.id);
+    }
+
+    // ─── ADM-047: Teacher Timetable ─────────────────────────
+
+    @Get(':uuid/timetable')
+    getTeacherTimetable(
+        @Req() req: any,
+        @Param('uuid') uuid: string,
+        @Query('yearId', ParseIntPipe) yearId: number,
+        @Query('termId', ParseIntPipe) termId: number,
+    ) {
+        return this.timetableService.getTeacherTimetable(
+            req.schoolContext.id, uuid, yearId, termId,
+        );
     }
 }
