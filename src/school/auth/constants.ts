@@ -41,8 +41,8 @@ export const SCHOOL_AUTH_ERRORS = {
  * إعدادات JWT للمدارس
  */
 export const SCHOOL_AUTH_JWT = {
-  accessTokenTtlSec: 60 * 15,          // 15m
-  refreshTokenTtlSec: 60 * 60 * 24 * 30, // 30d
+  accessTokenTtlSec: 60 * 60 * 24 * 7,    // 7d
+  refreshTokenTtlSec: 60 * 60 * 24 * 90,  // 90d
   issuer: 'asas-backend',
   audience: 'asas-school-app',
 };
