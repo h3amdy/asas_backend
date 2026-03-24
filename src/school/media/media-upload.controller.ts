@@ -24,7 +24,7 @@ import { PrismaService } from '../../prisma/prisma.service';
  */
 @Controller('school/media-upload')
 @UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
-@Roles('ADMIN', 'TEACHER')
+@Roles('OWNER', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT')
 export class MediaUploadController {
     constructor(
         private readonly uploadService: MediaUploadService,
