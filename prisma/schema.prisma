@@ -162,6 +162,7 @@ model School {
   subjects        Subject[]
   mediaAssets     MediaAsset[]           @relation("SchoolMediaAssets")
   uploadSessions  MediaUploadSession[]   @relation("SchoolUploadSessions")
+  units           Unit[]
 }
 
 // قاموس الصفوف العام
@@ -515,6 +516,7 @@ model Subject {
   deletedAt DateTime? @map("deleted_at")
 
   subjectSections SubjectSection[]
+  units           Unit[]
 
   @@index([schoolId, gradeId], map: "subjects_school_grade_idx")
   @@index([dictionaryId], map: "subjects_dictionary_id_idx")
@@ -810,4 +812,30 @@ model MediaUploadSession {
   @@index([mediaAssetId], map: "media_upload_sessions_asset_id_idx")
   @@index([updatedAt], map: "media_upload_sessions_updated_at_idx")
   @@map("media_upload_sessions")
+}
+
+// ── الوحدات ─────────────────────────────────────────────────────────
+model Unit {
+  id          Int    @id @default(autoincrement())
+  uuid        String @unique @default(uuid())
+
+  subjectId   Int    @map("subject_id")
+  subject     Subject @relation(fields: [subjectId], references: [id])
+
+  ownerType   String @default("SCHOOL") @map("owner_type")
+  schoolId    Int?   @map("school_id")
+  school      School? @relation(fields: [schoolId], references: [id])
+
+  title       String
+  orderIndex  Int    @map("order_index")
+  description String?
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@unique([subjectId, orderIndex], map: "units_subject_order_idx")
+  @@index([subjectId], map: "units_subject_id_idx")
+  @@map("units")
 }

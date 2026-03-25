@@ -2,6 +2,8 @@
 import { Module } from '@nestjs/common';
 import { TeacherSubjectsController } from './subjects/teacher-subjects.controller';
 import { TeacherSubjectsService } from './subjects/teacher-subjects.service';
+import { TeacherUnitsController } from './units/teacher-units.controller';
+import { TeacherUnitsService } from './units/teacher-units.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
 
@@ -11,7 +13,8 @@ import { SchoolCommonModule } from '../common/school-common.module';
  */
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
-    controllers: [TeacherSubjectsController],
-    providers: [TeacherSubjectsService],
+    controllers: [TeacherSubjectsController, TeacherUnitsController],
+    providers: [TeacherSubjectsService, TeacherUnitsService],
 })
 export class TeacherModule { }
+
