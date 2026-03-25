@@ -112,6 +112,8 @@ model User {
   parent  Parent?
   teacher Teacher?
 
+  lessonTemplatesCreated LessonTemplate[] @relation("LessonTemplateCreator")
+
   @@index([schoolId], map: "users_school_id_idx")
   @@index([avatarMediaAssetId], map: "users_avatar_media_asset_id_idx")
   @@map("users")
@@ -155,14 +157,15 @@ model School {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users           User[]
-  authSessions    AuthSession[]
-  years           Year[]
-  schoolGrades    SchoolGrade[]
-  subjects        Subject[]
-  mediaAssets     MediaAsset[]           @relation("SchoolMediaAssets")
-  uploadSessions  MediaUploadSession[]   @relation("SchoolUploadSessions")
-  units           Unit[]
+  users              User[]
+  authSessions       AuthSession[]
+  years              Year[]
+  schoolGrades       SchoolGrade[]
+  subjects           Subject[]
+  mediaAssets        MediaAsset[]           @relation("SchoolMediaAssets")
+  uploadSessions     MediaUploadSession[]   @relation("SchoolUploadSessions")
+  units              Unit[]
+  lessonTemplates    LessonTemplate[]
 }
 
 // قاموس الصفوف العام
@@ -517,6 +520,7 @@ model Subject {
 
   subjectSections SubjectSection[]
   units           Unit[]
+  lessonTemplates LessonTemplate[]
 
   @@index([schoolId, gradeId], map: "subjects_school_grade_idx")
   @@index([dictionaryId], map: "subjects_dictionary_id_idx")
@@ -756,10 +760,12 @@ model MediaAsset {
   uploadSessions MediaUploadSession[]
 
   // Reverse relations from entities that reference this asset
-  schoolsAsLogo       School[]              @relation("SchoolLogo")
-  subjectsAsCover     Subject[]             @relation("SubjectCover")
-  subjectDictsAsCover SubjectDictionary[]   @relation("SubjectDictCover")
-  usersAsAvatar       User[]                @relation("UserAvatar")
+  schoolsAsLogo           School[]              @relation("SchoolLogo")
+  subjectsAsCover         Subject[]             @relation("SubjectCover")
+  subjectDictsAsCover     SubjectDictionary[]   @relation("SubjectDictCover")
+  usersAsAvatar           User[]                @relation("UserAvatar")
+  lessonTemplatesAsCover  LessonTemplate[]      @relation("LessonTemplateCover")
+  lessonContentsAsMedia   LessonContent[]       @relation("LessonContentMedia")
 
   @@index([schoolId], map: "media_assets_school_id_idx")
   @@index([kind], map: "media_assets_kind_idx")
@@ -835,7 +841,85 @@ model Unit {
   isDeleted   Boolean   @default(false) @map("is_deleted")
   deletedAt   DateTime? @map("deleted_at")
 
+  lessonTemplates LessonTemplate[]
+
   @@unique([subjectId, orderIndex], map: "units_subject_order_idx")
   @@index([subjectId], map: "units_subject_id_idx")
   @@map("units")
+}
+
+// ── قوالب الدروس ──────────────────────────────────────────────────────
+model LessonTemplate {
+  id                 Int      @id @default(autoincrement())
+  uuid               String   @unique @default(uuid())
+
+  ownerType          String   @default("SCHOOL") @map("owner_type")
+  schoolId           Int      @map("school_id")
+  school             School   @relation(fields: [schoolId], references: [id])
+
+  subjectId          Int      @map("subject_id")
+  subject            Subject  @relation(fields: [subjectId], references: [id])
+
+  unitId             Int      @map("unit_id")
+  unit               Unit     @relation(fields: [unitId], references: [id])
+
+  orderIndex         Int      @default(1) @map("order_index")
+  title              String
+  status             String   @default("DRAFT")
+
+  coverMediaAssetId  Int?     @map("cover_media_asset_id")
+  coverMediaAsset    MediaAsset? @relation("LessonTemplateCover", fields: [coverMediaAssetId], references: [id])
+
+  templateVersion    Int      @default(1) @map("template_version")
+  sourceTemplateId   Int?     @map("source_template_id")
+  sourceTemplate     LessonTemplate?  @relation("LessonTemplateClone", fields: [sourceTemplateId], references: [id])
+  clonedTemplates    LessonTemplate[] @relation("LessonTemplateClone")
+
+  createdByUserId    Int?     @map("created_by_user_id")
+  createdByUser      User?    @relation("LessonTemplateCreator", fields: [createdByUserId], references: [id])
+
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  isDeleted          Boolean  @default(false) @map("is_deleted")
+  deletedAt          DateTime? @map("deleted_at")
+
+  contents           LessonContent[]
+
+  @@unique([unitId, orderIndex], map: "lesson_templates_unit_order_idx")
+  @@index([schoolId], map: "lesson_templates_school_id_idx")
+  @@index([subjectId], map: "lesson_templates_subject_id_idx")
+  @@index([unitId], map: "lesson_templates_unit_id_idx")
+  @@index([coverMediaAssetId], map: "lesson_templates_cover_idx")
+  @@index([sourceTemplateId], map: "lesson_templates_source_idx")
+  @@index([updatedAt], map: "lesson_templates_updated_at_idx")
+  @@map("lesson_templates")
+}
+
+// ── محتويات الدرس ─────────────────────────────────────────────────────
+model LessonContent {
+  id             Int      @id @default(autoincrement())
+  uuid           String   @unique @default(uuid())
+
+  templateId     Int      @map("template_id")
+  template       LessonTemplate @relation(fields: [templateId], references: [id])
+
+  type           String   // TEXT / IMAGE / AUDIO
+  title          String?  // عنوان اختياري للكتلة (V10.1)
+
+  mediaAssetId   Int?     @map("media_asset_id")
+  mediaAsset     MediaAsset? @relation("LessonContentMedia", fields: [mediaAssetId], references: [id])
+
+  contentText    String?  @map("content_text")
+  orderIndex     Int      @map("order_index")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  isDeleted      Boolean  @default(false) @map("is_deleted")
+  deletedAt      DateTime? @map("deleted_at")
+
+  @@unique([templateId, orderIndex], map: "lesson_contents_template_order_idx")
+  @@index([templateId], map: "lesson_contents_template_id_idx")
+  @@index([mediaAssetId], map: "lesson_contents_media_asset_id_idx")
+  @@map("lesson_contents")
 }
