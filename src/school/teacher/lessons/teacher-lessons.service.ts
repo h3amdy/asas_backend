@@ -471,13 +471,26 @@ export class TeacherLessonsService {
             throw new ConflictException('ترتيب الكتلة مستخدم.');
         }
 
+        // Resolve mediaAssetUuid → mediaAssetId
+        let mediaAssetId: number | null = null;
+        if (dto.mediaAssetUuid) {
+            const asset = await this.prisma.mediaAsset.findFirst({
+                where: { uuid: dto.mediaAssetUuid, schoolId, isDeleted: false },
+                select: { id: true },
+            });
+            if (!asset) {
+                throw new NotFoundException('الوسيط غير موجود: ' + dto.mediaAssetUuid);
+            }
+            mediaAssetId = asset.id;
+        }
+
         const content = await this.prisma.lessonContent.create({
             data: {
                 templateId: lesson.id,
                 type: dto.type,
                 title: dto.title ?? null,
                 contentText: dto.contentText ?? null,
-                mediaAssetId: dto.mediaAssetId ?? null,
+                mediaAssetId,
                 orderIndex: dto.orderIndex,
             },
         });
@@ -521,12 +534,25 @@ export class TeacherLessonsService {
             throw new NotFoundException('كتلة المحتوى غير موجودة');
         }
 
+        // Resolve mediaAssetUuid → mediaAssetId
+        let resolvedMediaAssetId: number | undefined = undefined;
+        if (dto.mediaAssetUuid !== undefined) {
+            const asset = await this.prisma.mediaAsset.findFirst({
+                where: { uuid: dto.mediaAssetUuid, schoolId, isDeleted: false },
+                select: { id: true },
+            });
+            if (!asset) {
+                throw new NotFoundException('الوسيط غير موجود: ' + dto.mediaAssetUuid);
+            }
+            resolvedMediaAssetId = asset.id;
+        }
+
         const updated = await this.prisma.lessonContent.update({
             where: { id: content.id },
             data: {
                 ...(dto.title !== undefined && { title: dto.title }),
                 ...(dto.contentText !== undefined && { contentText: dto.contentText }),
-                ...(dto.mediaAssetId !== undefined && { mediaAssetId: dto.mediaAssetId }),
+                ...(resolvedMediaAssetId !== undefined && { mediaAssetId: resolvedMediaAssetId }),
             },
         });
 

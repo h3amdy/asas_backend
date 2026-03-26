@@ -1,5 +1,5 @@
 // src/school/teacher/lessons/dto/update-content.dto.ts
-import { IsInt, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class UpdateContentDto {
@@ -13,6 +13,6 @@ export class UpdateContentDto {
     contentText?: string;
 
     @IsOptional()
-    @IsInt()
-    mediaAssetId?: number;
+    @IsUUID('4', { message: 'معرّف الوسيط يجب أن يكون UUID صالح' })
+    mediaAssetUuid?: string;
 }

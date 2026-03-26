@@ -1,5 +1,5 @@
 // src/school/teacher/lessons/dto/create-content.dto.ts
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Min, ValidateIf } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsInt, IsUUID, Min, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateContentDto {
@@ -18,8 +18,8 @@ export class CreateContentDto {
 
     @ValidateIf((o) => o.type === 'IMAGE' || o.type === 'AUDIO')
     @IsNotEmpty({ message: 'معرّف الوسيط مطلوب لنوع IMAGE/AUDIO' })
-    @IsInt()
-    mediaAssetId?: number;
+    @IsUUID('4', { message: 'معرّف الوسيط يجب أن يكون UUID صالح' })
+    mediaAssetUuid?: string;
 
     @IsInt()
     @Min(1)
