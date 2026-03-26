@@ -411,6 +411,7 @@ export class TeacherLessonsService {
         const contents = await this.prisma.lessonContent.findMany({
             where: { templateId: lesson.id, isDeleted: false },
             orderBy: { orderIndex: 'asc' },
+            include: { mediaAsset: { select: { uuid: true } } },
         });
 
         return {
@@ -421,6 +422,7 @@ export class TeacherLessonsService {
                 title: c.title,
                 contentText: c.contentText,
                 mediaAssetId: c.mediaAssetId,
+                mediaAssetUuid: c.mediaAsset?.uuid ?? null,
                 orderIndex: c.orderIndex,
             })),
         };
@@ -493,6 +495,7 @@ export class TeacherLessonsService {
                 mediaAssetId,
                 orderIndex: dto.orderIndex,
             },
+            include: { mediaAsset: { select: { uuid: true } } },
         });
 
         return {
@@ -502,6 +505,7 @@ export class TeacherLessonsService {
             title: content.title,
             contentText: content.contentText,
             mediaAssetId: content.mediaAssetId,
+            mediaAssetUuid: content.mediaAsset?.uuid ?? null,
             orderIndex: content.orderIndex,
         };
     }
