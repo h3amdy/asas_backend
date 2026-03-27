@@ -606,7 +606,13 @@ export class TeacherLessonsService {
 
         await this.prisma.lessonContent.update({
             where: { id: content.id },
-            data: { isDeleted: true, deletedAt: new Date() },
+            data: {
+                isDeleted: true,
+                deletedAt: new Date(),
+                // تحرير الـ orderIndex من قيد الـ unique constraint
+                // بتعيينه قيمة سالبة فريدة (سالب الـ id)
+                orderIndex: -content.id,
+            },
         });
 
         return { message: 'تم حذف كتلة المحتوى بنجاح' };
