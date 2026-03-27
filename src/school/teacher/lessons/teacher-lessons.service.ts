@@ -650,13 +650,13 @@ export class TeacherLessonsService {
 
         // نفس نمط الوحدات: أرقام سالبة مؤقتة ثم النهائية
         await this.prisma.$transaction(async (tx) => {
-            // مرحلة 1: أرقام سالبة مؤقتة
+            // مرحلة 1: أرقام سالبة مؤقتة (كبيرة لتجنب التعارض مع السجلات المحذوفة)
             for (let i = 0; i < dto.orderedUuids.length; i++) {
                 const content = contents.find((c) => c.uuid === dto.orderedUuids[i]);
                 if (content) {
                     await tx.lessonContent.update({
                         where: { id: content.id },
-                        data: { orderIndex: -(i + 1) },
+                        data: { orderIndex: -(10000 + i + 1) },
                     });
                 }
             }
