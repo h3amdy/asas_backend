@@ -142,6 +142,21 @@ export class TeacherLessonsController {
         );
     }
 
+    /** PATCH — إعادة ترتيب كتل المحتوى (SRS-LSN-05) — يجب أن يكون قبل :contentUuid */
+    @Patch('lessons/:lessonUuid/contents/reorder')
+    reorderContents(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Body() dto: ReorderContentsDto,
+    ) {
+        return this.service.reorderContents(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            dto,
+        );
+    }
+
     /** PATCH — تعديل كتلة محتوى (SRS-LSN-05) */
     @Patch('lessons/:lessonUuid/contents/:contentUuid')
     updateContent(
@@ -171,21 +186,6 @@ export class TeacherLessonsController {
             req.user.sub,
             lessonUuid,
             contentUuid,
-        );
-    }
-
-    /** PATCH — إعادة ترتيب كتل المحتوى (SRS-LSN-05) */
-    @Patch('lessons/:lessonUuid/contents/reorder')
-    reorderContents(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Body() dto: ReorderContentsDto,
-    ) {
-        return this.service.reorderContents(
-            req.schoolContext.id,
-            req.user.sub,
-            lessonUuid,
-            dto,
         );
     }
 }
