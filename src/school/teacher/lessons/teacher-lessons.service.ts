@@ -460,7 +460,8 @@ export class TeacherLessonsService {
             }
         }
 
-        // تحقق من فرادة الترتيب
+        // تحديد ترتيب آمن — إذا التقاطع مع ترتيب موجود، استخدم الترتيب التالي المتاح
+        let finalOrderIndex = dto.orderIndex;
         const existingOrder = await this.prisma.lessonContent.findFirst({
             where: {
                 templateId: lesson.id,
@@ -470,7 +471,12 @@ export class TeacherLessonsService {
         });
 
         if (existingOrder) {
-            throw new ConflictException('ترتيب الكتلة مستخدم.');
+            // اختر أعلى ترتيب + 1
+            const maxOrder = await this.prisma.lessonContent.aggregate({
+                where: { templateId: lesson.id, isDeleted: false },
+                _max: { orderIndex: true },
+            });
+            finalOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
         }
 
         // Resolve mediaAssetUuid → mediaAssetId
@@ -493,7 +499,7 @@ export class TeacherLessonsService {
                 title: dto.title ?? null,
                 contentText: dto.contentText ?? null,
                 mediaAssetId,
-                orderIndex: dto.orderIndex,
+                orderIndex: finalOrderIndex,
             },
             include: { mediaAsset: { select: { uuid: true } } },
         });
