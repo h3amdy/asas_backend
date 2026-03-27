@@ -460,20 +460,21 @@ export class TeacherLessonsService {
             }
         }
 
-        // تحديد ترتيب آمن — إذا التقاطع مع ترتيب موجود، استخدم الترتيب التالي المتاح
+        // تحديد ترتيب آمن — فحص جميع السجلات (بما فيها المحذوفة)
+        // لأن قيد unique في قاعدة البيانات يشمل جميع الصفوف
         let finalOrderIndex = dto.orderIndex;
         const existingOrder = await this.prisma.lessonContent.findFirst({
             where: {
                 templateId: lesson.id,
                 orderIndex: dto.orderIndex,
-                isDeleted: false,
+                // لا نفلتر بـ isDeleted لأن الـ unique constraint يشمل الكل
             },
         });
 
         if (existingOrder) {
-            // اختر أعلى ترتيب + 1
+            // اختر أعلى ترتيب + 1 من جميع السجلات (بما فيها المحذوفة)
             const maxOrder = await this.prisma.lessonContent.aggregate({
-                where: { templateId: lesson.id, isDeleted: false },
+                where: { templateId: lesson.id },
                 _max: { orderIndex: true },
             });
             finalOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
