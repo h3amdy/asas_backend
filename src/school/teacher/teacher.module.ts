@@ -6,6 +6,8 @@ import { TeacherUnitsController } from './units/teacher-units.controller';
 import { TeacherUnitsService } from './units/teacher-units.service';
 import { TeacherLessonsController } from './lessons/teacher-lessons.controller';
 import { TeacherLessonsService } from './lessons/teacher-lessons.service';
+import { TeacherQuestionsController } from './questions/teacher-questions.controller';
+import { TeacherQuestionsService } from './questions/teacher-questions.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
 
@@ -15,7 +17,8 @@ import { SchoolCommonModule } from '../common/school-common.module';
  */
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
-    controllers: [TeacherSubjectsController, TeacherUnitsController, TeacherLessonsController],
-    providers: [TeacherSubjectsService, TeacherUnitsService, TeacherLessonsService],
+    controllers: [TeacherSubjectsController, TeacherUnitsController, TeacherLessonsController, TeacherQuestionsController],
+    providers: [TeacherSubjectsService, TeacherUnitsService, TeacherLessonsService, TeacherQuestionsService],
 })
 export class TeacherModule { }
+

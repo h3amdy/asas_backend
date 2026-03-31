@@ -767,6 +767,20 @@ model MediaAsset {
   lessonTemplatesAsCover  LessonTemplate[]      @relation("LessonTemplateCover")
   lessonContentsAsMedia   LessonContent[]       @relation("LessonContentMedia")
 
+  // Question relations
+  questionsAsImage             Question[]             @relation("QuestionImage")
+  questionsAsAudio             Question[]             @relation("QuestionAudio")
+  questionsAsExplanationImage  Question[]             @relation("QuestionExplanationImage")
+  questionsAsExplanationAudio  Question[]             @relation("QuestionExplanationAudio")
+  questionOptionsAsImage       QuestionOption[]        @relation("QuestionOptionImage")
+  questionOptionsAsAudio       QuestionOption[]        @relation("QuestionOptionAudio")
+  matchingPairsAsLeftImage     QuestionMatchingPair[]  @relation("MatchingPairLeftImage")
+  matchingPairsAsLeftAudio     QuestionMatchingPair[]  @relation("MatchingPairLeftAudio")
+  matchingPairsAsRightImage    QuestionMatchingPair[]  @relation("MatchingPairRightImage")
+  matchingPairsAsRightAudio    QuestionMatchingPair[]  @relation("MatchingPairRightAudio")
+  orderingItemsAsImage         QuestionOrderingItem[]  @relation("OrderingItemImage")
+  orderingItemsAsAudio         QuestionOrderingItem[]  @relation("OrderingItemAudio")
+
   @@index([schoolId], map: "media_assets_school_id_idx")
   @@index([kind], map: "media_assets_kind_idx")
   @@index([updatedAt], map: "media_assets_updated_at_idx")
@@ -885,6 +899,7 @@ model LessonTemplate {
   deletedAt          DateTime? @map("deleted_at")
 
   contents           LessonContent[]
+  questions          Question[]
 
   @@unique([unitId, orderIndex], map: "lesson_templates_unit_order_idx")
   @@index([schoolId], map: "lesson_templates_school_id_idx")
@@ -922,4 +937,195 @@ model LessonContent {
   @@index([templateId], map: "lesson_contents_template_id_idx")
   @@index([mediaAssetId], map: "lesson_contents_media_asset_id_idx")
   @@map("lesson_contents")
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── الأسئلة (Questions & Options) ── المرحلة 3: TCH-090→101
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── جدول الأسئلة الرئيسي ─────────────────────────────────────────────────
+model Question {
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid())
+
+  templateId Int     @map("template_id")
+  template   LessonTemplate @relation(fields: [templateId], references: [id])
+
+  type       String  // MCQ / TRUE_FALSE / MATCHING / FILL / ORDERING
+  orderIndex Int     @map("order_index")
+
+  questionText           String?  @map("question_text")
+  questionImageAssetId   Int?     @map("question_image_asset_id")
+  questionImageAsset     MediaAsset? @relation("QuestionImage", fields: [questionImageAssetId], references: [id])
+  questionAudioAssetId   Int?     @map("question_audio_asset_id")
+  questionAudioAsset     MediaAsset? @relation("QuestionAudio", fields: [questionAudioAssetId], references: [id])
+
+  score      Float   @default(1.0)
+
+  explanationText           String?  @map("explanation_text")
+  explanationImageAssetId   Int?     @map("explanation_image_asset_id")
+  explanationImageAsset     MediaAsset? @relation("QuestionExplanationImage", fields: [explanationImageAssetId], references: [id])
+  explanationAudioAssetId   Int?     @map("explanation_audio_asset_id")
+  explanationAudioAsset     MediaAsset? @relation("QuestionExplanationAudio", fields: [explanationAudioAssetId], references: [id])
+
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  isDeleted  Boolean  @default(false) @map("is_deleted")
+  deletedAt  DateTime? @map("deleted_at")
+
+  // Relations
+  options       QuestionOption[]
+  matchingPairs QuestionMatchingPair[]
+  orderingItems QuestionOrderingItem[]
+  fillBlanks    QuestionFillBlank[]
+  fillAnswers   QuestionFillAnswer[]
+
+  @@unique([templateId, orderIndex], map: "questions_template_order_idx")
+  @@index([templateId], map: "questions_template_id_idx")
+  @@index([questionImageAssetId], map: "questions_question_image_idx")
+  @@index([questionAudioAssetId], map: "questions_question_audio_idx")
+  @@index([explanationImageAssetId], map: "questions_explanation_image_idx")
+  @@index([explanationAudioAssetId], map: "questions_explanation_audio_idx")
+  @@map("questions")
+}
+
+// ── خيارات الأسئلة (MCQ + TRUE_FALSE) ────────────────────────────────────
+model QuestionOption {
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid())
+
+  questionId  Int      @map("question_id")
+  question    Question @relation(fields: [questionId], references: [id])
+
+  optionText     String?  @map("option_text")
+  imageAssetId   Int?     @map("image_asset_id")
+  imageAsset     MediaAsset? @relation("QuestionOptionImage", fields: [imageAssetId], references: [id])
+  audioAssetId   Int?     @map("audio_asset_id")
+  audioAsset     MediaAsset? @relation("QuestionOptionAudio", fields: [audioAssetId], references: [id])
+
+  isCorrect   Boolean  @map("is_correct")
+  orderIndex  Int      @map("order_index")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@index([questionId], map: "question_options_question_id_idx")
+  @@index([imageAssetId], map: "question_options_image_idx")
+  @@index([audioAssetId], map: "question_options_audio_idx")
+  @@map("question_options")
+}
+
+// ── أزواج المطابقة (MATCHING) ────────────────────────────────────────────
+model QuestionMatchingPair {
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid())
+
+  questionId  Int      @map("question_id")
+  question    Question @relation(fields: [questionId], references: [id])
+
+  leftText           String?  @map("left_text")
+  leftImageAssetId   Int?     @map("left_image_asset_id")
+  leftImageAsset     MediaAsset? @relation("MatchingPairLeftImage", fields: [leftImageAssetId], references: [id])
+  leftAudioAssetId   Int?     @map("left_audio_asset_id")
+  leftAudioAsset     MediaAsset? @relation("MatchingPairLeftAudio", fields: [leftAudioAssetId], references: [id])
+
+  rightText           String?  @map("right_text")
+  rightImageAssetId   Int?     @map("right_image_asset_id")
+  rightImageAsset     MediaAsset? @relation("MatchingPairRightImage", fields: [rightImageAssetId], references: [id])
+  rightAudioAssetId   Int?     @map("right_audio_asset_id")
+  rightAudioAsset     MediaAsset? @relation("MatchingPairRightAudio", fields: [rightAudioAssetId], references: [id])
+
+  pairKey          String  @map("pair_key")
+  leftOrderIndex   Int?    @map("left_order_index")
+  rightOrderIndex  Int?    @map("right_order_index")
+
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  isDeleted  Boolean  @default(false) @map("is_deleted")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@unique([questionId, pairKey], map: "matching_pairs_question_pair_key_idx")
+  @@index([questionId], map: "matching_pairs_question_id_idx")
+  @@index([leftImageAssetId], map: "matching_pairs_left_image_idx")
+  @@index([leftAudioAssetId], map: "matching_pairs_left_audio_idx")
+  @@index([rightImageAssetId], map: "matching_pairs_right_image_idx")
+  @@index([rightAudioAssetId], map: "matching_pairs_right_audio_idx")
+  @@map("question_matching_pairs")
+}
+
+// ── عناصر الترتيب (ORDERING) ─────────────────────────────────────────────
+model QuestionOrderingItem {
+  id           Int      @id @default(autoincrement())
+  uuid         String   @unique @default(uuid())
+
+  questionId   Int      @map("question_id")
+  question     Question @relation(fields: [questionId], references: [id])
+
+  itemText       String?  @map("item_text")
+  imageAssetId   Int?     @map("image_asset_id")
+  imageAsset     MediaAsset? @relation("OrderingItemImage", fields: [imageAssetId], references: [id])
+  audioAssetId   Int?     @map("audio_asset_id")
+  audioAsset     MediaAsset? @relation("OrderingItemAudio", fields: [audioAssetId], references: [id])
+
+  correctIndex Int     @map("correct_index") // 1..N
+  orderIndex   Int     @map("order_index")   // ترتيب العرض
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@unique([questionId, correctIndex], map: "ordering_items_correct_idx")
+  @@unique([questionId, orderIndex], map: "ordering_items_order_idx")
+  @@index([questionId], map: "ordering_items_question_id_idx")
+  @@index([imageAssetId], map: "ordering_items_image_idx")
+  @@index([audioAssetId], map: "ordering_items_audio_idx")
+  @@map("question_ordering_items")
+}
+
+// ── تعريف الفراغات (FILL) ────────────────────────────────────────────────
+model QuestionFillBlank {
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid())
+
+  questionId  Int      @map("question_id")
+  question    Question @relation(fields: [questionId], references: [id])
+
+  blankKey    String   @map("blank_key")  // "A", "B", ...
+  orderIndex  Int      @map("order_index")
+  placeholder String?
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@unique([questionId, blankKey], map: "fill_blanks_question_key_idx")
+  @@unique([questionId, orderIndex], map: "fill_blanks_question_order_idx")
+  @@index([questionId], map: "fill_blanks_question_id_idx")
+  @@map("question_fill_blanks")
+}
+
+// ── إجابات الفراغات (FILL) ───────────────────────────────────────────────
+model QuestionFillAnswer {
+  id          Int      @id @default(autoincrement())
+  uuid        String   @unique @default(uuid())
+
+  questionId  Int      @map("question_id")
+  question    Question @relation(fields: [questionId], references: [id])
+
+  blankKey    String   @map("blank_key")
+  answerText  String   @map("answer_text")
+  isPrimary   Boolean  @default(false) @map("is_primary")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@unique([questionId, blankKey, answerText], map: "fill_answers_unique_idx")
+  @@index([questionId, blankKey], map: "fill_answers_question_key_idx")
+  @@map("question_fill_answers")
 }

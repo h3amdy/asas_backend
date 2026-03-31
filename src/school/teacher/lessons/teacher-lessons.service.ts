@@ -133,6 +133,7 @@ export class TeacherLessonsService {
                         _count: {
                             select: {
                                 contents: { where: { isDeleted: false } },
+                                questions: { where: { isDeleted: false } },
                             },
                         },
                     },
@@ -155,7 +156,7 @@ export class TeacherLessonsService {
                     status: lt.status,
                     coverMediaAssetId: lt.coverMediaAssetId,
                     contentsCount: lt._count.contents,
-                    questionsCount: 0, // Phase 3
+                    questionsCount: lt._count.questions,
                 })),
             })),
         };
