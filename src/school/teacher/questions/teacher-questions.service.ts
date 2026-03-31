@@ -365,29 +365,28 @@ export class TeacherQuestionsService {
             }
 
             if (dto.matchingPairs) {
-                await tx.questionMatchingPair.updateMany({
+                // Hard-delete بسبب @@unique([questionId, pairKey])
+                await tx.questionMatchingPair.deleteMany({
                     where: { questionId: question.id },
-                    data: { isDeleted: true, deletedAt: new Date() },
                 });
                 await this.createMatchingPairs(tx, question.id, dto.matchingPairs);
             }
 
             if (dto.orderingItems) {
-                await tx.questionOrderingItem.updateMany({
+                // Hard-delete بسبب @@unique([questionId, correctIndex]) و @@unique([questionId, orderIndex])
+                await tx.questionOrderingItem.deleteMany({
                     where: { questionId: question.id },
-                    data: { isDeleted: true, deletedAt: new Date() },
                 });
                 await this.createOrderingItems(tx, question.id, dto.orderingItems);
             }
 
             if (dto.fillBlanks || dto.fillAnswers) {
-                await tx.questionFillBlank.updateMany({
+                // Hard-delete بسبب @@unique([questionId, blankKey]) — soft-delete يسبب تعارض
+                await tx.questionFillAnswer.deleteMany({
                     where: { questionId: question.id },
-                    data: { isDeleted: true, deletedAt: new Date() },
                 });
-                await tx.questionFillAnswer.updateMany({
+                await tx.questionFillBlank.deleteMany({
                     where: { questionId: question.id },
-                    data: { isDeleted: true, deletedAt: new Date() },
                 });
                 if (dto.fillBlanks) await this.createFillBlanks(tx, question.id, dto.fillBlanks);
                 if (dto.fillAnswers) await this.createFillAnswers(tx, question.id, dto.fillAnswers);
