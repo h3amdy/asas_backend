@@ -72,20 +72,20 @@ enum GradeStage {
 
 // المستخدمون
 model User {
-  id           Int      @id @default(autoincrement())
-  uuid         String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  schoolId     Int?     @map("school_id")
-  school       School?  @relation(fields: [schoolId], references: [id])
+  schoolId Int?    @map("school_id")
+  school   School? @relation(fields: [schoolId], references: [id])
 
-  userType     UserType @map("user_type")
-  code         Int?
-  name         String
-  displayName  String?  @map("display_name")
-  gender       String?
+  userType    UserType @map("user_type")
+  code        Int?
+  name        String
+  displayName String?  @map("display_name")
+  gender      String?
 
-  phone        String?
-  email        String?
+  phone String?
+  email String?
 
   province       String?
   district       String?
@@ -97,10 +97,10 @@ model User {
 
   passwordHash String @map("password_hash")
 
-  isActive  Boolean  @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  isActive  Boolean   @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   devices        UserDevice[]
@@ -112,7 +112,8 @@ model User {
   parent  Parent?
   teacher Teacher?
 
-  lessonTemplatesCreated LessonTemplate[] @relation("LessonTemplateCreator")
+  lessonTemplatesCreated LessonTemplate[]    @relation("LessonTemplateCreator")
+  lessonDeliveryLogs     LessonDeliveryLog[] @relation("LessonDeliveryActor")
 
   @@index([schoolId], map: "users_school_id_idx")
   @@index([avatarMediaAssetId], map: "users_avatar_media_asset_id_idx")
@@ -126,12 +127,12 @@ model School {
 
   name        String
   displayName String?
-  schoolCode  Int      @unique
+  schoolCode  Int     @unique
   appType     AppType
 
   phone            String?
   email            String?
-  logoMediaAssetId Int?    @map("logo_media_asset_id")
+  logoMediaAssetId Int?        @map("logo_media_asset_id")
   logoMediaAsset   MediaAsset? @relation("SchoolLogo", fields: [logoMediaAssetId], references: [id])
 
   address       String?
@@ -150,22 +151,23 @@ model School {
 
   deliveryPolicy DeliveryPolicy @default(OPEN)
 
-  isActive  Boolean  @default(true)
-  isDeleted Boolean  @default(false)
+  isActive  Boolean   @default(true)
+  isDeleted Boolean   @default(false)
   deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users              User[]
-  authSessions       AuthSession[]
-  years              Year[]
-  schoolGrades       SchoolGrade[]
-  subjects           Subject[]
-  mediaAssets        MediaAsset[]           @relation("SchoolMediaAssets")
-  uploadSessions     MediaUploadSession[]   @relation("SchoolUploadSessions")
-  units              Unit[]
-  lessonTemplates    LessonTemplate[]
+  users           User[]
+  authSessions    AuthSession[]
+  years           Year[]
+  schoolGrades    SchoolGrade[]
+  subjects        Subject[]
+  mediaAssets     MediaAsset[]         @relation("SchoolMediaAssets")
+  uploadSessions  MediaUploadSession[] @relation("SchoolUploadSessions")
+  units           Unit[]
+  lessonTemplates LessonTemplate[]
+  lessons         Lesson[]
 }
 
 // قاموس الصفوف العام
@@ -173,20 +175,20 @@ model GradeDictionary {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
-  code        String  @unique
+  code        String      @unique
   defaultName String
   shortName   String?
   stage       GradeStage?
-  sortOrder   Int     @default(0)
-  isActive    Boolean @default(true)
+  sortOrder   Int         @default(0)
+  isActive    Boolean     @default(true)
 
-  isDeleted Boolean  @default(false)
+  isDeleted Boolean   @default(false)
   deletedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  schoolGrades     SchoolGrade[]
+  schoolGrades      SchoolGrade[]
   subjectDictionary SubjectDictionary[]
 }
 
@@ -196,23 +198,24 @@ model GradeDictionary {
 
 // السنوات الدراسية (التواريخ تُشتق من الفصول)
 model Year {
-  id        Int    @id @default(autoincrement())
-  uuid      String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  schoolId  Int    @map("school_id")
-  school    School @relation(fields: [schoolId], references: [id])
+  schoolId Int    @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
 
   name      String
-  isCurrent Boolean   @default(false) @map("is_current")
+  isCurrent Boolean @default(false) @map("is_current")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   terms       Term[]
   enrollments StudentEnrollment[]
   timetables  Timetable[]
+  lessons     Lesson[]
 
   @@index([schoolId], map: "years_school_id_idx")
   @@map("years")
@@ -220,55 +223,56 @@ model Year {
 
 // الفصول الدراسية
 model Term {
-  id        Int    @id @default(autoincrement())
-  uuid      String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  yearId    Int    @map("year_id")
-  year      Year   @relation(fields: [yearId], references: [id])
+  yearId Int  @map("year_id")
+  year   Year @relation(fields: [yearId], references: [id])
 
-  name      String
-  orderIndex Int   @map("order_index")
-  startDate DateTime? @map("start_date") @db.Date
-  endDate   DateTime? @map("end_date") @db.Date
-  isCurrent Boolean   @default(false) @map("is_current")
+  name       String
+  orderIndex Int       @map("order_index")
+  startDate  DateTime? @map("start_date") @db.Date
+  endDate    DateTime? @map("end_date") @db.Date
+  isCurrent  Boolean   @default(false) @map("is_current")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
+
+  timetables Timetable[]
+  lessons    Lesson[]
 
   @@index([yearId], map: "terms_year_id_idx")
   @@map("terms")
-
-  timetables Timetable[]
 }
 
 // صفوف المدرسة
 model SchoolGrade {
-  id           Int    @id @default(autoincrement())
-  uuid         String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  schoolId     Int    @map("school_id")
-  school       School @relation(fields: [schoolId], references: [id])
+  schoolId Int    @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
 
-  dictionaryId Int?   @map("dictionary_id")
+  dictionaryId Int?             @map("dictionary_id")
   dictionary   GradeDictionary? @relation(fields: [dictionaryId], references: [id])
 
-  displayName  String @map("display_name")
-  shortName    String? @map("short_name")
-  sortOrder    Int    @map("sort_order")
-  stage        GradeStage? @map("stage")
-  isLocal      Boolean @default(false) @map("is_local")
-  isActive     Boolean @default(true) @map("is_active")
+  displayName String      @map("display_name")
+  shortName   String?     @map("short_name")
+  sortOrder   Int         @map("sort_order")
+  stage       GradeStage? @map("stage")
+  isLocal     Boolean     @default(false) @map("is_local")
+  isActive    Boolean     @default(true) @map("is_active")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  sections     Section[]
-  enrollments  StudentEnrollment[]
-  subjects     Subject[]
+  sections      Section[]
+  enrollments   StudentEnrollment[]
+  subjects      Subject[]
   teacherScopes TeacherScope[]
 
   @@index([schoolId], map: "school_grades_school_id_idx")
@@ -278,25 +282,26 @@ model SchoolGrade {
 
 // الشُعب
 model Section {
-  id         Int    @id @default(autoincrement())
-  uuid       String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  gradeId    Int    @map("grade_id")
-  grade      SchoolGrade @relation(fields: [gradeId], references: [id])
+  gradeId Int         @map("grade_id")
+  grade   SchoolGrade @relation(fields: [gradeId], references: [id])
 
   name       String
-  orderIndex Int    @map("order_index")
+  orderIndex Int     @map("order_index")
   isActive   Boolean @default(true) @map("is_active")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   enrollments     StudentEnrollment[]
   subjectSections SubjectSection[]
   teacherScopes   TeacherScope[]
   timetables      Timetable[]
+  lessonTargets   LessonTarget[]
 
   @@index([gradeId], map: "sections_grade_id_idx")
   @@map("sections")
@@ -308,14 +313,14 @@ model Section {
 
 // بيانات الطالب الإضافية
 model Student {
-  userId    Int    @id @map("user_id")
-  user      User   @relation(fields: [userId], references: [id])
-  uuid      String @unique @default(uuid())
+  userId Int    @id @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+  uuid   String @unique @default(uuid())
 
   birthDate DateTime? @map("birth_date") @db.Date
 
-  enrollments   StudentEnrollment[]
-  parentLinks   ParentStudent[]
+  enrollments StudentEnrollment[]
+  parentLinks ParentStudent[]
 
   @@map("students")
 }
@@ -333,9 +338,9 @@ model Parent {
 
 // بيانات المعلم الإضافية
 model Teacher {
-  userId       Int     @id @map("user_id")
-  user         User    @relation(fields: [userId], references: [id])
-  uuid         String  @unique @default(uuid())
+  userId Int    @id @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+  uuid   String @unique @default(uuid())
 
   hireDate       DateTime? @map("hire_date") @db.Date
   isSupervisor   Boolean   @default(false) @map("is_supervisor")
@@ -344,9 +349,10 @@ model Teacher {
   experience     String?
   notes          String?
 
-  scopes              TeacherScope[]
-  extraPermissions    TeacherExtraPermission?
+  scopes                 TeacherScope[]
+  extraPermissions       TeacherExtraPermission?
   subjectSectionTeachers SubjectSectionTeacher[]
+  lessons                Lesson[]
 
   @@map("teachers")
 }
@@ -357,31 +363,31 @@ model Teacher {
 
 // قيد الطالب عبر السنوات
 model StudentEnrollment {
-  id        Int    @id @default(autoincrement())
-  uuid      String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  studentId Int    @map("student_id")
+  studentId Int     @map("student_id")
   student   Student @relation(fields: [studentId], references: [userId])
 
-  yearId    Int    @map("year_id")
-  year      Year   @relation(fields: [yearId], references: [id])
+  yearId Int  @map("year_id")
+  year   Year @relation(fields: [yearId], references: [id])
 
-  gradeId   Int    @map("grade_id")
-  grade     SchoolGrade @relation(fields: [gradeId], references: [id])
+  gradeId Int         @map("grade_id")
+  grade   SchoolGrade @relation(fields: [gradeId], references: [id])
 
-  sectionId Int    @map("section_id")
+  sectionId Int     @map("section_id")
   section   Section @relation(fields: [sectionId], references: [id])
 
   status    EnrollmentStatus @default(ACTIVE)
-  isCurrent Boolean @default(true) @map("is_current")
+  isCurrent Boolean          @default(true) @map("is_current")
 
-  joinedAt  DateTime? @map("joined_at") @db.Date
-  leftAt    DateTime? @map("left_at") @db.Date
-  notes     String?
+  joinedAt DateTime? @map("joined_at") @db.Date
+  leftAt   DateTime? @map("left_at") @db.Date
+  notes    String?
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   @@unique([studentId, yearId], map: "student_enrollments_student_year_key")
@@ -393,18 +399,18 @@ model StudentEnrollment {
 
 // ربط ولي أمر بطالب
 model ParentStudent {
-  id        Int    @id @default(autoincrement())
-  uuid      String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  parentId  Int    @map("parent_id")
-  parent    Parent @relation(fields: [parentId], references: [userId])
+  parentId Int    @map("parent_id")
+  parent   Parent @relation(fields: [parentId], references: [userId])
 
-  studentId Int    @map("student_id")
+  studentId Int     @map("student_id")
   student   Student @relation(fields: [studentId], references: [userId])
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   @@unique([parentId, studentId], map: "parent_students_parent_student_key")
@@ -418,23 +424,23 @@ model ParentStudent {
 
 // نطاق إشراف المعلم
 model TeacherScope {
-  id        Int    @id @default(autoincrement())
-  uuid      String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  teacherId Int    @map("teacher_id")
+  teacherId Int     @map("teacher_id")
   teacher   Teacher @relation(fields: [teacherId], references: [userId])
 
-  gradeId   Int    @map("grade_id")
-  grade     SchoolGrade @relation(fields: [gradeId], references: [id])
+  gradeId Int         @map("grade_id")
+  grade   SchoolGrade @relation(fields: [gradeId], references: [id])
 
-  sectionId Int?   @map("section_id")
+  sectionId Int?     @map("section_id")
   section   Section? @relation(fields: [sectionId], references: [id])
 
   scopeType ScopeType @default(SUPERVISE) @map("scope_type")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   @@index([teacherId, updatedAt], map: "teacher_scopes_teacher_updated_idx")
@@ -453,9 +459,9 @@ model TeacherExtraPermission {
   canManageParents   Boolean @default(false) @map("can_manage_parents")
   canViewReports     Boolean @default(false) @map("can_view_reports")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   @@map("teacher_extra_permissions")
@@ -467,24 +473,24 @@ model TeacherExtraPermission {
 
 // قاموس المواد الرسمي
 model SubjectDictionary {
-  id                Int    @id @default(autoincrement())
-  uuid              String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  gradeDictionaryId Int    @map("grade_dictionary_id")
+  gradeDictionaryId Int             @map("grade_dictionary_id")
   gradeDictionary   GradeDictionary @relation(fields: [gradeDictionaryId], references: [id])
 
-  code              String? @unique
-  defaultName       String  @map("default_name")
-  shortName         String? @map("short_name")
-  sortOrder         Int     @default(0) @map("sort_order")
+  code        String? @unique
+  defaultName String  @map("default_name")
+  shortName   String? @map("short_name")
+  sortOrder   Int     @default(0) @map("sort_order")
 
-  isActive             Boolean @default(true) @map("is_active")
-  coverMediaAssetId    Int?    @map("cover_media_asset_id")
-  coverMediaAsset      MediaAsset? @relation("SubjectDictCover", fields: [coverMediaAssetId], references: [id])
+  isActive          Boolean     @default(true) @map("is_active")
+  coverMediaAssetId Int?        @map("cover_media_asset_id")
+  coverMediaAsset   MediaAsset? @relation("SubjectDictCover", fields: [coverMediaAssetId], references: [id])
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   subjects Subject[]
@@ -495,32 +501,33 @@ model SubjectDictionary {
 
 // مواد المدرسة
 model Subject {
-  id           Int    @id @default(autoincrement())
-  uuid         String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  schoolId     Int    @map("school_id")
-  school       School @relation(fields: [schoolId], references: [id])
+  schoolId Int    @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
 
-  gradeId      Int    @map("grade_id")
-  grade        SchoolGrade @relation(fields: [gradeId], references: [id])
+  gradeId Int         @map("grade_id")
+  grade   SchoolGrade @relation(fields: [gradeId], references: [id])
 
-  dictionaryId Int?   @map("dictionary_id")
+  dictionaryId Int?               @map("dictionary_id")
   dictionary   SubjectDictionary? @relation(fields: [dictionaryId], references: [id])
 
-  displayName       String @map("display_name")
-  shortName         String? @map("short_name")
-  coverMediaAssetId Int?   @map("cover_media_asset_id")
+  displayName       String      @map("display_name")
+  shortName         String?     @map("short_name")
+  coverMediaAssetId Int?        @map("cover_media_asset_id")
   coverMediaAsset   MediaAsset? @relation("SubjectCover", fields: [coverMediaAssetId], references: [id])
 
-  isActive  Boolean @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   subjectSections SubjectSection[]
   units           Unit[]
   lessonTemplates LessonTemplate[]
+  lessons         Lesson[]
 
   @@index([schoolId, gradeId], map: "subjects_school_grade_idx")
   @@index([dictionaryId], map: "subjects_dictionary_id_idx")
@@ -529,24 +536,24 @@ model Subject {
 
 // تقديم المادة داخل الشعبة
 model SubjectSection {
-  id        Int    @id @default(autoincrement())
-  uuid      String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  subjectId Int    @map("subject_id")
+  subjectId Int     @map("subject_id")
   subject   Subject @relation(fields: [subjectId], references: [id])
 
-  sectionId Int    @map("section_id")
+  sectionId Int     @map("section_id")
   section   Section @relation(fields: [sectionId], references: [id])
 
-  isActive  Boolean @default(true) @map("is_active")
-  notes     String?
+  isActive Boolean @default(true) @map("is_active")
+  notes    String?
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  teachers SubjectSectionTeacher[]
+  teachers       SubjectSectionTeacher[]
   timetableSlots TimetableSlot[]
 
   @@unique([subjectId, sectionId], map: "subject_sections_subject_section_key")
@@ -556,21 +563,21 @@ model SubjectSection {
 
 // إسناد المعلم للمادة داخل شعبة
 model SubjectSectionTeacher {
-  id               Int    @id @default(autoincrement())
-  uuid             String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  subjectSectionId Int    @map("subject_section_id")
+  subjectSectionId Int            @map("subject_section_id")
   subjectSection   SubjectSection @relation(fields: [subjectSectionId], references: [id])
 
-  teacherId        Int    @map("teacher_id")
-  teacher          Teacher @relation(fields: [teacherId], references: [userId])
+  teacherId Int     @map("teacher_id")
+  teacher   Teacher @relation(fields: [teacherId], references: [userId])
 
   role     SubjectSectionRole? @default(PRIMARY)
-  isActive Boolean @default(true) @map("is_active")
+  isActive Boolean             @default(true) @map("is_active")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   @@unique([subjectSectionId, teacherId], map: "subject_section_teachers_ss_teacher_key")
@@ -587,26 +594,26 @@ model SubjectSectionTeacher {
 
 // جدول الحصص — واحد لكل شعبة + سنة + فصل
 model Timetable {
-  id        Int    @id @default(autoincrement())
-  uuid      String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  sectionId Int    @map("section_id")
+  sectionId Int     @map("section_id")
   section   Section @relation(fields: [sectionId], references: [id])
 
-  yearId    Int    @map("year_id")
-  year      Year   @relation(fields: [yearId], references: [id])
+  yearId Int  @map("year_id")
+  year   Year @relation(fields: [yearId], references: [id])
 
-  termId    Int    @map("term_id")
-  term      Term   @relation(fields: [termId], references: [id])
+  termId Int  @map("term_id")
+  term   Term @relation(fields: [termId], references: [id])
 
   // MVP: حفظ = نشر — مستقبلاً يمكن دعم Draft/Published
-  status         String   @default("PUBLISHED") @map("status")
+  status         String    @default("PUBLISHED") @map("status")
   publishedAt    DateTime? @map("published_at")
-  publishVersion Int      @default(1) @map("publish_version")
+  publishVersion Int       @default(1) @map("publish_version")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
   slots TimetableSlot[]
@@ -618,22 +625,23 @@ model Timetable {
 
 // حصة في الجدول — يوم + رقم حصة + مادة (المعلم يُحسم من ADM-052)
 model TimetableSlot {
-  id               Int    @id @default(autoincrement())
-  uuid             String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  timetableId      Int    @map("timetable_id")
-  timetable        Timetable @relation(fields: [timetableId], references: [id])
+  timetableId Int       @map("timetable_id")
+  timetable   Timetable @relation(fields: [timetableId], references: [id])
 
-  weekday          Int    // 0=سبت, 1=أحد, 2=اثنين, 3=ثلاثاء, 4=أربعاء, 5=خميس
-  lessonNumber     Int    @map("lesson_number") // 1-8
+  weekday      Int // 0=سبت, 1=أحد, 2=اثنين, 3=ثلاثاء, 4=أربعاء, 5=خميس
+  lessonNumber Int @map("lesson_number") // 1-8
 
-  subjectSectionId Int?   @map("subject_section_id")
+  subjectSectionId Int?            @map("subject_section_id")
   subjectSection   SubjectSection? @relation(fields: [subjectSectionId], references: [id])
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  isDeleted Boolean  @default(false) @map("is_deleted")
-  deletedAt DateTime? @map("deleted_at")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  isDeleted            Boolean               @default(false) @map("is_deleted")
+  deletedAt            DateTime?             @map("deleted_at")
+  lessonTimetableSlots LessonTimetableSlot[]
 
   @@unique([timetableId, weekday, lessonNumber], map: "timetable_slots_unique_slot_key")
   @@index([subjectSectionId], map: "timetable_slots_subject_section_idx")
@@ -646,56 +654,54 @@ model TimetableSlot {
 
 // أجهزة المستخدمين
 model UserDevice {
-  id                Int      @id @default(autoincrement())
-  uuid              String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  userId            Int      @map("user_id")
-  user              User     @relation(fields: [userId], references: [id])
+  userId Int  @map("user_id")
+  user   User @relation(fields: [userId], references: [id])
 
-  deviceFingerprint String   @map("device_fingerprint")
-  pushToken         String?  @map("push_token")
+  deviceFingerprint String     @map("device_fingerprint")
+  pushToken         String?    @map("push_token")
   deviceType        DeviceType @map("device_type")
 
-  lastSeenAt        DateTime? @map("last_seen_at")
-  isActive          Boolean @default(true) @map("is_active")
+  lastSeenAt DateTime? @map("last_seen_at")
+  isActive   Boolean   @default(true) @map("is_active")
 
-  sessions          AuthSession[]
+  sessions AuthSession[]
 
   @@unique([userId, deviceFingerprint], map: "user_devices_user_device_fp_key")
   @@index([pushToken], map: "user_devices_push_token_idx")
   @@index([userId], map: "user_devices_user_id_idx")
   @@index([deviceFingerprint], map: "user_devices_device_fp_idx")
-
   @@map("user_devices")
 }
 
 // جلسات المصادقة
 model AuthSession {
-  id               Int       @id @default(autoincrement())
-  uuid             String    @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  userId           Int       @map("user_id")
-  user             User      @relation(fields: [userId], references: [id])
+  userId Int  @map("user_id")
+  user   User @relation(fields: [userId], references: [id])
 
-  schoolId         Int?      @map("school_id")
-  school           School?   @relation(fields: [schoolId], references: [id])
+  schoolId Int?    @map("school_id")
+  school   School? @relation(fields: [schoolId], references: [id])
 
-  deviceId         Int?      @map("device_id")
-  device           UserDevice? @relation(fields: [deviceId], references: [id])
+  deviceId Int?        @map("device_id")
+  device   UserDevice? @relation(fields: [deviceId], references: [id])
 
-  refreshTokenHash String    @unique @map("refresh_token_hash")
+  refreshTokenHash String @unique @map("refresh_token_hash")
 
-  createdAt        DateTime  @default(now()) @map("created_at")
-  lastSeenAt       DateTime? @map("last_seen_at")
-  expiresAt        DateTime  @map("expires_at")
-  revokedAt        DateTime? @map("revoked_at")
-  revokeReason     RevokeReason? @map("revoke_reason")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  lastSeenAt   DateTime?     @map("last_seen_at")
+  expiresAt    DateTime      @map("expires_at")
+  revokedAt    DateTime?     @map("revoked_at")
+  revokeReason RevokeReason? @map("revoke_reason")
 
   @@index([userId], map: "auth_sessions_user_id_idx")
   @@index([schoolId], map: "auth_sessions_school_id_idx")
   @@index([deviceId], map: "auth_sessions_device_id_idx")
   @@index([revokedAt], map: "auth_sessions_revoked_at_idx")
-
   @@map("auth_sessions")
 }
 
@@ -725,61 +731,61 @@ enum ProcessingStatus {
 
 // سجل الوسائط الموحد (Metadata فقط — بدون تخزين الملف داخل DB)
 model MediaAsset {
-  id            Int      @id @default(autoincrement())
-  uuid          String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  schoolId      Int      @map("school_id")
-  school        School   @relation("SchoolMediaAssets", fields: [schoolId], references: [id])
+  schoolId Int    @map("school_id")
+  school   School @relation("SchoolMediaAssets", fields: [schoolId], references: [id])
 
-  kind          MediaKind
+  kind MediaKind
 
-  storageKey    String?  @map("storage_key")     // مسار داخل VPS/S3
-  originalUrl   String?  @map("original_url")    // رابط النسخة الأصلية (اختياري)
+  storageKey  String? @map("storage_key") // مسار داخل VPS/S3
+  originalUrl String? @map("original_url") // رابط النسخة الأصلية (اختياري)
 
-  contentType   String   @map("content_type")    // مثل image/webp, audio/aac
-  sizeBytes     BigInt   @default(0) @map("size_bytes")
-  etag          String?                          // ETag للتحقق
-  sha256        String?                          // Hash اختياري
+  contentType String  @map("content_type") // مثل image/webp, audio/aac
+  sizeBytes   BigInt  @default(0) @map("size_bytes")
+  etag        String? // ETag للتحقق
+  sha256      String? // Hash اختياري
 
-  width         Int?                             // عرض الصورة
-  height        Int?                             // ارتفاع الصورة
-  durationSec   Int?     @map("duration_sec")    // مدة الصوت بالثواني
+  width       Int? // عرض الصورة
+  height      Int? // ارتفاع الصورة
+  durationSec Int? @map("duration_sec") // مدة الصوت بالثواني
 
-  variantsJson  String?  @map("variants_json")   // JSON: variants metadata
+  variantsJson     String? @map("variants_json") // JSON: variants metadata
   preferredVariant String? @map("preferred_variant")
 
   processingStatus ProcessingStatus @default(PENDING) @map("processing_status")
-  rowVersion    Int      @default(0) @map("row_version")
+  rowVersion       Int              @default(0) @map("row_version")
 
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  isDeleted     Boolean  @default(false) @map("is_deleted")
-  deletedAt     DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   // Relations
   uploadSessions MediaUploadSession[]
 
   // Reverse relations from entities that reference this asset
-  schoolsAsLogo           School[]              @relation("SchoolLogo")
-  subjectsAsCover         Subject[]             @relation("SubjectCover")
-  subjectDictsAsCover     SubjectDictionary[]   @relation("SubjectDictCover")
-  usersAsAvatar           User[]                @relation("UserAvatar")
-  lessonTemplatesAsCover  LessonTemplate[]      @relation("LessonTemplateCover")
-  lessonContentsAsMedia   LessonContent[]       @relation("LessonContentMedia")
+  schoolsAsLogo          School[]            @relation("SchoolLogo")
+  subjectsAsCover        Subject[]           @relation("SubjectCover")
+  subjectDictsAsCover    SubjectDictionary[] @relation("SubjectDictCover")
+  usersAsAvatar          User[]              @relation("UserAvatar")
+  lessonTemplatesAsCover LessonTemplate[]    @relation("LessonTemplateCover")
+  lessonContentsAsMedia  LessonContent[]     @relation("LessonContentMedia")
 
   // Question relations
-  questionsAsImage             Question[]             @relation("QuestionImage")
-  questionsAsAudio             Question[]             @relation("QuestionAudio")
-  questionsAsExplanationImage  Question[]             @relation("QuestionExplanationImage")
-  questionsAsExplanationAudio  Question[]             @relation("QuestionExplanationAudio")
-  questionOptionsAsImage       QuestionOption[]        @relation("QuestionOptionImage")
-  questionOptionsAsAudio       QuestionOption[]        @relation("QuestionOptionAudio")
-  matchingPairsAsLeftImage     QuestionMatchingPair[]  @relation("MatchingPairLeftImage")
-  matchingPairsAsLeftAudio     QuestionMatchingPair[]  @relation("MatchingPairLeftAudio")
-  matchingPairsAsRightImage    QuestionMatchingPair[]  @relation("MatchingPairRightImage")
-  matchingPairsAsRightAudio    QuestionMatchingPair[]  @relation("MatchingPairRightAudio")
-  orderingItemsAsImage         QuestionOrderingItem[]  @relation("OrderingItemImage")
-  orderingItemsAsAudio         QuestionOrderingItem[]  @relation("OrderingItemAudio")
+  questionsAsImage            Question[]             @relation("QuestionImage")
+  questionsAsAudio            Question[]             @relation("QuestionAudio")
+  questionsAsExplanationImage Question[]             @relation("QuestionExplanationImage")
+  questionsAsExplanationAudio Question[]             @relation("QuestionExplanationAudio")
+  questionOptionsAsImage      QuestionOption[]       @relation("QuestionOptionImage")
+  questionOptionsAsAudio      QuestionOption[]       @relation("QuestionOptionAudio")
+  matchingPairsAsLeftImage    QuestionMatchingPair[] @relation("MatchingPairLeftImage")
+  matchingPairsAsLeftAudio    QuestionMatchingPair[] @relation("MatchingPairLeftAudio")
+  matchingPairsAsRightImage   QuestionMatchingPair[] @relation("MatchingPairRightImage")
+  matchingPairsAsRightAudio   QuestionMatchingPair[] @relation("MatchingPairRightAudio")
+  orderingItemsAsImage        QuestionOrderingItem[] @relation("OrderingItemImage")
+  orderingItemsAsAudio        QuestionOrderingItem[] @relation("OrderingItemAudio")
 
   @@index([schoolId], map: "media_assets_school_id_idx")
   @@index([kind], map: "media_assets_kind_idx")
@@ -790,41 +796,41 @@ model MediaAsset {
 
 // جلسات رفع الوسائط (Chunked Upload + Resume)
 model MediaUploadSession {
-  id                 Int      @id @default(autoincrement())
-  uuid               String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  mediaAssetId       Int      @map("media_asset_id")
-  mediaAsset         MediaAsset @relation(fields: [mediaAssetId], references: [id])
+  mediaAssetId Int        @map("media_asset_id")
+  mediaAsset   MediaAsset @relation(fields: [mediaAssetId], references: [id])
 
-  schoolId           Int      @map("school_id")
-  school             School   @relation("SchoolUploadSessions", fields: [schoolId], references: [id])
+  schoolId Int    @map("school_id")
+  school   School @relation("SchoolUploadSessions", fields: [schoolId], references: [id])
 
-  uploaderUserId     Int      @map("uploader_user_id")
-  uploader           User     @relation(fields: [uploaderUserId], references: [id])
+  uploaderUserId Int  @map("uploader_user_id")
+  uploader       User @relation(fields: [uploaderUserId], references: [id])
 
-  kind               MediaKind
-  contentType        String   @map("content_type")
-  totalSizeBytes     BigInt?  @map("total_size_bytes")
-  chunkSizeBytes     Int      @map("chunk_size_bytes")
+  kind           MediaKind
+  contentType    String    @map("content_type")
+  totalSizeBytes BigInt?   @map("total_size_bytes")
+  chunkSizeBytes Int       @map("chunk_size_bytes")
 
-  status             MediaUploadStatus @default(INITIATED)
-  bytesReceived      BigInt   @default(0) @map("bytes_received")
-  lastChunkAt        DateTime? @map("last_chunk_at")
+  status        MediaUploadStatus @default(INITIATED)
+  bytesReceived BigInt            @default(0) @map("bytes_received")
+  lastChunkAt   DateTime?         @map("last_chunk_at")
 
-  tempStorageKey     String?  @map("temp_storage_key")
+  tempStorageKey String? @map("temp_storage_key")
 
-  requestedVariantsJson String? @map("requested_variants_json")
-  processingStatus  ProcessingStatus? @map("processing_status")
+  requestedVariantsJson String?           @map("requested_variants_json")
+  processingStatus      ProcessingStatus? @map("processing_status")
 
-  attemptCount       Int      @default(0) @map("attempt_count")
-  lastError          String?  @map("last_error")
+  attemptCount Int     @default(0) @map("attempt_count")
+  lastError    String? @map("last_error")
 
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  completedAt        DateTime? @map("completed_at")
-  expiresAt          DateTime  @map("expires_at")
-  canceledAt         DateTime? @map("canceled_at")
+  completedAt DateTime? @map("completed_at")
+  expiresAt   DateTime  @map("expires_at")
+  canceledAt  DateTime? @map("canceled_at")
 
   @@index([schoolId], map: "media_upload_sessions_school_id_idx")
   @@index([uploaderUserId, createdAt], map: "media_upload_sessions_uploader_idx")
@@ -836,24 +842,24 @@ model MediaUploadSession {
 
 // ── الوحدات ─────────────────────────────────────────────────────────
 model Unit {
-  id          Int    @id @default(autoincrement())
-  uuid        String @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  subjectId   Int    @map("subject_id")
-  subject     Subject @relation(fields: [subjectId], references: [id])
+  subjectId Int     @map("subject_id")
+  subject   Subject @relation(fields: [subjectId], references: [id])
 
-  ownerType   String @default("SCHOOL") @map("owner_type")
-  schoolId    Int?   @map("school_id")
-  school      School? @relation(fields: [schoolId], references: [id])
+  ownerType String  @default("SCHOOL") @map("owner_type")
+  schoolId  Int?    @map("school_id")
+  school    School? @relation(fields: [schoolId], references: [id])
 
   title       String
-  orderIndex  Int    @map("order_index")
+  orderIndex  Int     @map("order_index")
   description String?
 
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  isDeleted   Boolean   @default(false) @map("is_deleted")
-  deletedAt   DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   lessonTemplates LessonTemplate[]
 
@@ -864,42 +870,43 @@ model Unit {
 
 // ── قوالب الدروس ──────────────────────────────────────────────────────
 model LessonTemplate {
-  id                 Int      @id @default(autoincrement())
-  uuid               String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  ownerType          String   @default("SCHOOL") @map("owner_type")
-  schoolId           Int      @map("school_id")
-  school             School   @relation(fields: [schoolId], references: [id])
+  ownerType String @default("SCHOOL") @map("owner_type")
+  schoolId  Int    @map("school_id")
+  school    School @relation(fields: [schoolId], references: [id])
 
-  subjectId          Int      @map("subject_id")
-  subject            Subject  @relation(fields: [subjectId], references: [id])
+  subjectId Int     @map("subject_id")
+  subject   Subject @relation(fields: [subjectId], references: [id])
 
-  unitId             Int      @map("unit_id")
-  unit               Unit     @relation(fields: [unitId], references: [id])
+  unitId Int  @map("unit_id")
+  unit   Unit @relation(fields: [unitId], references: [id])
 
-  orderIndex         Int      @default(1) @map("order_index")
-  title              String
-  status             String   @default("DRAFT")
+  orderIndex Int    @default(1) @map("order_index")
+  title      String
+  status     String @default("DRAFT")
 
-  coverMediaAssetId  Int?     @map("cover_media_asset_id")
-  coverMediaAsset    MediaAsset? @relation("LessonTemplateCover", fields: [coverMediaAssetId], references: [id])
+  coverMediaAssetId Int?        @map("cover_media_asset_id")
+  coverMediaAsset   MediaAsset? @relation("LessonTemplateCover", fields: [coverMediaAssetId], references: [id])
 
-  templateVersion    Int      @default(1) @map("template_version")
-  sourceTemplateId   Int?     @map("source_template_id")
-  sourceTemplate     LessonTemplate?  @relation("LessonTemplateClone", fields: [sourceTemplateId], references: [id])
-  clonedTemplates    LessonTemplate[] @relation("LessonTemplateClone")
+  templateVersion  Int              @default(1) @map("template_version")
+  sourceTemplateId Int?             @map("source_template_id")
+  sourceTemplate   LessonTemplate?  @relation("LessonTemplateClone", fields: [sourceTemplateId], references: [id])
+  clonedTemplates  LessonTemplate[] @relation("LessonTemplateClone")
 
-  createdByUserId    Int?     @map("created_by_user_id")
-  createdByUser      User?    @relation("LessonTemplateCreator", fields: [createdByUserId], references: [id])
+  createdByUserId Int?  @map("created_by_user_id")
+  createdByUser   User? @relation("LessonTemplateCreator", fields: [createdByUserId], references: [id])
 
-  isActive           Boolean  @default(true) @map("is_active")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  isDeleted          Boolean  @default(false) @map("is_deleted")
-  deletedAt          DateTime? @map("deleted_at")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
-  contents           LessonContent[]
-  questions          Question[]
+  contents  LessonContent[]
+  questions Question[]
+  lessons   Lesson[]
 
   @@unique([unitId, orderIndex], map: "lesson_templates_unit_order_idx")
   @@index([schoolId], map: "lesson_templates_school_id_idx")
@@ -913,25 +920,25 @@ model LessonTemplate {
 
 // ── محتويات الدرس ─────────────────────────────────────────────────────
 model LessonContent {
-  id             Int      @id @default(autoincrement())
-  uuid           String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  templateId     Int      @map("template_id")
-  template       LessonTemplate @relation(fields: [templateId], references: [id])
+  templateId Int            @map("template_id")
+  template   LessonTemplate @relation(fields: [templateId], references: [id])
 
-  type           String   // TEXT / IMAGE / AUDIO
-  title          String?  // عنوان اختياري للكتلة (V10.1)
+  type  String // TEXT / IMAGE / AUDIO
+  title String? // عنوان اختياري للكتلة (V10.1)
 
-  mediaAssetId   Int?     @map("media_asset_id")
-  mediaAsset     MediaAsset? @relation("LessonContentMedia", fields: [mediaAssetId], references: [id])
+  mediaAssetId Int?        @map("media_asset_id")
+  mediaAsset   MediaAsset? @relation("LessonContentMedia", fields: [mediaAssetId], references: [id])
 
-  contentText    String?  @map("content_text")
-  orderIndex     Int      @map("order_index")
+  contentText String? @map("content_text")
+  orderIndex  Int     @map("order_index")
 
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-  isDeleted      Boolean  @default(false) @map("is_deleted")
-  deletedAt      DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   @@unique([templateId, orderIndex], map: "lesson_contents_template_order_idx")
   @@index([templateId], map: "lesson_contents_template_id_idx")
@@ -945,33 +952,33 @@ model LessonContent {
 
 // ── جدول الأسئلة الرئيسي ─────────────────────────────────────────────────
 model Question {
-  id        Int      @id @default(autoincrement())
-  uuid      String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  templateId Int     @map("template_id")
+  templateId Int            @map("template_id")
   template   LessonTemplate @relation(fields: [templateId], references: [id])
 
-  type       String  // MCQ / TRUE_FALSE / MATCHING / FILL / ORDERING
-  orderIndex Int     @map("order_index")
+  type       String // MCQ / TRUE_FALSE / MATCHING / FILL / ORDERING
+  orderIndex Int    @map("order_index")
 
-  questionText           String?  @map("question_text")
-  questionImageAssetId   Int?     @map("question_image_asset_id")
-  questionImageAsset     MediaAsset? @relation("QuestionImage", fields: [questionImageAssetId], references: [id])
-  questionAudioAssetId   Int?     @map("question_audio_asset_id")
-  questionAudioAsset     MediaAsset? @relation("QuestionAudio", fields: [questionAudioAssetId], references: [id])
+  questionText         String?     @map("question_text")
+  questionImageAssetId Int?        @map("question_image_asset_id")
+  questionImageAsset   MediaAsset? @relation("QuestionImage", fields: [questionImageAssetId], references: [id])
+  questionAudioAssetId Int?        @map("question_audio_asset_id")
+  questionAudioAsset   MediaAsset? @relation("QuestionAudio", fields: [questionAudioAssetId], references: [id])
 
-  score      Float   @default(1.0)
+  score Float @default(1.0)
 
-  explanationText           String?  @map("explanation_text")
-  explanationImageAssetId   Int?     @map("explanation_image_asset_id")
-  explanationImageAsset     MediaAsset? @relation("QuestionExplanationImage", fields: [explanationImageAssetId], references: [id])
-  explanationAudioAssetId   Int?     @map("explanation_audio_asset_id")
-  explanationAudioAsset     MediaAsset? @relation("QuestionExplanationAudio", fields: [explanationAudioAssetId], references: [id])
+  explanationText         String?     @map("explanation_text")
+  explanationImageAssetId Int?        @map("explanation_image_asset_id")
+  explanationImageAsset   MediaAsset? @relation("QuestionExplanationImage", fields: [explanationImageAssetId], references: [id])
+  explanationAudioAssetId Int?        @map("explanation_audio_asset_id")
+  explanationAudioAsset   MediaAsset? @relation("QuestionExplanationAudio", fields: [explanationAudioAssetId], references: [id])
 
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-  isDeleted  Boolean  @default(false) @map("is_deleted")
-  deletedAt  DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   // Relations
   options       QuestionOption[]
@@ -991,25 +998,25 @@ model Question {
 
 // ── خيارات الأسئلة (MCQ + TRUE_FALSE) ────────────────────────────────────
 model QuestionOption {
-  id          Int      @id @default(autoincrement())
-  uuid        String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  questionId  Int      @map("question_id")
-  question    Question @relation(fields: [questionId], references: [id])
+  questionId Int      @map("question_id")
+  question   Question @relation(fields: [questionId], references: [id])
 
-  optionText     String?  @map("option_text")
-  imageAssetId   Int?     @map("image_asset_id")
-  imageAsset     MediaAsset? @relation("QuestionOptionImage", fields: [imageAssetId], references: [id])
-  audioAssetId   Int?     @map("audio_asset_id")
-  audioAsset     MediaAsset? @relation("QuestionOptionAudio", fields: [audioAssetId], references: [id])
+  optionText   String?     @map("option_text")
+  imageAssetId Int?        @map("image_asset_id")
+  imageAsset   MediaAsset? @relation("QuestionOptionImage", fields: [imageAssetId], references: [id])
+  audioAssetId Int?        @map("audio_asset_id")
+  audioAsset   MediaAsset? @relation("QuestionOptionAudio", fields: [audioAssetId], references: [id])
 
-  isCorrect   Boolean  @map("is_correct")
-  orderIndex  Int      @map("order_index")
+  isCorrect  Boolean @map("is_correct")
+  orderIndex Int     @map("order_index")
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  isDeleted   Boolean  @default(false) @map("is_deleted")
-  deletedAt   DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   @@index([questionId], map: "question_options_question_id_idx")
   @@index([imageAssetId], map: "question_options_image_idx")
@@ -1019,32 +1026,32 @@ model QuestionOption {
 
 // ── أزواج المطابقة (MATCHING) ────────────────────────────────────────────
 model QuestionMatchingPair {
-  id          Int      @id @default(autoincrement())
-  uuid        String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  questionId  Int      @map("question_id")
-  question    Question @relation(fields: [questionId], references: [id])
+  questionId Int      @map("question_id")
+  question   Question @relation(fields: [questionId], references: [id])
 
-  leftText           String?  @map("left_text")
-  leftImageAssetId   Int?     @map("left_image_asset_id")
-  leftImageAsset     MediaAsset? @relation("MatchingPairLeftImage", fields: [leftImageAssetId], references: [id])
-  leftAudioAssetId   Int?     @map("left_audio_asset_id")
-  leftAudioAsset     MediaAsset? @relation("MatchingPairLeftAudio", fields: [leftAudioAssetId], references: [id])
+  leftText         String?     @map("left_text")
+  leftImageAssetId Int?        @map("left_image_asset_id")
+  leftImageAsset   MediaAsset? @relation("MatchingPairLeftImage", fields: [leftImageAssetId], references: [id])
+  leftAudioAssetId Int?        @map("left_audio_asset_id")
+  leftAudioAsset   MediaAsset? @relation("MatchingPairLeftAudio", fields: [leftAudioAssetId], references: [id])
 
-  rightText           String?  @map("right_text")
-  rightImageAssetId   Int?     @map("right_image_asset_id")
-  rightImageAsset     MediaAsset? @relation("MatchingPairRightImage", fields: [rightImageAssetId], references: [id])
-  rightAudioAssetId   Int?     @map("right_audio_asset_id")
-  rightAudioAsset     MediaAsset? @relation("MatchingPairRightAudio", fields: [rightAudioAssetId], references: [id])
+  rightText         String?     @map("right_text")
+  rightImageAssetId Int?        @map("right_image_asset_id")
+  rightImageAsset   MediaAsset? @relation("MatchingPairRightImage", fields: [rightImageAssetId], references: [id])
+  rightAudioAssetId Int?        @map("right_audio_asset_id")
+  rightAudioAsset   MediaAsset? @relation("MatchingPairRightAudio", fields: [rightAudioAssetId], references: [id])
 
-  pairKey          String  @map("pair_key")
-  leftOrderIndex   Int?    @map("left_order_index")
-  rightOrderIndex  Int?    @map("right_order_index")
+  pairKey         String @map("pair_key")
+  leftOrderIndex  Int?   @map("left_order_index")
+  rightOrderIndex Int?   @map("right_order_index")
 
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-  isDeleted  Boolean  @default(false) @map("is_deleted")
-  deletedAt  DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   @@unique([questionId, pairKey], map: "matching_pairs_question_pair_key_idx")
   @@index([questionId], map: "matching_pairs_question_id_idx")
@@ -1057,25 +1064,25 @@ model QuestionMatchingPair {
 
 // ── عناصر الترتيب (ORDERING) ─────────────────────────────────────────────
 model QuestionOrderingItem {
-  id           Int      @id @default(autoincrement())
-  uuid         String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  questionId   Int      @map("question_id")
-  question     Question @relation(fields: [questionId], references: [id])
+  questionId Int      @map("question_id")
+  question   Question @relation(fields: [questionId], references: [id])
 
-  itemText       String?  @map("item_text")
-  imageAssetId   Int?     @map("image_asset_id")
-  imageAsset     MediaAsset? @relation("OrderingItemImage", fields: [imageAssetId], references: [id])
-  audioAssetId   Int?     @map("audio_asset_id")
-  audioAsset     MediaAsset? @relation("OrderingItemAudio", fields: [audioAssetId], references: [id])
+  itemText     String?     @map("item_text")
+  imageAssetId Int?        @map("image_asset_id")
+  imageAsset   MediaAsset? @relation("OrderingItemImage", fields: [imageAssetId], references: [id])
+  audioAssetId Int?        @map("audio_asset_id")
+  audioAsset   MediaAsset? @relation("OrderingItemAudio", fields: [audioAssetId], references: [id])
 
-  correctIndex Int     @map("correct_index") // 1..N
-  orderIndex   Int     @map("order_index")   // ترتيب العرض
+  correctIndex Int @map("correct_index") // 1..N
+  orderIndex   Int @map("order_index") // ترتيب العرض
 
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  isDeleted    Boolean  @default(false) @map("is_deleted")
-  deletedAt    DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   @@unique([questionId, correctIndex], map: "ordering_items_correct_idx")
   @@unique([questionId, orderIndex], map: "ordering_items_order_idx")
@@ -1087,20 +1094,20 @@ model QuestionOrderingItem {
 
 // ── تعريف الفراغات (FILL) ────────────────────────────────────────────────
 model QuestionFillBlank {
-  id          Int      @id @default(autoincrement())
-  uuid        String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  questionId  Int      @map("question_id")
-  question    Question @relation(fields: [questionId], references: [id])
+  questionId Int      @map("question_id")
+  question   Question @relation(fields: [questionId], references: [id])
 
-  blankKey    String   @map("blank_key")  // "A", "B", ...
-  orderIndex  Int      @map("order_index")
+  blankKey    String  @map("blank_key") // "A", "B", ...
+  orderIndex  Int     @map("order_index")
   placeholder String?
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  isDeleted   Boolean  @default(false) @map("is_deleted")
-  deletedAt   DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   @@unique([questionId, blankKey], map: "fill_blanks_question_key_idx")
   @@unique([questionId, orderIndex], map: "fill_blanks_question_order_idx")
@@ -1110,22 +1117,143 @@ model QuestionFillBlank {
 
 // ── إجابات الفراغات (FILL) ───────────────────────────────────────────────
 model QuestionFillAnswer {
-  id          Int      @id @default(autoincrement())
-  uuid        String   @unique @default(uuid())
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
 
-  questionId  Int      @map("question_id")
-  question    Question @relation(fields: [questionId], references: [id])
+  questionId Int      @map("question_id")
+  question   Question @relation(fields: [questionId], references: [id])
 
-  blankKey    String   @map("blank_key")
-  answerText  String   @map("answer_text")
-  isPrimary   Boolean  @default(false) @map("is_primary")
+  blankKey   String  @map("blank_key")
+  answerText String  @map("answer_text")
+  isPrimary  Boolean @default(false) @map("is_primary")
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  isDeleted   Boolean  @default(false) @map("is_deleted")
-  deletedAt   DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
 
   @@unique([questionId, blankKey, answerText], map: "fill_answers_unique_idx")
   @@index([questionId, blankKey], map: "fill_answers_question_key_idx")
   @@map("question_fill_answers")
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── النشر والتمرير (Phase 4: TCH-070/013/080/081) ──────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── الدرس المنشور (نسخة موجهة للطلاب) ─────────────────────────────────
+model Lesson {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  templateId Int            @map("template_id")
+  template   LessonTemplate @relation(fields: [templateId], references: [id])
+
+  schoolId Int    @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+
+  teacherId Int     @map("teacher_id")
+  teacher   Teacher @relation(fields: [teacherId], references: [userId])
+
+  subjectId Int     @map("subject_id")
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  yearId Int  @map("year_id")
+  year   Year @relation(fields: [yearId], references: [id])
+
+  termId Int  @map("term_id")
+  term   Term @relation(fields: [termId], references: [id])
+
+  // الحالة: READY → PUBLISHED → DELIVERED → ARCHIVED
+  status String @default("READY")
+
+  // طريقة التمرير: OPEN / SCHEDULED / MANUAL_APPROVAL / MANUAL_OVERRIDE
+  deliveryMethod String? @map("delivery_method")
+
+  // نوع الربط: SLOT_COVERAGE / ADDITIONAL
+  linkType String @default("ADDITIONAL") @map("link_type")
+
+  publishedAt DateTime? @map("published_at")
+  deliveredAt DateTime? @map("delivered_at")
+
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  targets        LessonTarget[]
+  timetableSlots LessonTimetableSlot[]
+  deliveryLogs   LessonDeliveryLog[]
+
+  @@index([templateId], map: "lessons_template_id_idx")
+  @@index([schoolId], map: "lessons_school_id_idx")
+  @@index([teacherId], map: "lessons_teacher_id_idx")
+  @@index([subjectId], map: "lessons_subject_id_idx")
+  @@index([yearId, termId], map: "lessons_year_term_idx")
+  @@index([status], map: "lessons_status_idx")
+  @@index([updatedAt], map: "lessons_updated_at_idx")
+  @@map("lessons")
+}
+
+// ── استهداف الشُعب ──────────────────────────────────────────────────────
+model LessonTarget {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  lessonId Int    @map("lesson_id")
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+
+  sectionId Int     @map("section_id")
+  section   Section @relation(fields: [sectionId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([lessonId, sectionId], map: "lesson_targets_lesson_section_key")
+  @@index([sectionId], map: "lesson_targets_section_id_idx")
+  @@map("lesson_targets")
+}
+
+// ── ربط الدرس بحصص الجدول ───────────────────────────────────────────────
+model LessonTimetableSlot {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  lessonId Int    @map("lesson_id")
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+
+  timetableSlotId Int           @map("timetable_slot_id")
+  timetableSlot   TimetableSlot @relation(fields: [timetableSlotId], references: [id])
+
+  // تاريخ بداية الأسبوع المحدد
+  weekDate DateTime? @map("week_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([lessonId, timetableSlotId, weekDate], map: "lesson_timetable_slots_unique_key")
+  @@index([timetableSlotId], map: "lesson_timetable_slots_slot_idx")
+  @@map("lesson_timetable_slots")
+}
+
+// ── سجل التمرير ─────────────────────────────────────────────────────────
+model LessonDeliveryLog {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  lessonId Int    @map("lesson_id")
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+
+  actorUserId Int  @map("actor_user_id")
+  actorUser   User @relation("LessonDeliveryActor", fields: [actorUserId], references: [id])
+
+  // PUBLISH / DELIVER / OVERRIDE_DELIVER / ADD_TARGETS
+  action       String
+  policyAtTime String? @map("policy_at_time")
+  details      String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([lessonId], map: "lesson_delivery_logs_lesson_idx")
+  @@index([actorUserId], map: "lesson_delivery_logs_actor_idx")
+  @@map("lesson_delivery_logs")
 }

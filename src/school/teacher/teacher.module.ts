@@ -8,6 +8,8 @@ import { TeacherLessonsController } from './lessons/teacher-lessons.controller';
 import { TeacherLessonsService } from './lessons/teacher-lessons.service';
 import { TeacherQuestionsController } from './questions/teacher-questions.controller';
 import { TeacherQuestionsService } from './questions/teacher-questions.service';
+import { TeacherLessonTargetingController } from './lesson-targeting/teacher-lesson-targeting.controller';
+import { TeacherLessonTargetingService } from './lesson-targeting/teacher-lesson-targeting.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
 
@@ -17,8 +19,8 @@ import { SchoolCommonModule } from '../common/school-common.module';
  */
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
-    controllers: [TeacherSubjectsController, TeacherUnitsController, TeacherLessonsController, TeacherQuestionsController],
-    providers: [TeacherSubjectsService, TeacherUnitsService, TeacherLessonsService, TeacherQuestionsService],
+    controllers: [TeacherSubjectsController, TeacherUnitsController, TeacherLessonsController, TeacherQuestionsController, TeacherLessonTargetingController],
+    providers: [TeacherSubjectsService, TeacherUnitsService, TeacherLessonsService, TeacherQuestionsService, TeacherLessonTargetingService],
 })
 export class TeacherModule { }
 
