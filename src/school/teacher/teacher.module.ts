@@ -10,6 +10,8 @@ import { TeacherQuestionsController } from './questions/teacher-questions.contro
 import { TeacherQuestionsService } from './questions/teacher-questions.service';
 import { TeacherLessonTargetingController } from './lesson-targeting/teacher-lesson-targeting.controller';
 import { TeacherLessonTargetingService } from './lesson-targeting/teacher-lesson-targeting.service';
+import { TeacherTimetableController } from './timetable/teacher-timetable.controller';
+import { TeacherTimetableService } from './timetable/teacher-timetable.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
 
@@ -19,8 +21,8 @@ import { SchoolCommonModule } from '../common/school-common.module';
  */
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
-    controllers: [TeacherSubjectsController, TeacherUnitsController, TeacherLessonsController, TeacherQuestionsController, TeacherLessonTargetingController],
-    providers: [TeacherSubjectsService, TeacherUnitsService, TeacherLessonsService, TeacherQuestionsService, TeacherLessonTargetingService],
+    controllers: [TeacherSubjectsController, TeacherUnitsController, TeacherLessonsController, TeacherQuestionsController, TeacherLessonTargetingController, TeacherTimetableController],
+    providers: [TeacherSubjectsService, TeacherUnitsService, TeacherLessonsService, TeacherQuestionsService, TeacherLessonTargetingService, TeacherTimetableService],
 })
 export class TeacherModule { }
 
