@@ -319,8 +319,11 @@ model Student {
 
   birthDate DateTime? @map("birth_date") @db.Date
 
-  enrollments StudentEnrollment[]
-  parentLinks ParentStudent[]
+  enrollments    StudentEnrollment[]
+  parentLinks    ParentStudent[]
+  lessonProgress StudentLessonProgress[]
+  lessonResults  StudentLessonResult[]
+  answers        StudentAnswer[]
 
   @@map("students")
 }
@@ -981,11 +984,12 @@ model Question {
   deletedAt DateTime? @map("deleted_at")
 
   // Relations
-  options       QuestionOption[]
-  matchingPairs QuestionMatchingPair[]
-  orderingItems QuestionOrderingItem[]
-  fillBlanks    QuestionFillBlank[]
-  fillAnswers   QuestionFillAnswer[]
+  options        QuestionOption[]
+  matchingPairs  QuestionMatchingPair[]
+  orderingItems  QuestionOrderingItem[]
+  fillBlanks     QuestionFillBlank[]
+  fillAnswers    QuestionFillAnswer[]
+  studentAnswers StudentAnswer[]
 
   @@unique([templateId, orderIndex], map: "questions_template_order_idx")
   @@index([templateId], map: "questions_template_id_idx")
@@ -1182,9 +1186,11 @@ model Lesson {
   isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  targets        LessonTarget[]
-  timetableSlots LessonTimetableSlot[]
-  deliveryLogs   LessonDeliveryLog[]
+  targets           LessonTarget[]
+  timetableSlots    LessonTimetableSlot[]
+  deliveryLogs      LessonDeliveryLog[]
+  studentProgress   StudentLessonProgress[]
+  studentResults    StudentLessonResult[]
 
   @@index([templateId], map: "lessons_template_id_idx")
   @@index([schoolId], map: "lessons_school_id_idx")
@@ -1256,4 +1262,90 @@ model LessonDeliveryLog {
   @@index([lessonId], map: "lesson_delivery_logs_lesson_idx")
   @@index([actorUserId], map: "lesson_delivery_logs_actor_idx")
   @@map("lesson_delivery_logs")
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ── تقدّم الطالب والإجابات (STD-050 → STD-071) ──────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── حالة تقدّم الطالب في الدرس ──────────────────────────────────────────
+model StudentLessonProgress {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  studentId Int     @map("student_id")
+  student   Student @relation(fields: [studentId], references: [userId])
+
+  lessonId Int    @map("lesson_id")
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+
+  status       String  // NOT_STARTED / IN_PROGRESS / COMPLETED
+  lastPosition String? @map("last_position") @db.Text // JSON
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  rowVersion Int       @default(0) @map("row_version")
+  isDeleted  Boolean   @default(false) @map("is_deleted")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@unique([studentId, lessonId], map: "student_lesson_progress_unique")
+  @@index([studentId], map: "student_lesson_progress_student_idx")
+  @@index([lessonId], map: "student_lesson_progress_lesson_idx")
+  @@map("student_lesson_progress")
+}
+
+// ── نتائج الطالب (لكل محاولة) ────────────────────────────────────────────
+model StudentLessonResult {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  studentId Int     @map("student_id")
+  student   Student @relation(fields: [studentId], references: [userId])
+
+  lessonId Int    @map("lesson_id")
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+
+  totalQuestions  Int   @map("total_questions")
+  correctQuestions Int  @map("correct_questions")
+  totalPoints     Float @map("total_points")
+  earnedPoints    Float @map("earned_points")
+  percent         Float
+  gradeLabel      String @map("grade_label")
+  calculatedAt    DateTime @map("calculated_at")
+  version         Int @default(1)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([studentId, lessonId], map: "student_lesson_results_student_lesson_idx")
+  @@map("student_lesson_results")
+}
+
+// ── إجابات الطالب ────────────────────────────────────────────────────────
+model StudentAnswer {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  studentId Int     @map("student_id")
+  student   Student @relation(fields: [studentId], references: [userId])
+
+  questionId Int      @map("question_id")
+  question   Question @relation(fields: [questionId], references: [id])
+
+  answerValue  String  @map("answer_value") @db.Text // JSON
+  correctness  String  // CORRECT / WRONG
+  isCorrect    Boolean? @map("is_correct")
+  scoreAwarded Float   @map("score_awarded")
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime? @updatedAt @map("updated_at")
+  rowVersion Int       @default(0) @map("row_version")
+  isDeleted  Boolean   @default(false) @map("is_deleted")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([studentId, questionId], map: "student_answers_student_question_idx")
+  @@index([updatedAt], map: "student_answers_updated_idx")
+  @@map("student_answers")
 }

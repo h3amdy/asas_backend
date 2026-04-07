@@ -6,6 +6,8 @@ import { StudentTimetableController } from './timetable/student-timetable.contro
 import { StudentTimetableService } from './timetable/student-timetable.service';
 import { StudentLessonsController } from './lessons/student-lessons.controller';
 import { StudentLessonsService } from './lessons/student-lessons.service';
+import { StudentQuizController } from './quiz/student-quiz.controller';
+import { StudentQuizService } from './quiz/student-quiz.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
 
@@ -15,7 +17,17 @@ import { SchoolCommonModule } from '../common/school-common.module';
  */
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
-    controllers: [StudentSubjectsController, StudentTimetableController, StudentLessonsController],
-    providers: [StudentSubjectsService, StudentTimetableService, StudentLessonsService],
+    controllers: [
+        StudentSubjectsController,
+        StudentTimetableController,
+        StudentLessonsController,
+        StudentQuizController,
+    ],
+    providers: [
+        StudentSubjectsService,
+        StudentTimetableService,
+        StudentLessonsService,
+        StudentQuizService,
+    ],
 })
 export class StudentModule { }
