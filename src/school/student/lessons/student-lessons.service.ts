@@ -40,7 +40,7 @@ export class StudentLessonsService {
      * جلب قائمة دروس مادة معيّنة المتاحة للطالب
      */
     async getMyLessons(schoolId: number, userUuid: string, subjectUuid: string) {
-        const { sectionId } = await this.getStudentEnrollment(schoolId, userUuid);
+        const { studentId, sectionId } = await this.getStudentEnrollment(schoolId, userUuid);
 
         // 1. جلب Subject بالـ UUID
         const subject = await this.prisma.subject.findFirst({
@@ -89,11 +89,43 @@ export class StudentLessonsService {
             },
         });
 
-        // 3. تجميع وترتيب حسب publishedAt ASC (الأقدم أولاً)
+        // 3. جلب نتائج الطالب لكل الدروس (STD-055: تقدم الطالب)
+        const lessonIds = lessonTargets.map((lt) => lt.lesson.id);
+        const lessonResults = await this.prisma.studentLessonResult.findMany({
+            where: {
+                studentId,
+                lessonId: { in: lessonIds },
+                isDeleted: false,
+            },
+            orderBy: { percent: 'desc' },
+        });
+
+        // بناء map: lessonId → { bestResult, attemptCount }
+        const progressMap = new Map<number, { bestPercent: number; bestGradeLabel: string; attemptCount: number; completedAt: Date }>();
+        const attemptCountMap = new Map<number, number>();
+        for (const r of lessonResults) {
+            attemptCountMap.set(r.lessonId, (attemptCountMap.get(r.lessonId) ?? 0) + 1);
+            if (!progressMap.has(r.lessonId)) {
+                progressMap.set(r.lessonId, {
+                    bestPercent: r.percent,
+                    bestGradeLabel: r.gradeLabel,
+                    attemptCount: 0, // سنحدثه بعد
+                    completedAt: r.createdAt,
+                });
+            }
+        }
+        // تحديث عدد المحاولات
+        for (const [lessonId, count] of attemptCountMap) {
+            const entry = progressMap.get(lessonId);
+            if (entry) entry.attemptCount = count;
+        }
+
+        // 4. تجميع وترتيب
         const result = lessonTargets
             .map((lt) => {
                 const lesson = lt.lesson;
                 const template = lesson.template;
+                const prog = progressMap.get(lesson.id);
                 return {
                     uuid: lesson.uuid,
                     title: template.title,
@@ -104,10 +136,25 @@ export class StudentLessonsService {
                     publishedAt: lesson.publishedAt,
                     coverMediaAssetUuid: template.coverMediaAsset?.uuid ?? null,
                     hasAudio: template.contents.length > 0,
+                    // STD-055: حالة التقدم
+                    progress: prog
+                        ? {
+                              status: 'COMPLETED',
+                              bestPercent: prog.bestPercent,
+                              bestGradeLabel: prog.bestGradeLabel,
+                              attemptCount: prog.attemptCount,
+                              completedAt: prog.completedAt,
+                          }
+                        : {
+                              status: 'NOT_STARTED',
+                              bestPercent: null,
+                              bestGradeLabel: null,
+                              attemptCount: 0,
+                              completedAt: null,
+                          },
                 };
             })
             .sort((a, b) => {
-                // ترتيب حسب الوحدة ثم ترتيب الدرس داخل الوحدة
                 if (a.unitOrder !== b.unitOrder) return a.unitOrder - b.unitOrder;
                 return a.orderIndex - b.orderIndex;
             });
