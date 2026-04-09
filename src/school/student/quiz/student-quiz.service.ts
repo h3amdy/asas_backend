@@ -488,7 +488,7 @@ export class StudentQuizService {
         const reviewQuestions = questions.map(q => {
             const studentAns = answerMap.get(q.id);
             
-            let parsedAnswer = null;
+            let parsedAnswer: any = null;
             if (studentAns) {
                 try {
                     parsedAnswer = typeof studentAns.answerValue === 'string'
