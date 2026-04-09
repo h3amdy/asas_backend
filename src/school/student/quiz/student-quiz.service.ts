@@ -319,21 +319,39 @@ export class StudentQuizService {
             },
         });
 
-        // حفظ الإجابات
+        // حفظ الإجابات (upsert — الأخيرة تطغى على السابقة)
         for (const ans of answers) {
             const question = questions.find(q => q.uuid === ans.questionUuid);
             if (!question) continue;
 
-            await this.prisma.studentAnswer.create({
-                data: {
-                    studentId,
-                    questionId: question.id,
-                    answerValue: JSON.stringify(ans.answerValue),
-                    correctness: ans.isCorrect ? 'CORRECT' : 'WRONG',
-                    isCorrect: ans.isCorrect,
-                    scoreAwarded: ans.isCorrect ? question.score : 0,
-                },
+            const existing = await this.prisma.studentAnswer.findUnique({
+                where: { studentId_questionId: { studentId, questionId: question.id } },
             });
+
+            if (existing) {
+                await this.prisma.studentAnswer.update({
+                    where: { id: existing.id },
+                    data: {
+                        resultId: result.id,
+                        answerValue: JSON.stringify(ans.answerValue),
+                        correctness: ans.isCorrect ? 'CORRECT' : 'WRONG',
+                        isCorrect: ans.isCorrect,
+                        scoreAwarded: ans.isCorrect ? question.score : 0,
+                    },
+                });
+            } else {
+                await this.prisma.studentAnswer.create({
+                    data: {
+                        studentId,
+                        questionId: question.id,
+                        resultId: result.id,
+                        answerValue: JSON.stringify(ans.answerValue),
+                        correctness: ans.isCorrect ? 'CORRECT' : 'WRONG',
+                        isCorrect: ans.isCorrect,
+                        scoreAwarded: ans.isCorrect ? question.score : 0,
+                    },
+                });
+            }
         }
 
         // تحديث progress
@@ -388,6 +406,160 @@ export class StudentQuizService {
             earnedPoints: result.earnedPoints,
             percent: Math.round(result.percent),
             gradeLabel: result.gradeLabel,
+        };
+    }
+
+    // ─────── Get review (STD-071) ───────────────────────────────────────────
+
+    /**
+     * جلب مراجعة الإجابات: النتيجة + الأسئلة + إجابات الطالب + الإجابات الصحيحة + الشرح
+     */
+    async getReview(schoolId: number, userUuid: string, lessonUuid: string) {
+        const { studentId, lesson } = await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
+
+        // 1. جلب آخر نتيجة
+        const result = await this.prisma.studentLessonResult.findFirst({
+            where: { studentId, lessonId: lesson.id, isDeleted: false },
+            orderBy: { calculatedAt: 'desc' },
+        });
+        if (!result) throw new NotFoundException('RESULT_NOT_FOUND');
+
+        // 2. جلب الأسئلة مع كل البيانات
+        const questions = await this.prisma.question.findMany({
+            where: { templateId: lesson.templateId, isDeleted: false },
+            orderBy: { orderIndex: 'asc' },
+            include: {
+                options: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    select: {
+                        uuid: true, optionText: true,
+                        imageAssetId: true, imageAsset: { select: { uuid: true } },
+                        audioAssetId: true, audioAsset: { select: { uuid: true } },
+                        isCorrect: true, orderIndex: true,
+                    },
+                },
+                matchingPairs: {
+                    where: { isDeleted: false },
+                    select: {
+                        uuid: true, pairKey: true,
+                        leftText: true, leftImageAsset: { select: { uuid: true } },
+                        rightText: true, rightImageAsset: { select: { uuid: true } },
+                        leftOrderIndex: true, rightOrderIndex: true,
+                    },
+                },
+                orderingItems: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    select: {
+                        uuid: true, itemText: true,
+                        imageAsset: { select: { uuid: true } },
+                        correctIndex: true, orderIndex: true,
+                    },
+                },
+                fillBlanks: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    select: { uuid: true, blankKey: true, orderIndex: true, placeholder: true },
+                },
+                fillAnswers: {
+                    where: { isDeleted: false },
+                    select: { blankKey: true, answerText: true, isPrimary: true },
+                },
+                questionImageAsset: { select: { uuid: true } },
+                questionAudioAsset: { select: { uuid: true } },
+                explanationImageAsset: { select: { uuid: true } },
+                explanationAudioAsset: { select: { uuid: true } },
+            },
+        });
+
+        // 3. جلب إجابات الطالب لهذه الأسئلة
+        const questionIds = questions.map(q => q.id);
+        const studentAnswers = await this.prisma.studentAnswer.findMany({
+            where: {
+                studentId,
+                questionId: { in: questionIds },
+                isDeleted: false,
+            },
+        });
+        const answerMap = new Map(studentAnswers.map(a => [a.questionId, a]));
+
+        // 4. بناء الاستجابة
+        const reviewQuestions = questions.map(q => {
+            const studentAns = answerMap.get(q.id);
+            const parsedAnswer = studentAns ? JSON.parse(studentAns.answerValue) : null;
+
+            const base: any = {
+                uuid: q.uuid,
+                type: q.type,
+                orderIndex: q.orderIndex,
+                questionText: q.questionText,
+                questionImageAssetUuid: q.questionImageAsset?.uuid ?? null,
+                questionAudioAssetUuid: q.questionAudioAsset?.uuid ?? null,
+                score: q.score,
+                explanation: {
+                    text: q.explanationText,
+                    imageAssetUuid: q.explanationImageAsset?.uuid ?? null,
+                    audioAssetUuid: q.explanationAudioAsset?.uuid ?? null,
+                },
+                studentAnswer: studentAns ? {
+                    answerValue: parsedAnswer,
+                    isCorrect: studentAns.isCorrect ?? false,
+                    scoreAwarded: studentAns.scoreAwarded,
+                } : null,
+            };
+
+            switch (q.type) {
+                case 'MCQ':
+                case 'TRUE_FALSE':
+                    base.options = q.options.map(o => ({
+                        uuid: o.uuid, optionText: o.optionText,
+                        imageAssetUuid: o.imageAsset?.uuid ?? null,
+                        audioAssetUuid: o.audioAsset?.uuid ?? null,
+                        isCorrect: o.isCorrect, orderIndex: o.orderIndex,
+                    }));
+                    break;
+                case 'MATCHING':
+                    base.matchingPairs = q.matchingPairs.map(p => ({
+                        uuid: p.uuid, pairKey: p.pairKey,
+                        leftText: p.leftText, leftImageAssetUuid: p.leftImageAsset?.uuid ?? null,
+                        rightText: p.rightText, rightImageAssetUuid: p.rightImageAsset?.uuid ?? null,
+                        leftOrderIndex: p.leftOrderIndex, rightOrderIndex: p.rightOrderIndex,
+                    }));
+                    break;
+                case 'ORDERING':
+                    base.orderingItems = q.orderingItems.map(i => ({
+                        uuid: i.uuid, itemText: i.itemText,
+                        imageAssetUuid: i.imageAsset?.uuid ?? null,
+                        correctIndex: i.correctIndex, orderIndex: i.orderIndex,
+                    }));
+                    break;
+                case 'FILL':
+                    base.fillBlanks = q.fillBlanks.map(b => ({
+                        uuid: b.uuid, blankKey: b.blankKey,
+                        orderIndex: b.orderIndex, placeholder: b.placeholder,
+                    }));
+                    base.fillCorrectAnswers = q.fillAnswers.reduce((acc: any, a) => {
+                        if (!acc[a.blankKey]) acc[a.blankKey] = [];
+                        acc[a.blankKey].push(a.answerText.trim());
+                        return acc;
+                    }, {});
+                    break;
+            }
+            return base;
+        });
+
+        return {
+            result: {
+                resultUuid: result.uuid,
+                totalQuestions: result.totalQuestions,
+                correctQuestions: result.correctQuestions,
+                totalPoints: result.totalPoints,
+                earnedPoints: result.earnedPoints,
+                percent: Math.round(result.percent),
+                gradeLabel: result.gradeLabel,
+            },
+            questions: reviewQuestions,
         };
     }
 

@@ -83,4 +83,19 @@ export class StudentQuizController {
             lessonUuid,
         );
     }
+
+    /**
+     * مراجعة الإجابات (STD-071) — الأسئلة + إجابات الطالب + الصحيحة + الشرح
+     */
+    @Get('lesson/:lessonUuid/review')
+    getReview(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        return this.service.getReview(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+        );
+    }
 }

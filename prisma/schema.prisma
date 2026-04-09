@@ -1314,6 +1314,8 @@ model StudentLessonResult {
   calculatedAt    DateTime @map("calculated_at")
   version         Int @default(1)
 
+  answers   StudentAnswer[]
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   isDeleted Boolean   @default(false) @map("is_deleted")
@@ -1323,7 +1325,7 @@ model StudentLessonResult {
   @@map("student_lesson_results")
 }
 
-// ── إجابات الطالب ────────────────────────────────────────────────────────
+// ── إجابات الطالب (unique per student+question — الأخيرة تطغى) ───────────
 model StudentAnswer {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
@@ -1333,6 +1335,9 @@ model StudentAnswer {
 
   questionId Int      @map("question_id")
   question   Question @relation(fields: [questionId], references: [id])
+
+  resultId   Int?                 @map("result_id")
+  result     StudentLessonResult? @relation(fields: [resultId], references: [id])
 
   answerValue  String  @map("answer_value") @db.Text // JSON
   correctness  String  // CORRECT / WRONG
@@ -1345,7 +1350,8 @@ model StudentAnswer {
   isDeleted  Boolean   @default(false) @map("is_deleted")
   deletedAt  DateTime? @map("deleted_at")
 
-  @@index([studentId, questionId], map: "student_answers_student_question_idx")
+  @@unique([studentId, questionId], map: "student_answers_student_question_unique")
+  @@index([resultId], map: "student_answers_result_idx")
   @@index([updatedAt], map: "student_answers_updated_idx")
   @@map("student_answers")
 }
