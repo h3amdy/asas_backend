@@ -487,7 +487,17 @@ export class StudentQuizService {
         // 4. بناء الاستجابة
         const reviewQuestions = questions.map(q => {
             const studentAns = answerMap.get(q.id);
-            const parsedAnswer = studentAns ? JSON.parse(studentAns.answerValue) : null;
+            
+            let parsedAnswer = null;
+            if (studentAns) {
+                try {
+                    parsedAnswer = typeof studentAns.answerValue === 'string'
+                        ? JSON.parse(studentAns.answerValue)
+                        : studentAns.answerValue;
+                } catch {
+                    parsedAnswer = studentAns.answerValue;
+                }
+            }
 
             const base: any = {
                 uuid: q.uuid,
@@ -496,16 +506,16 @@ export class StudentQuizService {
                 questionText: q.questionText,
                 questionImageAssetUuid: q.questionImageAsset?.uuid ?? null,
                 questionAudioAssetUuid: q.questionAudioAsset?.uuid ?? null,
-                score: q.score,
+                score: q.score ?? 1,
                 explanation: {
-                    text: q.explanationText,
+                    text: q.explanationText ?? null,
                     imageAssetUuid: q.explanationImageAsset?.uuid ?? null,
                     audioAssetUuid: q.explanationAudioAsset?.uuid ?? null,
                 },
                 studentAnswer: studentAns ? {
                     answerValue: parsedAnswer,
                     isCorrect: studentAns.isCorrect ?? false,
-                    scoreAwarded: studentAns.scoreAwarded,
+                    scoreAwarded: studentAns.scoreAwarded ?? 0,
                 } : null,
             };
 
