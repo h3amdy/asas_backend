@@ -40,4 +40,12 @@ export class StudentLessonsController {
             lessonUuid,
         );
     }
+
+    @Get('my-summary')
+    getMySummary(@Req() req: any) {
+        return this.service.getMySummary(
+            req.schoolContext.id,
+            req.user.sub,
+        );
+    }
 }

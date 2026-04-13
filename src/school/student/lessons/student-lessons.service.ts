@@ -241,4 +241,84 @@ export class StudentLessonsService {
             contentBlocks,
         };
     }
+
+    /**
+     * GET /school/student/my-summary
+     * ملخص الطالب: الاسم + الصف/الشعبة + إحصائيات الدروس (STD-011)
+     */
+    async getMySummary(schoolId: number, userUuid: string) {
+        // 1. جلب بيانات المستخدم + enrollment
+        const user = await this.prisma.user.findFirst({
+            where: { uuid: userUuid, schoolId },
+            select: {
+                displayName: true,
+                student: { select: { userId: true } },
+            },
+        });
+
+        if (!user || !user.student) {
+            throw new ForbiddenException('USER_IS_NOT_STUDENT');
+        }
+
+        const enrollment = await this.prisma.studentEnrollment.findFirst({
+            where: {
+                studentId: user.student.userId,
+                isCurrent: true,
+                status: 'ACTIVE',
+                isDeleted: false,
+            },
+            include: {
+                section: {
+                    select: {
+                        name: true,
+                        grade: { select: { displayName: true } },
+                    },
+                },
+            },
+        });
+
+        if (!enrollment) {
+            throw new NotFoundException('ENROLLMENT_NOT_FOUND');
+        }
+
+        const sectionId = enrollment.sectionId;
+        const studentId = user.student.userId;
+
+        // 2. عدد الدروس الكلي المتاحة للطالب (عبر كل المواد)
+        const totalLessons = await this.prisma.lessonTarget.count({
+            where: {
+                sectionId,
+                lesson: {
+                    schoolId,
+                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    isDeleted: false,
+                    isActive: true,
+                },
+            },
+        });
+
+        // 3. عدد الدروس المنجزة (التي لها نتيجة واحدة على الأقل)
+        const completedLessons = await this.prisma.studentLessonResult.groupBy({
+            by: ['lessonId'],
+            where: {
+                studentId,
+                isDeleted: false,
+                lesson: {
+                    schoolId,
+                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    isDeleted: false,
+                    isActive: true,
+                    targets: { some: { sectionId } },
+                },
+            },
+        });
+
+        return {
+            displayName: user.displayName,
+            gradeName: enrollment.section.grade.displayName,
+            sectionName: enrollment.section.name,
+            totalLessons,
+            completedLessons: completedLessons.length,
+        };
+    }
 }
