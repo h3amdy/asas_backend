@@ -62,29 +62,83 @@ export class StudentSubjectsService {
             },
         });
 
-        // 4. تجميع بدون تكرار
+        // 4. جلب إحصائيات الدروس لكل مادة (المنشورة والمستهدفة لهذه الشعبة)
+        const targetedLessons = await this.prisma.lessonTarget.findMany({
+            where: {
+                sectionId: enrollment.sectionId,
+                lesson: {
+                    schoolId,
+                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    isDeleted: false,
+                    isActive: true,
+                },
+            },
+            include: {
+                lesson: {
+                    select: { id: true, subjectId: true, publishedAt: true },
+                },
+            },
+        });
+
+        const completedResults = await this.prisma.studentLessonResult.findMany({
+            where: { studentId, isDeleted: false },
+            select: { lessonId: true },
+        });
+        const completedLessonIds = new Set(completedResults.map(r => r.lessonId));
+
+        // تجميع الإحصائيات حسب subjectId
+        const statsMap = new Map<number, { total: number, completed: number, hasNew: boolean }>();
+
+        for (const target of targetedLessons) {
+            const subjectId = target.lesson.subjectId;
+            if (!statsMap.has(subjectId)) {
+                statsMap.set(subjectId, { total: 0, completed: 0, hasNew: false });
+            }
+
+            const stats = statsMap.get(subjectId)!;
+            stats.total++;
+
+            const isCompleted = completedLessonIds.has(target.lessonId);
+            if (isCompleted) {
+                stats.completed++;
+            } else {
+                // درس غير منجز.. نعتبره "جديد" بناءً على طلب المستخدم
+                stats.hasNew = true;
+            }
+        }
+
+        // 5. تجميع الرد بدون تكرار للمواد
         const seen = new Set<string>();
         const result: {
             uuid: string;
             displayName: string;
             shortName: string | null;
             coverMediaAssetUuid: string | null;
+            totalLessons: number;
+            completedLessons: number;
+            hasNewLessons: boolean;
         }[] = [];
 
         for (const ss of subjectSections) {
             const subject = ss.subject;
             if (!seen.has(subject.uuid)) {
                 seen.add(subject.uuid);
+                
+                const stats = statsMap.get(subject.id) || { total: 0, completed: 0, hasNew: false };
+                
                 result.push({
                     uuid: subject.uuid,
                     displayName: subject.displayName,
                     shortName: subject.shortName,
                     coverMediaAssetUuid: subject.coverMediaAsset?.uuid ?? null,
+                    totalLessons: stats.total,
+                    completedLessons: stats.completed,
+                    hasNewLessons: stats.hasNew,
                 });
             }
         }
 
-        // 5. ترتيب حسب اسم المادة
+        // 6. ترتيب حسب اسم المادة
         return result.sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 }
