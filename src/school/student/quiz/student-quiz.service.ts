@@ -2,7 +2,8 @@
 import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 
-const MAX_ATTEMPTS = 3;
+// TODO: لاحقاً سيكون من إعدادات المدرسة
+const MAX_ATTEMPTS = 999;
 
 @Injectable()
 export class StudentQuizService {
