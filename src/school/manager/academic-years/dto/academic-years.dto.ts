@@ -1,5 +1,5 @@
 // src/school/manager/academic-years/dto/academic-years.dto.ts
-import { IsArray, ArrayMinSize, IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, ArrayMinSize, IsBoolean, IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class TermInputDto {
@@ -64,4 +64,20 @@ export class AddTermDto {
 
     @IsDateString()
     endDate!: string;
+}
+
+// ─── DTOs جديدة (ADM-010a/b/c) ───
+
+export class StartTermDto {
+    @IsOptional()
+    @IsBoolean()
+    copyTimetable?: boolean; // افتراضي: true
+}
+
+export class CopyTimetableDto {
+    @IsInt()
+    sourceTermId!: number;
+
+    @IsInt()
+    targetTermId!: number;
 }

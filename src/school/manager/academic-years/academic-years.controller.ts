@@ -1,7 +1,7 @@
 // src/school/manager/academic-years/academic-years.controller.ts
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { AcademicYearsService } from './academic-years.service';
-import { CreateYearDto, UpdateYearDto, UpdateTermDto, AddTermDto } from './dto/academic-years.dto';
+import { CreateYearDto, UpdateYearDto, UpdateTermDto, AddTermDto, StartTermDto, CopyTimetableDto } from './dto/academic-years.dto';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
@@ -33,9 +33,37 @@ export class AcademicYearsController {
         return this.service.updateYear(req.schoolContext.id, id, dto);
     }
 
+    // ─── الإجراء الموحد (القديم) ───
     @Post(':yearId/advance-term')
     advanceTerm(@Req() req: any, @Param('yearId', ParseIntPipe) id: number) {
         return this.service.advanceToNextTerm(req.schoolContext.id, id);
+    }
+
+    // ─── ADM-010a: إنهاء فصل دراسي ───
+    @Post(':yearId/end-current-term')
+    endCurrentTerm(@Req() req: any, @Param('yearId', ParseIntPipe) yearId: number) {
+        return this.service.endCurrentTerm(req.schoolContext.id, yearId);
+    }
+
+    // ─── ADM-010b: بدء فصل دراسي ───
+    @Post(':yearId/terms/:termId/start')
+    startTerm(
+        @Req() req: any,
+        @Param('yearId', ParseIntPipe) yearId: number,
+        @Param('termId', ParseIntPipe) termId: number,
+        @Body() dto: StartTermDto,
+    ) {
+        return this.service.startTerm(req.schoolContext.id, yearId, termId, dto);
+    }
+
+    // ─── ADM-010c: نسخ الجدول الدراسي ───
+    @Post(':yearId/copy-timetable')
+    copyTimetable(
+        @Req() req: any,
+        @Param('yearId', ParseIntPipe) yearId: number,
+        @Body() dto: CopyTimetableDto,
+    ) {
+        return this.service.copyTimetable(req.schoolContext.id, yearId, dto);
     }
 
     @Patch('terms/:termId')
