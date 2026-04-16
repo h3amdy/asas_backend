@@ -21,7 +21,7 @@ interface EligibilityGrade {
     sections: GradeSection[];
 }
 
-interface EligibilityResult {
+export interface EligibilityResult {
     eligible: boolean;
     reason: string | null;
     currentYear: { id: number; name: string } | null;
