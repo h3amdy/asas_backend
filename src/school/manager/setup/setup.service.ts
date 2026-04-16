@@ -155,8 +155,14 @@ export class SetupService {
                 },
             });
 
-            // 7. إنشاء الفصول
+            // 7. إنشاء الفصول — منطق ذكي: الفصل الأول "حالي" فقط إذا بدايته ≤ اليوم
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
             for (const term of sortedTerms) {
+                const termStart = new Date(term.startDate);
+                termStart.setHours(0, 0, 0, 0);
+
                 await tx.term.create({
                     data: {
                         yearId: year.id,
@@ -164,7 +170,7 @@ export class SetupService {
                         orderIndex: term.orderIndex,
                         startDate: new Date(term.startDate),
                         endDate: new Date(term.endDate),
-                        isCurrent: term.orderIndex === 1,
+                        isCurrent: term.orderIndex === 1 && termStart <= today,
                     },
                 });
             }
