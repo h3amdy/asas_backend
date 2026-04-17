@@ -307,7 +307,13 @@ export class RolloverService {
 
         // ───── Transaction ─────
         return this.prisma.$transaction(async (tx) => {
-            // ══════ Step 1: إنشاء السنة الجديدة ══════
+            // ══════ Step 1: إلغاء السنة القديمة أولاً (لتجنب قيد Unique) ══════
+            await tx.year.update({
+                where: { id: eligibility.currentYear!.id },
+                data: { isCurrent: false },
+            });
+
+            // ══════ Step 2: إنشاء السنة الجديدة ══════
             const newYear = await tx.year.create({
                 data: {
                     schoolId,
@@ -316,7 +322,7 @@ export class RolloverService {
                 },
             });
 
-            // ══════ Step 2: إنشاء الفصول (Smart Term Status) ══════
+            // ══════ Step 3: إنشاء الفصول (Smart Term Status) ══════
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
@@ -336,12 +342,6 @@ export class RolloverService {
                     },
                 });
             }
-
-            // ══════ Step 3: إلغاء السنة القديمة ══════
-            await tx.year.update({
-                where: { id: eligibility.currentYear!.id },
-                data: { isCurrent: false },
-            });
 
             // ══════ Step 4: إنشاء الشعب الناقصة ══════
             const arabicLetters = ['أ', 'ب', 'ج', 'د', 'هـ', 'و', 'ز', 'ح', 'ط', 'ي'];
