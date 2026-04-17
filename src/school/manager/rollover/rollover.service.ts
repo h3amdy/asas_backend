@@ -556,39 +556,42 @@ export class RolloverService {
         if (!lastOldTerm || !firstNewTerm) return false;
 
         // جلب جميع الجداول (timetables) للفصل القديم مع حصصها
-        const oldTimetables = await tx.timetable.findMany({
+        const sourceTimetables = await tx.timetable.findMany({
             where: {
-                termId: lastOldTerm.id,
                 yearId: oldYearId,
+                termId: lastOldTerm.id,
                 isDeleted: false,
             },
             include: {
-                slots: {
-                    where: { isDeleted: false },
-                },
+                slots: { where: { isDeleted: false } },
             },
         });
 
-        if (oldTimetables.length === 0) return false;
+        if (sourceTimetables.length === 0) return false;
 
         let totalSlotsCopied = 0;
 
-        for (const oldTimetable of oldTimetables) {
-            // التحقق من عدم وجود timetable للشعبة في الفصل الجديد
-            const existing = await tx.timetable.findFirst({
+        for (const srcTimetable of sourceTimetables) {
+            // التحقق: هل يوجد جدول للشعبة في الفصل الجديد؟
+            const existingTarget = await tx.timetable.findFirst({
                 where: {
-                    sectionId: oldTimetable.sectionId,
+                    sectionId: srcTimetable.sectionId,
                     yearId: newYearId,
                     termId: firstNewTerm.id,
                     isDeleted: false,
                 },
+                include: { slots: { where: { isDeleted: false } } },
             });
-            if (existing) continue; // لا نستبدل جدول موجود
 
-            // إنشاء timetable جديد لنفس الشعبة في الفصل الجديد
-            const newTimetable = await tx.timetable.create({
+            // إذا يوجد جدول مع حصص → لا نستبدل
+            if (existingTarget && existingTarget.slots.length > 0) {
+                continue;
+            }
+
+            // إنشاء أو استخدام الجدول الموجود (فارغ)
+            const targetTimetable = existingTarget ?? await tx.timetable.create({
                 data: {
-                    sectionId: oldTimetable.sectionId,
+                    sectionId: srcTimetable.sectionId,
                     yearId: newYearId,
                     termId: firstNewTerm.id,
                     status: 'PUBLISHED',
@@ -596,14 +599,26 @@ export class RolloverService {
                 },
             });
 
-            // نسخ الحصص
-            for (const slot of oldTimetable.slots) {
-                await tx.timetableSlot.create({
-                    data: {
-                        timetableId: newTimetable.id,
+            // نسخ الحصص بـ upsert (لتجنب أخطاء التكرار)
+            for (const slot of srcTimetable.slots) {
+                await tx.timetableSlot.upsert({
+                    where: {
+                        timetableId_weekday_lessonNumber: {
+                            timetableId: targetTimetable.id,
+                            weekday: slot.weekday,
+                            lessonNumber: slot.lessonNumber,
+                        },
+                    },
+                    create: {
+                        timetableId: targetTimetable.id,
                         weekday: slot.weekday,
                         lessonNumber: slot.lessonNumber,
                         subjectSectionId: slot.subjectSectionId,
+                    },
+                    update: {
+                        subjectSectionId: slot.subjectSectionId,
+                        isDeleted: false,
+                        deletedAt: null,
                     },
                 });
                 totalSlotsCopied++;
