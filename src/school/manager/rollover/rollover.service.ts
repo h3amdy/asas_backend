@@ -122,6 +122,50 @@ export class RolloverService {
         };
     }
 
+    // ==================== 1b. جلب الطلاب للترحيل ====================
+
+    async getStudentsForRollover(schoolId: number) {
+        const grades = await this.prisma.schoolGrade.findMany({
+            where: { schoolId, isDeleted: false, isActive: true },
+            orderBy: { sortOrder: 'asc' },
+            include: {
+                sections: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    include: {
+                        enrollments: {
+                            where: { isCurrent: true, isDeleted: false },
+                            include: {
+                                student: {
+                                    include: { user: true },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        return {
+            grades: grades.map(g => ({
+                id: g.id,
+                name: g.displayName,
+                sortOrder: g.sortOrder,
+                sections: g.sections.map(s => ({
+                    id: s.id,
+                    name: s.name,
+                    orderIndex: s.orderIndex,
+                    students: s.enrollments.map(e => ({
+                        enrollmentId: e.id,
+                        studentId: e.studentId,
+                        fullName: e.student.user.name,
+                        schoolCode: e.student.user.code?.toString() ?? '',
+                    })),
+                })),
+            })),
+        };
+    }
+
     // ==================== 2. معاينة الترحيل ====================
 
     async preview(schoolId: number, dto: RolloverRequestDto) {

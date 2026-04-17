@@ -29,4 +29,10 @@ export class RolloverController {
     execute(@Req() req: any, @Body() dto: RolloverRequestDto) {
         return this.service.execute(req.schoolContext.id, dto);
     }
+
+    /** جلب الطلاب النشطين مجمّعين حسب الصف والشعبة — لتعيين حالاتهم */
+    @Get('students')
+    getStudents(@Req() req: any) {
+        return this.service.getStudentsForRollover(req.schoolContext.id);
+    }
 }
