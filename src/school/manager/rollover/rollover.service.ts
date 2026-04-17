@@ -465,8 +465,20 @@ export class RolloverService {
                             ?? targetSections[0];
 
                         if (matchedSection) {
-                            await tx.studentEnrollment.create({
-                                data: {
+                            await tx.studentEnrollment.upsert({
+                                where: {
+                                    studentId_yearId: {
+                                        studentId: enrollment.studentId,
+                                        yearId: newYear.id,
+                                    },
+                                },
+                                update: {
+                                    gradeId: newGradeId,
+                                    sectionId: matchedSection.id,
+                                    isCurrent: true,
+                                    status: EnrollmentStatus.ACTIVE,
+                                },
+                                create: {
                                     studentId: enrollment.studentId,
                                     gradeId: newGradeId,
                                     sectionId: matchedSection.id,
