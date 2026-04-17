@@ -1,6 +1,6 @@
 Project AsassSchoolAdmin {
   database_type: 'PostgreSQL'
-  Note: 'Version V9.4 '
+  Note: 'Version V10.1 — إضافة status لـ lesson_templates + title لـ lesson_contents'
 }
 
 //////////////////////////////////////////////////////
@@ -473,11 +473,12 @@ Table lesson_templates {
   subject_dictionary_id int [null]      // FK -> subject_dictionary.id (للقالب الرسمي)
   subject_id          int [null]        // FK -> subjects.id (للقالب المدرسي: مادة محلية/أو رسمية داخل المدرسة)
 
-  // (اختياري) ربط بالوحدة:
-  unit_id            int [null]         // FK -> units.id (لو وحدات المدرسة)
-  order_index        int [default: 1]   // ✅ ترتيب الدرس داخل الوحدة
+  // ربط بالوحدة (إلزامي لدروس المدرسة، nullable لقوالب المنصة):
+  unit_id            int [null]         // FK -> units.id
+  order_index        int [default: 1]   // ✅ ترتيب الدرس داخل الوحدة (DEC-012)
  
   title              varchar
+  status             varchar [default: 'DRAFT']  // ✅ V10.1: حالة القالب — DRAFT / READY / ARCHIVED
   cover_media_asset_id int [null]
   template_version   int [default: 1]   // لنسخ القالب عند التعديل (clone)
   source_template_id int [null]         // FK -> lesson_templates.id (يشير للأصل عند clone)
@@ -497,15 +498,18 @@ Table lesson_templates {
     (cover_media_asset_id)
     (source_template_id)
     (updated_at)
+
+    // ✅ DEC-012: منع تكرار ترتيب الدرس داخل نفس الوحدة
+    (unit_id, order_index) [unique]
   }
 }
 
 /*
 قواعد تحقق (تكتب كملاحظة لأن DBML محدود):
 - owner_type='PLATFORM' => school_id IS NULL AND subject_dictionary_id IS NOT NULL
-- owner_type='SCHOOL'   => school_id IS NOT NULL AND subject_id IS NOT NULL
+- owner_type='SCHOOL'   => school_id IS NOT NULL AND subject_id IS NOT NULL AND unit_id IS NOT NULL
 - subject_dictionary_id و subject_id لا يجتمعان معًا.
-- unit_dictionary_id و unit_id لا يجتمعان معًا.
+- unit_id إلزامي لدروس المدرسة (SCHOOL)، اختياري لقوالب المنصة (PLATFORM). يُفرض من API.
 */
 // نشر/نسخة الدرس داخل مدرسة + سنة + فصل (Instance/Publication)
 Table lessons {
@@ -564,20 +568,24 @@ Table lesson_targets {
 Table lesson_contents {
   id            int [pk, increment]
   uuid          varchar [unique]
-    template_id     int               // FK -> lesson_templates.id
+  template_id     int               // FK -> lesson_templates.id
   type          varchar   // TEXT/IMAGE/AUDIO
+  title           varchar [null]       // ✅ V10.1: عنوان اختياري للكتلة (مثل "مقدمة" أو "شرح القاعدة")
   media_asset_id  int [null]             // ✅ الوسيط المرتبط بهذا المحتوى
   content_text    text    [null]         // نص المحتوى عندما type=TEXT
-  
+
   order_index   int
   created_at datetime
   updated_at datetime
   is_deleted boolean [default: false]
   deleted_at datetime [null]
 
- indexes {
+  indexes {
     (template_id)
     (media_asset_id)
+
+    // ✅ V10.1: منع تكرار ترتيب الكتل داخل نفس القالب (مهم للـ offline sync)
+    (template_id, order_index) [unique]
   }
 }
 
@@ -609,15 +617,16 @@ Table lesson_delivery_logs {
 Table questions {
   id                int [pk, increment]
   uuid              varchar [unique]
-template_id                int               // FK -> lesson_templates.id
+  template_id       int               // FK -> lesson_templates.id
   
   type              varchar   // MCQ / TRUE_FALSE / MATCHING / FILL / ORDERING
+  order_index       int                // ✅ TCH-094: ترتيب عرض السؤال داخل الدرس
 
   question_text     text    [null]
   question_image_asset_id     int [null]  // صورة السؤال
   question_audio_asset_id     int [null]  // صوت السؤال
 
-  score             float   [default: 1.0] // points
+  score             float   [default: 1.0] // points (DEC-014: ثابت 1.0 في MVP)
 
   explanation_text  text    [null]
   explanation_image_asset_id  int [null]  // صورة الشرح
@@ -628,10 +637,14 @@ template_id                int               // FK -> lesson_templates.id
   deleted_at datetime [null]
 
   indexes {
+    (template_id)
     (question_image_asset_id)
     (question_audio_asset_id)
     (explanation_image_asset_id)
     (explanation_audio_asset_id)
+
+    // ✅ TCH-094: منع تكرار ترتيب الأسئلة داخل نفس الدرس
+    (template_id, order_index) [unique]
   }
 }
 
@@ -862,21 +875,23 @@ Table student_answer_details {
 
 
 //////////////////////////////////////////////////////
-// Timetable
+// Timetable (DEC-010: Section-Based)
+// القرار المعماري: جدول مستقل لكل شعبة بدل جدول مركزي للمدرسة
+// المرجع: doc/DEC-010-section-based-timetable.md
 //////////////////////////////////////////////////////
 
 
-// جدول الجداول الدراسية
+// جدول حصص الشعبة (جدول واحد = شعبة + سنة + فصل)
 Table timetables {
-  id         int [pk, increment]
-  uuid       varchar [unique]
-  school_id  int
-  year_id    int
-  term_id    int
+  id              int [pk, increment]
+  uuid            varchar [unique]
+  section_id      int            // ✅ DEC-010: المفتاح المنطقي — كل شعبة لها جدول مستقل
+  year_id         int
+  term_id         int
 
- status          varchar  // DRAFT / PUBLISHED
-  published_at    datetime [null]
-  publish_version int [default: 0]   // يزيد عند كل Publish/Republish 
+  status          varchar [default: 'PUBLISHED']  // MVP: حفظ = نشر — مستقبلاً: DRAFT / PUBLISHED
+  published_at    datetime [null]                  // وقت آخر نشر (null = لم يُنشر بعد)
+  publish_version int [default: 1]                 // يزيد مستقبلاً عند كل Republish
 
   created_at datetime
   updated_at datetime
@@ -884,28 +899,29 @@ Table timetables {
   deleted_at datetime [null]
 
   indexes {
-    (school_id, year_id, term_id) [unique]  // ✅ يمنع وجود جدولين لنفس الفصل
+    (section_id, year_id, term_id) [unique]  // ✅ يمنع وجود جدولين لنفس الشعبة/فصل
+    (year_id, term_id)                       // ✅ للبحث السريع حسب الفصل
   }
 }
 
 
-
-// جدول حصص الجدول
+// حصة واحدة في الجدول (يوم + رقم حصة + مادة)
+// المعلم يُحسم من: subject_section_id → subject_section_teachers
 Table timetable_slots {
   id                 int [pk, increment]
   uuid               varchar [unique]
   timetable_id       int
-  section_id         int
-  weekday            int    // 0-6
+  weekday            int    // 0=سبت, 1=أحد, 2=اثنين, 3=ثلاثاء, 4=أربعاء, 5=خميس
   lesson_number      int    // 1-8
- subject_section_id int [null]   // ✅ خليها nullable لو تريد “حصة فراغ/استراحة” مستقبلاً، وإلا اجعلها إلزامية
-    created_at datetime
+  subject_section_id int [null]   // nullable — يدعم حصة فارغة/استراحة مستقبلاً
+
+  created_at datetime
   updated_at datetime
   is_deleted boolean [default: false]
   deleted_at datetime [null]
- indexes {
-    (timetable_id, section_id, weekday, lesson_number) [unique]
-    (timetable_id, section_id)
+
+  indexes {
+    (timetable_id, weekday, lesson_number) [unique]  // ✅ حصة واحدة فقط لكل يوم+رقم
     (subject_section_id)
   }
 }
@@ -1140,13 +1156,13 @@ Table media_assets {
   school_id     int                      // مدرسة الوسائط (للعزل Multi-tenant)
   kind          varchar                  // نوع الوسيط: IMAGE / AUDIO
 
-  storage_key   varchar                  // مفتاح التخزين (مسار داخل VPS/S3) — لا تربطه ببنية URL نهائية
+  storage_key   varchar [null]           // مسار التخزين (مسار داخل VPS/S3) — nullable حتى اكتمال المعالجة
   original_url  varchar [null]           // رابط النسخة الأصلية (اختياري) — قد يكون Presigned لاحقًا
 
   // خصائص مهمة لمنع إعادة التنزيل + تحقق سلامة الملف
   content_type  varchar                  // مثل image/webp, image/jpeg, audio/aac
-  size_bytes    bigint                   // حجم الملف بالبايت (للتقدير والحدود في Yemen Mode)
-  etag          varchar [null]           // ETag من التخزين/الويب (ممتاز للتحقق والتحديث)
+  size_bytes    bigint [default: 0]      // حجم الملف بالبايت (للتقدير والحدود في Yemen Mode)
+  etag          varchar [null]           // ETag deterministic: sha256(file content)[0:32]
   sha256        varchar [null]           // Hash (اختياري) للتحقق القوي من سلامة الملف
 
   // خصائص إضافية (اختيارية لكنها مفيدة)
@@ -1155,15 +1171,18 @@ Table media_assets {
   duration_sec  int [null]               // مدة الصوت بالثواني
 
   // روابط نسخ متعددة لتقليل الحجم (small/medium/original)
-  variants_json text [null]              // JSON: { "small": "...", "medium": "...", "original": "..." }
+  variants_json text [null]              // JSON: { "small": {...}, "medium": {...}, "original": {...} }
   preferred_variant varchar [null]       // MEDIUM مثلا (اختياري)
+
+  // حالة المعالجة (processing pipeline)
+  processing_status varchar [default: 'PENDING'] // PENDING / PROCESSING / DONE / ERROR
 
   // Sync fields (Server)
   created_at    datetime                 // وقت إنشاء سجل الوسيط
   updated_at    datetime                 // ✅ وقود Pull Delta (آخر تعديل على Metadata)
   is_deleted    boolean [default: false] // Soft delete للوسائط
-  deleted_at    datetime [null]          // وقت الحذف (لـ GC لاحقًا)
-row_version int [default: 0] //  stronger delta + ordering
+  deleted_at    datetime [null]          // وقت الحذف (لـ GC لاحقًا — يُحذف نهائياً بعد 30 يوم)
+  row_version   int [default: 0]         // stronger delta + ordering — يزيد بعد كل تحديث
 
   indexes {
     (school_id)
@@ -1375,12 +1394,12 @@ Ref: student_lesson_progress.lesson_id  > lessons.id
 Ref: student_answers.student_id  > students.user_id
 Ref: student_answers.question_id > questions.id
 
-Ref: timetables.school_id > schools.id
-Ref: timetables.year_id   > years.id
-Ref: timetables.term_id   > terms.id
+// ✅ DEC-010: Timetable يرتبط بالشعبة (Section) وليس المدرسة (School)
+Ref: timetables.section_id > sections.id
+Ref: timetables.year_id    > years.id
+Ref: timetables.term_id    > terms.id
 
 Ref: timetable_slots.timetable_id       > timetables.id
-Ref: timetable_slots.section_id         > sections.id
 Ref: timetable_slots.subject_section_id > subject_sections.id
 
 Ref: lesson_timetable_slots.lesson_id         > lessons.id
@@ -1418,6 +1437,8 @@ Ref: media_assets.school_id > schools.id
 
 Ref: schools.logo_media_asset_id > media_assets.id
 Ref: subjects.cover_media_asset_id > media_assets.id
+Ref: subject_dictionary.cover_media_asset_id > media_assets.id
+Ref: lesson_templates.cover_media_asset_id > media_assets.id
 Ref: lesson_contents.media_asset_id > media_assets.id
 
 Ref: questions.question_image_asset_id      > media_assets.id
@@ -1443,3 +1464,46 @@ Ref: media_upload_sessions.school_id > schools.id
 Ref: media_upload_sessions.uploader_user_id > users.id
 Ref: media_upload_sessions.media_asset_id > media_assets.id
 
+
+//////////////////////////////////////////////////////
+// Changelog
+//////////////////////////////////////////////////////
+/*
+  V10.0 (2026-03-21) — DEC-010: Section-Based Timetable
+  ──────────────────────────────────────────────────────
+  ✅ timetables:
+    - تغيّر من school_id → section_id (كل شعبة = جدول مستقل)
+    - حُذفت حقول: status, published_at, publish_version (MVP: حفظ = نشر)
+    - تغيّر unique index: (school_id, year_id, term_id) → (section_id, year_id, term_id)
+    - أُضيف index: (year_id, term_id)
+
+  ✅ timetable_slots:
+    - حُذف حقل section_id (يُحسم من timetable.section_id)
+    - تغيّر unique index: (timetable_id, section_id, weekday, lesson_number)
+      → (timetable_id, weekday, lesson_number)
+    - حُذف index: (timetable_id, section_id)
+
+  ✅ Refs:
+    - حُذف: timetables.school_id > schools.id
+    - أُضيف: timetables.section_id > sections.id
+    - حُذف: timetable_slots.section_id > sections.id
+
+  ────────────────────────────────────────────────────
+
+  V9.5 (2026-03-01) — Media System
+  ─────────────────────────────────
+  ✅ media_assets:
+    - أُضيف حقل processing_status (PENDING/PROCESSING/DONE/ERROR)
+    - أُصلح storage_key ليكون nullable (null حتى اكتمال المعالجة)
+    - أُصلح size_bytes ليأخذ default: 0
+    - أُحدّث وصف etag: الآن deterministic عبر sha256(file content)
+    - أُحدّث وصف deleted_at: يُحذف نهائياً بعد 30 يوم عبر MediaCleanupService
+  
+  ✅ Refs:
+    - أُضيف ref: subject_dictionary.cover_media_asset_id > media_assets.id
+    - أُضيف ref: lesson_templates.cover_media_asset_id > media_assets.id
+
+  ℹ️ ملاحظة:
+    - الجداول المحلية (media_cache, media_download_queue, local_media_upload_queue) لم تتغير
+    - media_upload_sessions لم يتغير
+*/

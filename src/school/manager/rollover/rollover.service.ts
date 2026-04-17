@@ -555,31 +555,61 @@ export class RolloverService {
 
         if (!lastOldTerm || !firstNewTerm) return false;
 
-        // التحقق من عدم وجود جدول في الفصل الجديد
-        const existingSlots = await tx.timetableSlot.count({
-            where: { termId: firstNewTerm.id, isDeleted: false },
+        // جلب جميع الجداول (timetables) للفصل القديم مع حصصها
+        const oldTimetables = await tx.timetable.findMany({
+            where: {
+                termId: lastOldTerm.id,
+                yearId: oldYearId,
+                isDeleted: false,
+            },
+            include: {
+                slots: {
+                    where: { isDeleted: false },
+                },
+            },
         });
-        if (existingSlots > 0) return false; // لا نستبدل جدول موجود
 
-        // جلب جميع حصص الفصل القديم
-        const oldSlots = await tx.timetableSlot.findMany({
-            where: { termId: lastOldTerm.id, isDeleted: false },
-        });
+        if (oldTimetables.length === 0) return false;
 
-        // نسخ الحصص
-        for (const slot of oldSlots) {
-            await tx.timetableSlot.create({
-                data: {
+        let totalSlotsCopied = 0;
+
+        for (const oldTimetable of oldTimetables) {
+            // التحقق من عدم وجود timetable للشعبة في الفصل الجديد
+            const existing = await tx.timetable.findFirst({
+                where: {
+                    sectionId: oldTimetable.sectionId,
+                    yearId: newYearId,
                     termId: firstNewTerm.id,
-                    sectionId: slot.sectionId,
-                    subjectId: slot.subjectId,
-                    teacherId: slot.teacherId,
-                    dayOfWeek: slot.dayOfWeek,
-                    slotNumber: slot.slotNumber,
+                    isDeleted: false,
                 },
             });
+            if (existing) continue; // لا نستبدل جدول موجود
+
+            // إنشاء timetable جديد لنفس الشعبة في الفصل الجديد
+            const newTimetable = await tx.timetable.create({
+                data: {
+                    sectionId: oldTimetable.sectionId,
+                    yearId: newYearId,
+                    termId: firstNewTerm.id,
+                    status: 'PUBLISHED',
+                    publishedAt: new Date(),
+                },
+            });
+
+            // نسخ الحصص
+            for (const slot of oldTimetable.slots) {
+                await tx.timetableSlot.create({
+                    data: {
+                        timetableId: newTimetable.id,
+                        weekday: slot.weekday,
+                        lessonNumber: slot.lessonNumber,
+                        subjectSectionId: slot.subjectSectionId,
+                    },
+                });
+                totalSlotsCopied++;
+            }
         }
 
-        return oldSlots.length > 0;
+        return totalSlotsCopied > 0;
     }
 }
