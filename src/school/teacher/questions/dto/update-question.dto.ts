@@ -25,6 +25,11 @@ export class UpdateQuestionDto {
     @IsOptional()
     @IsString()
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    instructionText?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
     questionText?: string | null;
 
     @IsOptional()
@@ -32,8 +37,16 @@ export class UpdateQuestionDto {
     questionImageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    questionImageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     questionAudioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    questionAudioAssetUuid?: string | null;
 
     // شرح الإجابة
     @IsOptional()

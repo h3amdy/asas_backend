@@ -31,8 +31,16 @@ export class CreateOptionDto {
     imageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    imageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     audioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    audioAssetUuid?: string | null;
 
     @IsBoolean({ message: 'حقل isCorrect مطلوب' })
     isCorrect!: boolean;
@@ -57,8 +65,16 @@ export class CreateMatchingPairDto {
     leftImageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    leftImageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     leftAudioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    leftAudioAssetUuid?: string | null;
 
     @IsOptional()
     @IsString()
@@ -70,8 +86,16 @@ export class CreateMatchingPairDto {
     rightImageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    rightImageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     rightAudioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    rightAudioAssetUuid?: string | null;
 
     @IsOptional()
     @IsInt()
@@ -93,8 +117,16 @@ export class CreateOrderingItemDto {
     imageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    imageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     audioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    audioAssetUuid?: string | null;
 
     @IsInt()
     @Min(1)
@@ -147,6 +179,11 @@ export class CreateQuestionDto {
     @IsOptional()
     @IsString()
     @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    instructionText?: string | null;
+
+    @IsOptional()
+    @IsString()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
     questionText?: string | null;
 
     @IsOptional()
@@ -154,8 +191,16 @@ export class CreateQuestionDto {
     questionImageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    questionImageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     questionAudioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    questionAudioAssetUuid?: string | null;
 
     // شرح الإجابة
     @IsOptional()

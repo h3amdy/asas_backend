@@ -964,7 +964,8 @@ model Question {
   type       String // MCQ / TRUE_FALSE / MATCHING / FILL / ORDERING
   orderIndex Int    @map("order_index")
 
-  questionText         String?     @map("question_text")
+  instructionText      String?     @map("instruction_text") // نص التعليمات (اختياري) — مثل: "أكمل الفراغات التالية"
+  questionText         String?     @map("question_text") // النص التفاعلي (في FILL: يحتوي {{A}} placeholders)
   questionImageAssetId Int?        @map("question_image_asset_id")
   questionImageAsset   MediaAsset? @relation("QuestionImage", fields: [questionImageAssetId], references: [id])
   questionAudioAssetId Int?        @map("question_audio_asset_id")
@@ -1008,7 +1009,7 @@ model QuestionOption {
   questionId Int      @map("question_id")
   question   Question @relation(fields: [questionId], references: [id])
 
-  optionText   String?     @map("option_text")
+  optionText   String?     @map("option_text") // نص الخيار — في خيارات الصور يُستخدم كوصف نصي قصير (Label)
   imageAssetId Int?        @map("image_asset_id")
   imageAsset   MediaAsset? @relation("QuestionOptionImage", fields: [imageAssetId], references: [id])
   audioAssetId Int?        @map("audio_asset_id")

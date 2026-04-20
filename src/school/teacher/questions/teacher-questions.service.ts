@@ -113,20 +113,60 @@ export class TeacherQuestionsService {
     }
 
     // ─────────────────────────────────────────────────────────
+    // Helper: تحويل UUID إلى ID رقمي
+    // ─────────────────────────────────────────────────────────
+    private async resolveAssetUuid(uuid: string | null | undefined): Promise<number | null> {
+        if (!uuid) return null;
+        const asset = await this.prisma.mediaAsset.findFirst({
+            where: { uuid, isDeleted: false },
+            select: { id: true },
+        });
+        if (!asset) return null;
+        return asset.id;
+    }
+
+    /// يحل UUID → ID أو يُرجع ID المُمرَّر مباشرة
+    private async resolveAssetField(
+        assetId: number | null | undefined,
+        assetUuid: string | null | undefined,
+    ): Promise<number | null> {
+        if (assetId) return assetId;
+        if (assetUuid) return this.resolveAssetUuid(assetUuid);
+        return null;
+    }
+
+    // ─────────────────────────────────────────────────────────
     // Helper: include للبيانات الفرعية
     // ─────────────────────────────────────────────────────────
     private readonly questionDetailInclude = {
+        // وسائط السؤال نفسه
+        questionImageAsset: { select: { uuid: true } },
+        questionAudioAsset: { select: { uuid: true } },
         options: {
             where: { isDeleted: false },
             orderBy: { orderIndex: 'asc' as const },
+            include: {
+                imageAsset: { select: { uuid: true } },
+                audioAsset: { select: { uuid: true } },
+            },
         },
         matchingPairs: {
             where: { isDeleted: false },
             orderBy: { leftOrderIndex: 'asc' as const },
+            include: {
+                leftImageAsset: { select: { uuid: true } },
+                leftAudioAsset: { select: { uuid: true } },
+                rightImageAsset: { select: { uuid: true } },
+                rightAudioAsset: { select: { uuid: true } },
+            },
         },
         orderingItems: {
             where: { isDeleted: false },
             orderBy: { orderIndex: 'asc' as const },
+            include: {
+                imageAsset: { select: { uuid: true } },
+                audioAsset: { select: { uuid: true } },
+            },
         },
         fillBlanks: {
             where: { isDeleted: false },
@@ -146,9 +186,12 @@ export class TeacherQuestionsService {
             uuid: q.uuid,
             type: q.type,
             orderIndex: q.orderIndex,
+            instructionText: q.instructionText,
             questionText: q.questionText,
             questionImageAssetId: q.questionImageAssetId,
+            questionImageAssetUuid: q.questionImageAsset?.uuid ?? null,
             questionAudioAssetId: q.questionAudioAssetId,
+            questionAudioAssetUuid: q.questionAudioAsset?.uuid ?? null,
             score: q.score,
             explanationText: q.explanationText,
             explanationImageAssetId: q.explanationImageAssetId,
@@ -159,7 +202,9 @@ export class TeacherQuestionsService {
                 uuid: o.uuid,
                 optionText: o.optionText,
                 imageAssetId: o.imageAssetId,
+                imageAssetUuid: o.imageAsset?.uuid ?? null,
                 audioAssetId: o.audioAssetId,
+                audioAssetUuid: o.audioAsset?.uuid ?? null,
                 isCorrect: o.isCorrect,
                 orderIndex: o.orderIndex,
             })),
@@ -169,10 +214,14 @@ export class TeacherQuestionsService {
                 pairKey: p.pairKey,
                 leftText: p.leftText,
                 leftImageAssetId: p.leftImageAssetId,
+                leftImageAssetUuid: p.leftImageAsset?.uuid ?? null,
                 leftAudioAssetId: p.leftAudioAssetId,
+                leftAudioAssetUuid: p.leftAudioAsset?.uuid ?? null,
                 rightText: p.rightText,
                 rightImageAssetId: p.rightImageAssetId,
+                rightImageAssetUuid: p.rightImageAsset?.uuid ?? null,
                 rightAudioAssetId: p.rightAudioAssetId,
+                rightAudioAssetUuid: p.rightAudioAsset?.uuid ?? null,
                 leftOrderIndex: p.leftOrderIndex,
                 rightOrderIndex: p.rightOrderIndex,
             })),
@@ -181,7 +230,9 @@ export class TeacherQuestionsService {
                 uuid: i.uuid,
                 itemText: i.itemText,
                 imageAssetId: i.imageAssetId,
+                imageAssetUuid: i.imageAsset?.uuid ?? null,
                 audioAssetId: i.audioAssetId,
+                audioAssetUuid: i.audioAsset?.uuid ?? null,
                 correctIndex: i.correctIndex,
                 orderIndex: i.orderIndex,
             })),
@@ -275,6 +326,10 @@ export class TeacherQuestionsService {
         }
 
         // Transaction: إنشاء السؤال + بياناته الفرعية
+        // تحويل UUIDs → IDs قبل الـ transaction
+        const questionImageAssetId = await this.resolveAssetField(dto.questionImageAssetId, dto.questionImageAssetUuid);
+        const questionAudioAssetId = await this.resolveAssetField(dto.questionAudioAssetId, dto.questionAudioAssetUuid);
+
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. إنشاء السؤال
             const question = await tx.question.create({
@@ -282,9 +337,10 @@ export class TeacherQuestionsService {
                     templateId: lesson.id,
                     type: dto.type,
                     orderIndex: dto.orderIndex,
+                    instructionText: dto.instructionText ?? null,
                     questionText: dto.questionText ?? null,
-                    questionImageAssetId: dto.questionImageAssetId ?? null,
-                    questionAudioAssetId: dto.questionAudioAssetId ?? null,
+                    questionImageAssetId,
+                    questionAudioAssetId,
                     explanationText: dto.explanationText ?? null,
                     explanationImageAssetId: dto.explanationImageAssetId ?? null,
                     explanationAudioAssetId: dto.explanationAudioAssetId ?? null,
@@ -338,12 +394,23 @@ export class TeacherQuestionsService {
             this.validateTypeRulesForUpdate(question.type, dto);
         }
 
+        // تحويل UUIDs → IDs إذا أرسلت
+        const resolvedQuestionImageAssetId = dto.questionImageAssetUuid
+            ? await this.resolveAssetUuid(dto.questionImageAssetUuid)
+            : undefined;
+        const resolvedQuestionAudioAssetId = dto.questionAudioAssetUuid
+            ? await this.resolveAssetUuid(dto.questionAudioAssetUuid)
+            : undefined;
+
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. تحديث حقول السؤال
             const updateData: any = {};
+            if (dto.instructionText !== undefined) updateData.instructionText = dto.instructionText;
             if (dto.questionText !== undefined) updateData.questionText = dto.questionText;
             if (dto.questionImageAssetId !== undefined) updateData.questionImageAssetId = dto.questionImageAssetId;
+            else if (resolvedQuestionImageAssetId !== undefined) updateData.questionImageAssetId = resolvedQuestionImageAssetId;
             if (dto.questionAudioAssetId !== undefined) updateData.questionAudioAssetId = dto.questionAudioAssetId;
+            else if (resolvedQuestionAudioAssetId !== undefined) updateData.questionAudioAssetId = resolvedQuestionAudioAssetId;
             if (dto.explanationText !== undefined) updateData.explanationText = dto.explanationText;
             if (dto.explanationImageAssetId !== undefined) updateData.explanationImageAssetId = dto.explanationImageAssetId;
             if (dto.explanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = dto.explanationAudioAssetId;
@@ -518,12 +585,14 @@ export class TeacherQuestionsService {
 
     private async createOptions(tx: any, questionId: number, options: any[]) {
         for (const opt of options) {
+            const imageAssetId = await this.resolveAssetField(opt.imageAssetId, opt.imageAssetUuid);
+            const audioAssetId = await this.resolveAssetField(opt.audioAssetId, opt.audioAssetUuid);
             await tx.questionOption.create({
                 data: {
                     questionId,
                     optionText: opt.optionText ?? null,
-                    imageAssetId: opt.imageAssetId ?? null,
-                    audioAssetId: opt.audioAssetId ?? null,
+                    imageAssetId,
+                    audioAssetId,
                     isCorrect: opt.isCorrect,
                     orderIndex: opt.orderIndex,
                 },
@@ -533,16 +602,20 @@ export class TeacherQuestionsService {
 
     private async createMatchingPairs(tx: any, questionId: number, pairs: any[]) {
         for (const pair of pairs) {
+            const leftImageAssetId = await this.resolveAssetField(pair.leftImageAssetId, pair.leftImageAssetUuid);
+            const leftAudioAssetId = await this.resolveAssetField(pair.leftAudioAssetId, pair.leftAudioAssetUuid);
+            const rightImageAssetId = await this.resolveAssetField(pair.rightImageAssetId, pair.rightImageAssetUuid);
+            const rightAudioAssetId = await this.resolveAssetField(pair.rightAudioAssetId, pair.rightAudioAssetUuid);
             await tx.questionMatchingPair.create({
                 data: {
                     questionId,
                     pairKey: pair.pairKey,
                     leftText: pair.leftText ?? null,
-                    leftImageAssetId: pair.leftImageAssetId ?? null,
-                    leftAudioAssetId: pair.leftAudioAssetId ?? null,
+                    leftImageAssetId,
+                    leftAudioAssetId,
                     rightText: pair.rightText ?? null,
-                    rightImageAssetId: pair.rightImageAssetId ?? null,
-                    rightAudioAssetId: pair.rightAudioAssetId ?? null,
+                    rightImageAssetId,
+                    rightAudioAssetId,
                     leftOrderIndex: pair.leftOrderIndex ?? null,
                     rightOrderIndex: pair.rightOrderIndex ?? null,
                 },
@@ -552,12 +625,14 @@ export class TeacherQuestionsService {
 
     private async createOrderingItems(tx: any, questionId: number, items: any[]) {
         for (const item of items) {
+            const imageAssetId = await this.resolveAssetField(item.imageAssetId, item.imageAssetUuid);
+            const audioAssetId = await this.resolveAssetField(item.audioAssetId, item.audioAssetUuid);
             await tx.questionOrderingItem.create({
                 data: {
                     questionId,
                     itemText: item.itemText ?? null,
-                    imageAssetId: item.imageAssetId ?? null,
-                    audioAssetId: item.audioAssetId ?? null,
+                    imageAssetId,
+                    audioAssetId,
                     correctIndex: item.correctIndex,
                     orderIndex: item.orderIndex,
                 },
