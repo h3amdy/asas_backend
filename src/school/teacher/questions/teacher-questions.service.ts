@@ -673,8 +673,8 @@ export class TeacherQuestionsService {
     /** BR-03: سؤال غير فارغ */
     private validateQuestionNotEmpty(dto: CreateQuestionDto | UpdateQuestionDto) {
         const hasText = dto.questionText && dto.questionText.trim().length > 0;
-        const hasImage = dto.questionImageAssetId != null;
-        const hasAudio = dto.questionAudioAssetId != null;
+        const hasImage = dto.questionImageAssetId != null || (dto as any).questionImageAssetUuid != null;
+        const hasAudio = dto.questionAudioAssetId != null || (dto as any).questionAudioAssetUuid != null;
 
         if (!hasText && !hasImage && !hasAudio) {
             throw new BadRequestException('أضف نص السؤال أو صورة أو صوت');
@@ -724,7 +724,7 @@ export class TeacherQuestionsService {
     }
 
     private isOptionValid(opt: any): boolean {
-        return !!(opt.optionText?.trim() || opt.imageAssetId || opt.audioAssetId);
+        return !!(opt.optionText?.trim() || opt.imageAssetId || opt.imageAssetUuid || opt.audioAssetId || opt.audioAssetUuid);
     }
 
     private validateMCQ(options?: any[]) {
@@ -756,8 +756,8 @@ export class TeacherQuestionsService {
             throw new BadRequestException('سؤال المطابقة يحتاج زوجين صالحين على الأقل');
         }
         for (const pair of pairs) {
-            const leftValid = !!(pair.leftText?.trim() || pair.leftImageAssetId || pair.leftAudioAssetId);
-            const rightValid = !!(pair.rightText?.trim() || pair.rightImageAssetId || pair.rightAudioAssetId);
+            const leftValid = !!(pair.leftText?.trim() || pair.leftImageAssetId || pair.leftImageAssetUuid || pair.leftAudioAssetId || pair.leftAudioAssetUuid);
+            const rightValid = !!(pair.rightText?.trim() || pair.rightImageAssetId || pair.rightImageAssetUuid || pair.rightAudioAssetId || pair.rightAudioAssetUuid);
             if (!leftValid || !rightValid) {
                 throw new BadRequestException('كل زوج يجب أن يحتوي نص أو صورة أو صوت في كلا الطرفين');
             }
@@ -769,7 +769,7 @@ export class TeacherQuestionsService {
             throw new BadRequestException('سؤال الترتيب يحتاج عنصرين صالحين على الأقل');
         }
         for (const item of items) {
-            const valid = !!(item.itemText?.trim() || item.imageAssetId || item.audioAssetId);
+            const valid = !!(item.itemText?.trim() || item.imageAssetId || item.imageAssetUuid || item.audioAssetId || item.audioAssetUuid);
             if (!valid) {
                 throw new BadRequestException('كل عنصر يجب أن يحتوي نص أو صورة أو صوت');
             }
