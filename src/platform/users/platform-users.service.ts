@@ -110,12 +110,14 @@ export class PlatformUsersService {
       throw new ConflictException('اسم المستخدم مستخدم بالفعل');
     }
 
-    // التحقق من عدم تكرار البريد
-    const existingEmail = await this.prisma.platformUser.findFirst({
-      where: { email: dto.email, isDeleted: false },
-    });
-    if (existingEmail) {
-      throw new ConflictException('البريد الإلكتروني مستخدم بالفعل');
+    // التحقق من عدم تكرار البريد (فقط إذا أُرسل)
+    if (dto.email) {
+      const existingEmail = await this.prisma.platformUser.findFirst({
+        where: { email: dto.email, isDeleted: false },
+      });
+      if (existingEmail) {
+        throw new ConflictException('البريد الإلكتروني مستخدم بالفعل');
+      }
     }
 
     // تشفير كلمة المرور
@@ -125,7 +127,7 @@ export class PlatformUsersService {
       data: {
         name: dto.name,
         username: dto.username,
-        email: dto.email,
+        email: dto.email || null,
         passwordHash,
         phone: dto.phone || null,
         role: 'PLATFORM_TEACHER',
@@ -190,9 +192,9 @@ export class PlatformUsersService {
 
   /**
    * إعادة تعيين كلمة المرور (PLT-013 — إجراء من صفحة الملف)
-   * تولّد كلمة مرور عشوائية (8 أرقام) تُعرض مرة واحدة
+   * إذا أُرسلت newPassword تُستخدم، وإلا تُولّد كلمة مرور عشوائية (8 أرقام)
    */
-  async resetPassword(uuid: string) {
+  async resetPassword(uuid: string, newPassword?: string) {
     const user = await this.prisma.platformUser.findFirst({
       where: { uuid, isDeleted: false },
     });
@@ -200,9 +202,13 @@ export class PlatformUsersService {
       throw new NotFoundException('المستخدم غير موجود');
     }
 
-    // توليد كلمة مرور عشوائية (8 أرقام)
-    const newPassword = Math.floor(10000000 + Math.random() * 90000000).toString();
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    // استخدام كلمة المرور المُرسلة أو توليد عشوائية
+    const password =
+      newPassword && newPassword.length >= 6
+        ? newPassword
+        : Math.floor(10000000 + Math.random() * 90000000).toString();
+
+    const passwordHash = await bcrypt.hash(password, 10);
 
     await this.prisma.platformUser.update({
       where: { id: user.id },
@@ -213,7 +219,7 @@ export class PlatformUsersService {
       uuid: user.uuid,
       name: user.name,
       username: user.username,
-      newPassword, // تُعرض مرة واحدة فقط
+      message: 'تم إعادة تعيين كلمة المرور بنجاح',
     };
   }
 }

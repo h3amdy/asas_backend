@@ -5,6 +5,7 @@ import {
   IsEmail,
   MinLength,
   IsOptional,
+  ValidateIf,
 } from 'class-validator';
 
 /**
@@ -19,9 +20,10 @@ export class CreatePlatformUserDto {
   @IsNotEmpty({ message: 'اسم المستخدم مطلوب' })
   username: string;
 
+  @IsOptional()
+  @ValidateIf((o) => o.email !== '' && o.email !== undefined)
   @IsEmail({}, { message: 'البريد الإلكتروني غير صالح' })
-  @IsNotEmpty({ message: 'البريد الإلكتروني مطلوب' })
-  email: string;
+  email?: string;
 
   @IsString()
   @IsNotEmpty({ message: 'كلمة المرور مطلوبة' })

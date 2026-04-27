@@ -1373,7 +1373,7 @@ model PlatformUser {
   uuid String @unique @default(uuid())
 
   username     String  @unique
-  email        String  @unique
+  email        String?  @unique
   passwordHash String  @map("password_hash")
   name         String
   displayName  String? @map("display_name")

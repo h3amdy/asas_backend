@@ -75,7 +75,10 @@ export class PlatformUsersController {
    * إعادة تعيين كلمة المرور (PLT-013)
    */
   @Post(':uuid/reset-password')
-  async resetPassword(@Param('uuid') uuid: string) {
-    return this.usersService.resetPassword(uuid);
+  async resetPassword(
+    @Param('uuid') uuid: string,
+    @Body('newPassword') newPassword?: string,
+  ) {
+    return this.usersService.resetPassword(uuid, newPassword);
   }
 }

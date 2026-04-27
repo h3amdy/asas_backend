@@ -94,7 +94,7 @@ CTRL + C
 
 افحص السجلات:
 
-pm2 logs asas_backend
+pm2 logs asas-backend
 
 ❌ Prisma client not found
 
