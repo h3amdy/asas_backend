@@ -1,6 +1,6 @@
 Project AsassSchoolAdmin {
   database_type: 'PostgreSQL'
-  Note: 'Version V10.1 — إضافة status لـ lesson_templates + title لـ lesson_contents'
+  Note: 'Version V10.2 — إضافة instruction_text للأسئلة + تعليق option_text للصور'
 }
 
 //////////////////////////////////////////////////////
@@ -623,6 +623,7 @@ Table questions {
   order_index       int                // ✅ TCH-094: ترتيب عرض السؤال داخل الدرس
 
   question_text     text    [null]
+  instruction_text  text    [null]       // ✅ V10.2: نص التعليمات (مثل "أكمل الفراغات التالية") — يُستخدم حالياً مع FILL، مفصول عن question_text التفاعلي
   question_image_asset_id     int [null]  // صورة السؤال
   question_audio_asset_id     int [null]  // صوت السؤال
 
@@ -654,7 +655,7 @@ Table question_options {
   id           int [pk, increment]
   uuid         varchar [unique]
   question_id  int
-  option_text  text    [null]
+  option_text  text    [null]            // ✅ V10.2: في أسئلة الصور يُستخدم كوصف نصي قصير (Label) للصورة — لا يُضاف حقل جديد
   image_asset_id int [null]              // صورة الخيار
   audio_asset_id int [null]              // صوت الخيار
   is_correct   boolean
@@ -1469,6 +1470,29 @@ Ref: media_upload_sessions.media_asset_id > media_assets.id
 // Changelog
 //////////////////////////////////////////////////////
 /*
+  V10.2 (2026-04-20) — تحسينات الأسئلة
+  ──────────────────────────────────────────────────────
+  ✅ questions:
+    - أُضيف حقل instruction_text (نص التعليمات — مفصول عن question_text التفاعلي)
+    - يُستخدم حالياً مع أسئلة FILL (مثل: "أكمل الفراغات التالية")
+    - question_text يحتوي فقط على النص التفاعلي مع {{A}}, {{B}} placeholders
+
+  ✅ question_options:
+    - أُضيف تعليق توضيحي: option_text يُستخدم كوصف (Label) للصورة في أسئلة MCQ المصورة
+    - لا حقل جديد — إعادة استخدام الحقل الموجود
+
+  ────────────────────────────────────────────────────
+
+  V10.1 (2026-03-27) — إضافات الدروس
+  ──────────────────────────────────────────────────────
+  ✅ lesson_templates:
+    - أُضيف حقل status (DRAFT / READY / ARCHIVED)
+
+  ✅ lesson_contents:
+    - أُضيف حقل title (عنوان اختياري للكتلة)
+
+  ────────────────────────────────────────────────────
+
   V10.0 (2026-03-21) — DEC-010: Section-Based Timetable
   ──────────────────────────────────────────────────────
   ✅ timetables:

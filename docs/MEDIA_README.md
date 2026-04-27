@@ -4,13 +4,6 @@
 
 > رفع الملفات (Chunked + Resume)، تنزيل (Range + ETag)، معالجة (Variants)، تنظيف تلقائي.
 
-**Base path:** `/school/`
-**Headers:**
-```
-Authorization: Bearer <jwt>
-x-school-uuid: <school-uuid>
-```
-
 ---
 
 ## 📑 الفهرس
@@ -18,12 +11,13 @@ x-school-uuid: <school-uuid>
 1. [نظرة عامة](#1-نظرة-عامة)
 2. [رفع الملفات — Upload Flow](#2-رفع-الملفات)
 3. [تنزيل الملفات — Download](#3-تنزيل-الملفات)
-4. [Metadata](#4-metadata)
-5. [المعالجة — Processing Pipeline](#5-المعالجة)
-6. [التنظيف التلقائي — Cleanup](#6-التنظيف-التلقائي)
-7. [أكواد الأخطاء](#7-أكواد-الأخطاء)
-8. [التدفق المتوقع في Flutter](#8-التدفق-المتوقع-في-flutter)
-9. [البنية الداخلية](#9-البنية-الداخلية)
+4. [تنزيل عام — Public Download](#4-تنزيل-عام)
+5. [Metadata](#5-metadata)
+6. [المعالجة — Processing Pipeline](#6-المعالجة)
+7. [التنظيف التلقائي — Cleanup](#7-التنظيف-التلقائي)
+8. [أكواد الأخطاء](#8-أكواد-الأخطاء)
+9. [التدفق المتوقع في Flutter](#9-التدفق-المتوقع-في-flutter)
+10. [البنية الداخلية](#10-البنية-الداخلية)
 
 ---
 
@@ -32,14 +26,18 @@ x-school-uuid: <school-uuid>
 ### البنية المعمارية
 
 ```
-media.module.ts
-├── MediaController          → تنزيل + metadata       (GET /school/media/...)
-├── MediaUploadController    → رفع chunked + resume    (POST/GET/PUT /school/media-upload/...)
+src/school/media/
+├── MediaController          → تنزيل + metadata         (GET /school/media/...)
+├── MediaUploadController    → رفع chunked + resume      (POST/GET/PUT /school/media-upload/...)
 ├── MediaService             → جلب assets + resolve variants
 ├── MediaUploadService       → إدارة جلسات الرفع
 ├── MediaProcessingService   → إنشاء variants (sharp لصور، placeholder لصوت)
 ├── MediaCleanupService      → تنظيف تلقائي (sessions + assets)
 └── StorageService           → عمليات الملفات على VPS
+
+src/public/media/
+├── PublicMediaController    → تنزيل عام بدون مصادقة     (GET /public/media/...)
+└── PublicMediaModule        → وحدة الوسائط العامة
 ```
 
 ### أنواع الوسائط
@@ -52,23 +50,31 @@ media.module.ts
 ### مسار التخزين
 
 ```
-/var/data/asas/storage/
-├── tmp/                              ← ملفات مؤقتة أثناء الرفع
+$MEDIA_STORAGE_PATH/                        (default: /var/data/asas/storage)
+├── tmp/                                    ← ملفات مؤقتة أثناء الرفع
 │   └── {session_uuid}.part
 └── {school_uuid}/
     └── {asset_uuid}/
-        ├── original.webp             ← النسخة الأصلية
-        ├── medium.webp               ← 600px
-        └── small.webp                ← 200px
+        ├── original.webp                   ← النسخة الأصلية (محوّلة WebP)
+        ├── medium.webp                     ← 600px
+        └── small.webp                      ← 200px
 ```
 
-> 💡 المسار يُقرأ من `MEDIA_STORAGE_PATH` environment variable (default: `/var/data/asas/storage`).
+> 💡 المسار يُقرأ من `MEDIA_STORAGE_PATH` environment variable.
 
 ---
 
 ## 2. رفع الملفات
 
-> 🔐 الأدوار المسموحة: `ADMIN` + `TEACHER`
+### الحماية والصلاحيات
+
+```
+Guards: SchoolJwtAuthGuard → SchoolContextGuard → RolesGuard
+Roles:  OWNER, ADMIN, TEACHER, STUDENT, PARENT
+Headers:
+  Authorization: Bearer <jwt>
+  x-school-uuid: <school-uuid>
+```
 
 ### التدفق الكامل
 
@@ -100,7 +106,7 @@ sequenceDiagram
 
 ---
 
-### `POST /media-upload/sessions` — ① بدء جلسة الرفع
+### `POST /school/media-upload/sessions` — ① بدء جلسة الرفع
 
 ```json
 {
@@ -133,7 +139,7 @@ sequenceDiagram
 
 ---
 
-### `GET /media-upload/sessions/:uuid` — ② استعلام/استئناف
+### `GET /school/media-upload/sessions/:uuid` — ② استعلام/استئناف
 
 يُستخدم لمعرفة كم وصل من البايتات عند انقطاع الاتصال.
 
@@ -153,7 +159,7 @@ sequenceDiagram
 
 ---
 
-### `PUT /media-upload/sessions/:uuid/chunks` — ③ رفع Chunk
+### `PUT /school/media-upload/sessions/:uuid/chunks` — ③ رفع Chunk
 
 **Headers:**
 ```
@@ -178,7 +184,7 @@ Content-Range: bytes 0-1048575/5242880
 
 ---
 
-### `POST /media-upload/sessions/:uuid/complete` — ④ إكمال الرفع
+### `POST /school/media-upload/sessions/:uuid/complete` — ④ إكمال الرفع
 
 **Response:** `200`
 ```json
@@ -196,7 +202,7 @@ Content-Range: bytes 0-1048575/5242880
 
 ---
 
-### `POST /media-upload/sessions/:uuid/cancel` — ⑤ إلغاء
+### `POST /school/media-upload/sessions/:uuid/cancel` — ⑤ إلغاء
 
 **Response:** `200`
 ```json
@@ -207,9 +213,19 @@ Content-Range: bytes 0-1048575/5242880
 
 ---
 
-## 3. تنزيل الملفات
+## 3. تنزيل الملفات (محمي)
 
-### `GET /media/:uuid` — تنزيل ملف
+### الحماية
+
+```
+Guards: SchoolJwtAuthGuard → SchoolContextGuard
+Roles:  أي مستخدم مصادق ضمن المدرسة
+Headers:
+  Authorization: Bearer <jwt>
+  x-school-uuid: <school-uuid>
+```
+
+### `GET /school/media/:uuid` — تنزيل ملف
 
 | Query Param | الوصف | Default |
 |-------------|-------|---------|
@@ -233,9 +249,38 @@ Content-Length: 12345
 
 ---
 
-## 4. Metadata
+## 4. تنزيل عام (Public Download)
 
-### `GET /media/:uuid/meta` — بيانات الملف
+### `GET /public/media/:uuid` — تنزيل عام بدون مصادقة
+
+> ⚠️ **محصور على شعارات المدارس فقط** — يتحقق أن الـ asset مستخدم كـ `logoMediaAssetId` في مدرسة نشطة.
+
+```
+لا يتطلب أي Headers مصادقة
+Cache-Control: public, max-age=604800    (7 أيام — كاش عام)
+```
+
+| Query Param | الوصف | Default |
+|-------------|-------|---------|
+| `variant` | `original` \| `medium` \| `small` | IMAGE→`medium` |
+
+**يدعم:** Range + If-None-Match (نفس سلوك التنزيل المحمي)
+
+**Error Responses:**
+
+| الكود | HTTP | السبب |
+|-------|------|-------|
+| `ASSET_NOT_FOUND` | `404` | asset غير موجود أو محذوف |
+| `ASSET_NOT_PUBLIC` | `404` | الـ asset ليس شعار مدرسة نشطة |
+| `VARIANTS_NOT_READY` | `404` | المعالجة لم تكتمل |
+| `VARIANT_NOT_FOUND` | `404` | النسخة المطلوبة غير موجودة |
+| `FILE_NOT_FOUND` | `404` | الملف غير موجود على القرص |
+
+---
+
+## 5. Metadata
+
+### `GET /school/media/:uuid/meta` — بيانات الملف
 
 **Response:** `200`
 ```json
@@ -275,7 +320,7 @@ Content-Length: 12345
 
 ---
 
-## 5. المعالجة
+## 6. المعالجة
 
 ### Pipeline الصور (sharp)
 
@@ -304,9 +349,17 @@ Original MP3/AAC/... = original
 | `DONE` | جاهز للتنزيل |
 | `ERROR` | فشلت المعالجة |
 
+### ETag Generation
+
+كل variant يحصل على ETag **حتمي** (deterministic):
+```
+sha256(file bytes)[0:32]
+```
+هذا يضمن: نفس المحتوى → نفس الـ ETag → لا إعادة تنزيل.
+
 ---
 
-## 6. التنظيف التلقائي
+## 7. التنظيف التلقائي
 
 | المهمة | التكرار | الوصف |
 |--------|---------|-------|
@@ -314,10 +367,11 @@ Original MP3/AAC/... = original
 | حذف الملفات القديمة | **كل 24 ساعة** | assets soft-deleted > 30 يوم → حذف ملفات + hard-delete من DB |
 
 > 🔄 ينطلق أول تنظيف بعد **5 دقائق** من بدء التطبيق.
+> يستخدم `setInterval` بدلاً من `@nestjs/schedule` لتقليل التبعيات.
 
 ---
 
-## 7. أكواد الأخطاء
+## 8. أكواد الأخطاء
 
 ### الرفع
 
@@ -334,7 +388,7 @@ Original MP3/AAC/... = original
 | `OUT_OF_ORDER` | `409` | chunk خارج الترتيب (يُرجع `bytes_received` الحالي) |
 | `INCOMPLETE_UPLOAD` | `400` | بايتات ناقصة عند complete |
 
-### التنزيل
+### التنزيل (محمي)
 
 | الكود | HTTP | السبب |
 |-------|------|-------|
@@ -343,9 +397,19 @@ Original MP3/AAC/... = original
 | `VARIANT_NOT_FOUND` | `404` | النسخة المطلوبة غير موجودة |
 | `FILE_NOT_FOUND` | `404` | الملف الفعلي غير موجود على القرص |
 
+### التنزيل (عام)
+
+| الكود | HTTP | السبب |
+|-------|------|-------|
+| `ASSET_NOT_FOUND` | `404` | asset غير موجود |
+| `ASSET_NOT_PUBLIC` | `404` | الـ asset ليس شعار مدرسة نشطة |
+| `VARIANTS_NOT_READY` | `404` | المعالجة لم تكتمل |
+| `VARIANT_NOT_FOUND` | `404` | النسخة غير موجودة |
+| `FILE_NOT_FOUND` | `404` | الملف غير موجود على القرص |
+
 ---
 
-## 8. التدفق المتوقع في Flutter
+## 9. التدفق المتوقع في Flutter
 
 ### رفع صورة
 
@@ -409,9 +473,17 @@ final cached = await api.get('/media/$assetUuid', headers: {
 // 304 → استخدم النسخة المحلية
 ```
 
+### تنزيل شعار مدرسة (عام)
+
+```dart
+// لا يحتاج JWT أو x-school-uuid
+final response = await api.get('/public/media/$logoAssetUuid?variant=small');
+// Cache-Control: public → يمكن كاش CDN
+```
+
 ---
 
-## 9. البنية الداخلية
+## 10. البنية الداخلية
 
 ### Prisma Models
 
@@ -420,14 +492,16 @@ final cached = await api.get('/media/$assetUuid', headers: {
 | الحقل | النوع | الوصف |
 |-------|------|-------|
 | `uuid` | `string` | معرّف فريد |
+| `schoolId` | `int` | FK → School (multi-tenant isolation) |
 | `kind` | `enum` | `IMAGE` \| `AUDIO` |
-| `storageKey` | `string?` | مسار التخزين الداخلي |
+| `storageKey` | `string?` | مسار التخزين الداخلي (نسبي) |
 | `contentType` | `string` | مثل `image/webp` |
 | `sizeBytes` | `BigInt` | حجم الملف |
 | `etag` | `string?` | SHA256 مقطوع (32 حرف) |
 | `variantsJson` | `string?` | JSON يحتوي metadata لكل variant |
 | `processingStatus` | `enum` | `PENDING`→`PROCESSING`→`DONE`/`ERROR` |
 | `rowVersion` | `int` | للمزامنة (optimistic locking) |
+| `isDeleted` / `deletedAt` | `bool/DateTime?` | soft-delete |
 
 #### `MediaUploadSession` — جلسة الرفع
 
@@ -435,6 +509,7 @@ final cached = await api.get('/media/$assetUuid', headers: {
 |-------|------|-------|
 | `uuid` | `string` | معرّف الجلسة |
 | `mediaAssetId` | `int` | FK → MediaAsset |
+| `schoolId` | `int` | FK → School |
 | `uploaderUserId` | `int` | FK → User |
 | `totalSizeBytes` | `BigInt?` | الحجم الكلي |
 | `bytesReceived` | `BigInt` | ما تم استلامه |
@@ -460,7 +535,8 @@ audio/wav  → wav    audio/mp4 → m4a
 
 ## 🔐 الصلاحيات
 
-| Controller | الأدوار | الوصف |
-|------------|---------|-------|
-| `MediaController` | أي مستخدم مصادق | تنزيل + metadata |
-| `MediaUploadController` | `ADMIN` + `TEACHER` | رفع الملفات |
+| Controller | المسار | الأدوار | الوصف |
+|------------|--------|---------|-------|
+| `MediaController` | `/school/media/*` | أي مستخدم مصادق في المدرسة | تنزيل + metadata |
+| `MediaUploadController` | `/school/media-upload/*` | `OWNER` `ADMIN` `TEACHER` `STUDENT` `PARENT` | رفع الملفات |
+| `PublicMediaController` | `/public/media/*` | ❌ بدون مصادقة | تنزيل شعارات المدارس فقط |

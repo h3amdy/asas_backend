@@ -66,6 +66,11 @@ enum GradeStage {
   OTHER
 }
 
+enum PlatformRole {
+  PLATFORM_ADMIN
+  PLATFORM_TEACHER
+}
+
 // =========================
 // MODELS
 // =========================
@@ -496,7 +501,8 @@ model SubjectDictionary {
   isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  subjects Subject[]
+  subjects             Subject[]
+  platformUserSubjects PlatformUserSubject[]
 
   @@index([gradeDictionaryId, sortOrder], map: "subject_dictionary_grade_sort_idx")
   @@map("subject_dictionary")
@@ -1187,11 +1193,11 @@ model Lesson {
   isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  targets           LessonTarget[]
-  timetableSlots    LessonTimetableSlot[]
-  deliveryLogs      LessonDeliveryLog[]
-  studentProgress   StudentLessonProgress[]
-  studentResults    StudentLessonResult[]
+  targets         LessonTarget[]
+  timetableSlots  LessonTimetableSlot[]
+  deliveryLogs    LessonDeliveryLog[]
+  studentProgress StudentLessonProgress[]
+  studentResults  StudentLessonResult[]
 
   @@index([templateId], map: "lessons_template_id_idx")
   @@index([schoolId], map: "lessons_school_id_idx")
@@ -1280,7 +1286,7 @@ model StudentLessonProgress {
   lessonId Int    @map("lesson_id")
   lesson   Lesson @relation(fields: [lessonId], references: [id])
 
-  status       String  // NOT_STARTED / IN_PROGRESS / COMPLETED
+  status       String // NOT_STARTED / IN_PROGRESS / COMPLETED
   lastPosition String? @map("last_position") @db.Text // JSON
 
   createdAt  DateTime  @default(now()) @map("created_at")
@@ -1306,16 +1312,16 @@ model StudentLessonResult {
   lessonId Int    @map("lesson_id")
   lesson   Lesson @relation(fields: [lessonId], references: [id])
 
-  totalQuestions  Int   @map("total_questions")
-  correctQuestions Int  @map("correct_questions")
-  totalPoints     Float @map("total_points")
-  earnedPoints    Float @map("earned_points")
-  percent         Float
-  gradeLabel      String @map("grade_label")
-  calculatedAt    DateTime @map("calculated_at")
-  version         Int @default(1)
+  totalQuestions   Int      @map("total_questions")
+  correctQuestions Int      @map("correct_questions")
+  totalPoints      Float    @map("total_points")
+  earnedPoints     Float    @map("earned_points")
+  percent          Float
+  gradeLabel       String   @map("grade_label")
+  calculatedAt     DateTime @map("calculated_at")
+  version          Int      @default(1)
 
-  answers   StudentAnswer[]
+  answers StudentAnswer[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1337,13 +1343,13 @@ model StudentAnswer {
   questionId Int      @map("question_id")
   question   Question @relation(fields: [questionId], references: [id])
 
-  resultId   Int?                 @map("result_id")
-  result     StudentLessonResult? @relation(fields: [resultId], references: [id])
+  resultId Int?                 @map("result_id")
+  result   StudentLessonResult? @relation(fields: [resultId], references: [id])
 
-  answerValue  String  @map("answer_value") @db.Text // JSON
-  correctness  String  // CORRECT / WRONG
+  answerValue  String   @map("answer_value") @db.Text // JSON
+  correctness  String // CORRECT / WRONG
   isCorrect    Boolean? @map("is_correct")
-  scoreAwarded Float   @map("score_awarded")
+  scoreAwarded Float    @map("score_awarded")
 
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime? @updatedAt @map("updated_at")
@@ -1355,4 +1361,81 @@ model StudentAnswer {
   @@index([resultId], map: "student_answers_result_idx")
   @@index([updatedAt], map: "student_answers_updated_idx")
   @@map("student_answers")
+}
+
+// =========================
+// PLATFORM CONTENT SYSTEM
+// =========================
+
+// مستخدمو منصة المحتوى (مدير المنصة + معلمو المنصة)
+model PlatformUser {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  username     String  @unique
+  email        String  @unique
+  passwordHash String  @map("password_hash")
+  name         String
+  displayName  String? @map("display_name")
+  phone        String?
+
+  role     PlatformRole @default(PLATFORM_TEACHER)
+  isActive Boolean      @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  assignedSubjects PlatformUserSubject[]
+
+  @@map("platform_users")
+}
+
+// إسناد المواد الرسمية لمعلمي المنصة
+model PlatformUserSubject {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  platformUserId Int          @map("platform_user_id")
+  platformUser   PlatformUser @relation(fields: [platformUserId], references: [id])
+
+  subjectDictionaryId Int               @map("subject_dictionary_id")
+  subjectDictionary   SubjectDictionary @relation(fields: [subjectDictionaryId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([platformUserId, subjectDictionaryId], map: "platform_user_subjects_user_subject_key")
+  @@index([platformUserId], map: "platform_user_subjects_user_id_idx")
+  @@index([subjectDictionaryId], map: "platform_user_subjects_subject_dict_idx")
+  @@map("platform_user_subjects")
+}
+
+// سجل المراجعة الموحد
+model AuditLog {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  actorUserId Int  @map("actor_user_id")
+  schoolId    Int? @map("school_id")
+
+  entityType String @map("entity_type")
+  entityId   String @map("entity_id")
+  action     String
+
+  oldValues Json? @map("old_values")
+  newValues Json? @map("new_values")
+  metadata  Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([actorUserId, createdAt], map: "audit_logs_actor_created_idx")
+  @@index([entityType, entityId], map: "audit_logs_entity_idx")
+  @@index([action], map: "audit_logs_action_idx")
+  @@index([schoolId], map: "audit_logs_school_idx")
+  @@index([createdAt], map: "audit_logs_created_at_idx")
+  @@map("audit_logs")
 }
