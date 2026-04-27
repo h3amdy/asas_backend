@@ -1,4 +1,4 @@
-// src/school/teacher/lessons/teacher-lessons.service.ts
+// src/platform/lessons/platform-lessons.service.ts
 import {
     BadRequestException,
     ConflictException,
@@ -6,7 +6,7 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateContentDto } from './dto/create-content.dto';
@@ -15,72 +15,68 @@ import { ReorderContentsDto } from './dto/reorder-contents.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 
 @Injectable()
-export class TeacherLessonsService {
+export class PlatformLessonsService {
     constructor(private readonly prisma: PrismaService) {}
 
     // ─────────────────────────────────────────────────────────
-    // Helper: التحقق أن المعلم مسند لهذه المادة
+    // Helper: التحقق أن المستخدم يملك هذه المادة
     // ─────────────────────────────────────────────────────────
-    private async assertTeacherOwnsSubject(
-        schoolId: number,
-        userUuid: string,
-        subjectUuid: string,
+    private async assertOwnsSubject(
+        platformUserUuid: string,
+        subjectDictUuid: string,
     ) {
-        const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, schoolId },
-            include: { teacher: { select: { userId: true } } },
+        const platformUser = await this.prisma.platformUser.findFirst({
+            where: { uuid: platformUserUuid, isDeleted: false, isActive: true },
         });
 
-        if (!user || !user.teacher) {
+        if (!platformUser) {
             throw new ForbiddenException('ليس لديك صلاحية لهذا الإجراء');
         }
 
-        const subject = await this.prisma.subject.findFirst({
-            where: { uuid: subjectUuid, schoolId, isDeleted: false },
+        const subjectDict = await this.prisma.subjectDictionary.findFirst({
+            where: { uuid: subjectDictUuid, isDeleted: false, isActive: true },
         });
 
-        if (!subject) {
+        if (!subjectDict) {
             throw new NotFoundException('المادة غير موجودة');
         }
 
-        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
-            where: {
-                teacherId: user.teacher.userId,
-                isDeleted: false,
-                isActive: true,
-                subjectSection: {
-                    subjectId: subject.id,
-                    isDeleted: false,
+        if (platformUser.role !== 'PLATFORM_ADMIN') {
+            const assignment = await this.prisma.platformUserSubject.findFirst({
+                where: {
+                    platformUserId: platformUser.id,
+                    subjectDictionaryId: subjectDict.id,
                 },
-            },
-        });
-
-        if (!assignment) {
-            throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
+            });
+            if (!assignment) {
+                throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
+            }
         }
 
-        return { teacherId: user.teacher.userId, subjectId: subject.id, userId: user.id };
+        return { platformUserId: platformUser.id, subjectDictionaryId: subjectDict.id };
     }
 
     // ─────────────────────────────────────────────────────────
     // Helper: التحقق من ملكية درس
     // ─────────────────────────────────────────────────────────
-    private async assertTeacherOwnsLesson(
-        schoolId: number,
-        userUuid: string,
+    private async assertOwnsLesson(
+        platformUserUuid: string,
         lessonUuid: string,
     ) {
-        const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, schoolId },
-            include: { teacher: { select: { userId: true } } },
+        const platformUser = await this.prisma.platformUser.findFirst({
+            where: { uuid: platformUserUuid, isDeleted: false, isActive: true },
         });
 
-        if (!user || !user.teacher) {
+        if (!platformUser) {
             throw new ForbiddenException('ليس لديك صلاحية لهذا الإجراء');
         }
 
         const lesson = await this.prisma.lessonTemplate.findFirst({
-            where: { uuid: lessonUuid, schoolId, isDeleted: false },
+            where: {
+                uuid: lessonUuid,
+                ownerType: 'PLATFORM',
+                isDeleted: false,
+            },
             include: { unit: true },
         });
 
@@ -88,46 +84,44 @@ export class TeacherLessonsService {
             throw new NotFoundException('الدرس غير موجود');
         }
 
-        // تحقق أن المعلم مسند لمادة الدرس
-        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
-            where: {
-                teacherId: user.teacher.userId,
-                isDeleted: false,
-                isActive: true,
-                subjectSection: {
-                    subjectId: lesson.subjectId!,
-                    isDeleted: false,
+        // تحقق من الإسناد (admin يمر مباشرة)
+        if (platformUser.role !== 'PLATFORM_ADMIN' && lesson.subjectDictionaryId) {
+            const assignment = await this.prisma.platformUserSubject.findFirst({
+                where: {
+                    platformUserId: platformUser.id,
+                    subjectDictionaryId: lesson.subjectDictionaryId,
                 },
-            },
-        });
-
-        if (!assignment) {
-            throw new ForbiddenException('ليس لديك صلاحية لهذا الدرس');
+            });
+            if (!assignment) {
+                throw new ForbiddenException('ليس لديك صلاحية لهذا الدرس');
+            }
         }
 
-        return { lesson, userId: user.id, teacherId: user.teacher.userId };
+        return { lesson, platformUserId: platformUser.id };
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-01 — عرض الدروس مقسّمة بالوحدات
+    //  عرض الدروس مقسّمة بالوحدات
     // ═════════════════════════════════════════════════════════
     async getLessonsByUnits(
-        schoolId: number,
-        userUuid: string,
-        subjectUuid: string,
+        platformUserUuid: string,
+        subjectDictUuid: string,
     ) {
-        const { subjectId } = await this.assertTeacherOwnsSubject(
-            schoolId,
-            userUuid,
-            subjectUuid,
+        const { subjectDictionaryId } = await this.assertOwnsSubject(
+            platformUserUuid,
+            subjectDictUuid,
         );
 
         const units = await this.prisma.unit.findMany({
-            where: { subjectId, isDeleted: false },
+            where: {
+                subjectDictionaryId,
+                ownerType: 'PLATFORM',
+                isDeleted: false,
+            },
             orderBy: { orderIndex: 'asc' },
             include: {
                 lessonTemplates: {
-                    where: { isDeleted: false },
+                    where: { isDeleted: false, ownerType: 'PLATFORM' },
                     orderBy: { orderIndex: 'asc' },
                     include: {
                         _count: {
@@ -143,13 +137,11 @@ export class TeacherLessonsService {
 
         return {
             units: units.map((u) => ({
-                id: u.id,
                 uuid: u.uuid,
                 title: u.title,
                 orderIndex: u.orderIndex,
                 description: u.description,
                 lessons: u.lessonTemplates.map((lt) => ({
-                    id: lt.id,
                     uuid: lt.uuid,
                     title: lt.title,
                     orderIndex: lt.orderIndex,
@@ -163,24 +155,26 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-02 — إنشاء درس
+    //  إنشاء درس
     // ═════════════════════════════════════════════════════════
     async createLesson(
-        schoolId: number,
-        userUuid: string,
-        subjectUuid: string,
+        platformUserUuid: string,
+        subjectDictUuid: string,
         unitUuid: string,
         dto: CreateLessonDto,
     ) {
-        const { subjectId, userId } = await this.assertTeacherOwnsSubject(
-            schoolId,
-            userUuid,
-            subjectUuid,
+        const { subjectDictionaryId, platformUserId } = await this.assertOwnsSubject(
+            platformUserUuid,
+            subjectDictUuid,
         );
 
-        // تحقق من الوحدة
         const unit = await this.prisma.unit.findFirst({
-            where: { uuid: unitUuid, subjectId, isDeleted: false },
+            where: {
+                uuid: unitUuid,
+                subjectDictionaryId,
+                ownerType: 'PLATFORM',
+                isDeleted: false,
+            },
         });
 
         if (!unit) {
@@ -202,20 +196,18 @@ export class TeacherLessonsService {
 
         const lesson = await this.prisma.lessonTemplate.create({
             data: {
-                ownerType: 'SCHOOL',
-                schoolId,
-                subjectId,
+                ownerType: 'PLATFORM',
+                subjectDictionaryId,
                 unitId: unit.id,
                 title: dto.title,
                 orderIndex: dto.orderIndex,
                 status: 'DRAFT',
                 coverMediaAssetId: dto.coverMediaAssetId ?? null,
-                createdByUserId: userId,
+                createdByPlatformUserId: platformUserId,
             },
         });
 
         return {
-            id: lesson.id,
             uuid: lesson.uuid,
             title: lesson.title,
             unitId: lesson.unitId,
@@ -229,40 +221,32 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-03 — تعديل درس
+    //  تعديل درس
     // ═════════════════════════════════════════════════════════
     async updateLesson(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         dto: UpdateLessonDto,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         let targetUnitId = lesson.unitId;
 
-        // إذا تم تغيير الوحدة
         if (dto.unitUuid) {
             const newUnit = await this.prisma.unit.findFirst({
                 where: {
                     uuid: dto.unitUuid,
-                    subjectId: lesson.subjectId,
+                    subjectDictionaryId: lesson.subjectDictionaryId,
+                    ownerType: 'PLATFORM',
                     isDeleted: false,
                 },
             });
-
             if (!newUnit) {
                 throw new BadRequestException('الوحدة لا تتبع لنفس المادة');
             }
-
             targetUnitId = newUnit.id;
         }
 
-        // تحقق من فرادة الترتيب في الوحدة المستهدفة
         const targetOrder = dto.orderIndex ?? lesson.orderIndex;
         if (targetOrder !== lesson.orderIndex || targetUnitId !== lesson.unitId) {
             const conflict = await this.prisma.lessonTemplate.findFirst({
@@ -273,7 +257,6 @@ export class TeacherLessonsService {
                     id: { not: lesson.id },
                 },
             });
-
             if (conflict) {
                 throw new ConflictException('هذا الترتيب مستخدم في الوحدة المستهدفة.');
             }
@@ -292,7 +275,6 @@ export class TeacherLessonsService {
         });
 
         return {
-            id: updated.id,
             uuid: updated.uuid,
             title: updated.title,
             unitId: updated.unitId,
@@ -304,35 +286,21 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-04 — حذف درس
+    //  حذف درس DRAFT
     // ═════════════════════════════════════════════════════════
-    async deleteLesson(
-        schoolId: number,
-        userUuid: string,
-        lessonUuid: string,
-    ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+    async deleteLesson(platformUserUuid: string, lessonUuid: string) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         if (lesson.status !== 'DRAFT') {
-            throw new BadRequestException(
-                'لا يمكن حذف درس غير مسودة. أعده مسودة أولاً.',
-            );
+            throw new BadRequestException('لا يمكن حذف درس غير مسودة. أعده مسودة أولاً.');
         }
 
         const now = new Date();
-
         await this.prisma.$transaction([
-            // Soft-delete المحتوى
             this.prisma.lessonContent.updateMany({
                 where: { templateId: lesson.id, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
             }),
-
-            // Soft-delete القالب
             this.prisma.lessonTemplate.update({
                 where: { id: lesson.id },
                 data: { isDeleted: true, deletedAt: now },
@@ -343,43 +311,22 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-06 — تغيير حالة الدرس
+    //  تغيير حالة الدرس (DRAFT ↔ READY)
     // ═════════════════════════════════════════════════════════
     async updateStatus(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         dto: UpdateStatusDto,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
-        // DRAFT → READY: تحقق من الشروط
         if (dto.status === 'READY' && lesson.status === 'DRAFT') {
             const contentsCount = await this.prisma.lessonContent.count({
                 where: { templateId: lesson.id, isDeleted: false },
             });
-
             if (contentsCount === 0) {
-                throw new BadRequestException(
-                    'أضف محتوى واحد على الأقل قبل تجهيز الدرس.',
-                );
+                throw new BadRequestException('أضف محتوى واحد على الأقل قبل تجهيز الدرس.');
             }
-
-            // Phase 3: سؤال واحد على الأقل
-            // const questionsCount = await this.prisma.question.count(...)
-        }
-
-        // READY → DRAFT: تحقق أن الدرس لم يُنشر
-        if (dto.status === 'DRAFT' && lesson.status === 'READY') {
-            // Phase 2B: فحص lessons table
-            // const publishedCount = await this.prisma.lesson.count({
-            //     where: { templateId: lesson.id, isDeleted: false },
-            // });
-            // if (publishedCount > 0) throw ...
         }
 
         const updated = await this.prisma.lessonTemplate.update({
@@ -388,7 +335,6 @@ export class TeacherLessonsService {
         });
 
         return {
-            id: updated.id,
             uuid: updated.uuid,
             status: updated.status,
             updatedAt: updated.updatedAt,
@@ -396,18 +342,10 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-05 — جلب محتوى الدرس
+    //  جلب محتوى الدرس
     // ═════════════════════════════════════════════════════════
-    async getContents(
-        schoolId: number,
-        userUuid: string,
-        lessonUuid: string,
-    ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+    async getContents(platformUserUuid: string, lessonUuid: string) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         const contents = await this.prisma.lessonContent.findMany({
             where: { templateId: lesson.id, isDeleted: false },
@@ -417,7 +355,6 @@ export class TeacherLessonsService {
 
         return {
             contents: contents.map((c) => ({
-                id: c.id,
                 uuid: c.uuid,
                 type: c.type,
                 title: c.title,
@@ -430,50 +367,32 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-05 — إضافة كتلة محتوى
+    //  إضافة كتلة محتوى
     // ═════════════════════════════════════════════════════════
     async createContent(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         dto: CreateContentDto,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
-        // قيد AUDIO واحد فقط (BR-03)
+        // قيد AUDIO واحد فقط
         if (dto.type === 'AUDIO') {
             const existingAudio = await this.prisma.lessonContent.findFirst({
-                where: {
-                    templateId: lesson.id,
-                    type: 'AUDIO',
-                    isDeleted: false,
-                },
+                where: { templateId: lesson.id, type: 'AUDIO', isDeleted: false },
             });
-
             if (existingAudio) {
-                throw new ConflictException(
-                    'مسموح بمقطع صوتي واحد فقط للدرس.',
-                );
+                throw new ConflictException('مسموح بمقطع صوتي واحد فقط للدرس.');
             }
         }
 
-        // تحديد ترتيب آمن — فحص جميع السجلات (بما فيها المحذوفة)
-        // لأن قيد unique في قاعدة البيانات يشمل جميع الصفوف
+        // ترتيب آمن
         let finalOrderIndex = dto.orderIndex;
         const existingOrder = await this.prisma.lessonContent.findFirst({
-            where: {
-                templateId: lesson.id,
-                orderIndex: dto.orderIndex,
-                // لا نفلتر بـ isDeleted لأن الـ unique constraint يشمل الكل
-            },
+            where: { templateId: lesson.id, orderIndex: dto.orderIndex },
         });
 
         if (existingOrder) {
-            // اختر أعلى ترتيب + 1 من جميع السجلات (بما فيها المحذوفة)
             const maxOrder = await this.prisma.lessonContent.aggregate({
                 where: { templateId: lesson.id },
                 _max: { orderIndex: true },
@@ -485,7 +404,7 @@ export class TeacherLessonsService {
         let mediaAssetId: number | null = null;
         if (dto.mediaAssetUuid) {
             const asset = await this.prisma.mediaAsset.findFirst({
-                where: { uuid: dto.mediaAssetUuid, schoolId, isDeleted: false },
+                where: { uuid: dto.mediaAssetUuid, isDeleted: false },
                 select: { id: true },
             });
             if (!asset) {
@@ -507,7 +426,6 @@ export class TeacherLessonsService {
         });
 
         return {
-            id: content.id,
             uuid: content.uuid,
             type: content.type,
             title: content.title,
@@ -519,38 +437,28 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-05 — تعديل كتلة محتوى
+    //  تعديل كتلة محتوى
     // ═════════════════════════════════════════════════════════
     async updateContent(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         contentUuid: string,
         dto: UpdateContentDto,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         const content = await this.prisma.lessonContent.findFirst({
-            where: {
-                uuid: contentUuid,
-                templateId: lesson.id,
-                isDeleted: false,
-            },
+            where: { uuid: contentUuid, templateId: lesson.id, isDeleted: false },
         });
 
         if (!content) {
             throw new NotFoundException('كتلة المحتوى غير موجودة');
         }
 
-        // Resolve mediaAssetUuid → mediaAssetId
         let resolvedMediaAssetId: number | undefined = undefined;
         if (dto.mediaAssetUuid !== undefined) {
             const asset = await this.prisma.mediaAsset.findFirst({
-                where: { uuid: dto.mediaAssetUuid, schoolId, isDeleted: false },
+                where: { uuid: dto.mediaAssetUuid, isDeleted: false },
                 select: { id: true },
             });
             if (!asset) {
@@ -569,7 +477,6 @@ export class TeacherLessonsService {
         });
 
         return {
-            id: updated.id,
             uuid: updated.uuid,
             type: updated.type,
             title: updated.title,
@@ -580,26 +487,17 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-05 — حذف كتلة محتوى
+    //  حذف كتلة محتوى
     // ═════════════════════════════════════════════════════════
     async deleteContent(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         contentUuid: string,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         const content = await this.prisma.lessonContent.findFirst({
-            where: {
-                uuid: contentUuid,
-                templateId: lesson.id,
-                isDeleted: false,
-            },
+            where: { uuid: contentUuid, templateId: lesson.id, isDeleted: false },
         });
 
         if (!content) {
@@ -611,8 +509,6 @@ export class TeacherLessonsService {
             data: {
                 isDeleted: true,
                 deletedAt: new Date(),
-                // تحرير الـ orderIndex من قيد الـ unique constraint
-                // بتعيينه قيمة سالبة فريدة (سالب الـ id)
                 orderIndex: -content.id,
             },
         });
@@ -621,19 +517,14 @@ export class TeacherLessonsService {
     }
 
     // ═════════════════════════════════════════════════════════
-    //  SRS-LSN-05 — إعادة ترتيب كتل المحتوى
+    //  إعادة ترتيب كتل المحتوى
     // ═════════════════════════════════════════════════════════
     async reorderContents(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         dto: ReorderContentsDto,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(
-            schoolId,
-            userUuid,
-            lessonUuid,
-        );
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         const contents = await this.prisma.lessonContent.findMany({
             where: {
@@ -644,30 +535,24 @@ export class TeacherLessonsService {
         });
 
         if (contents.length !== dto.orderedUuids.length) {
-            throw new NotFoundException(
-                'بعض كتل المحتوى غير موجودة أو لا تنتمي لهذا الدرس',
-            );
+            throw new NotFoundException('بعض كتل المحتوى غير موجودة');
         }
 
-        // نفس نمط الوحدات: أرقام سالبة مؤقتة ثم النهائية
         await this.prisma.$transaction(async (tx) => {
-            // مرحلة 1: أرقام سالبة مؤقتة (كبيرة لتجنب التعارض مع السجلات المحذوفة)
             for (let i = 0; i < dto.orderedUuids.length; i++) {
-                const content = contents.find((c) => c.uuid === dto.orderedUuids[i]);
-                if (content) {
+                const c = contents.find((x) => x.uuid === dto.orderedUuids[i]);
+                if (c) {
                     await tx.lessonContent.update({
-                        where: { id: content.id },
+                        where: { id: c.id },
                         data: { orderIndex: -(10000 + i + 1) },
                     });
                 }
             }
-
-            // مرحلة 2: الأرقام النهائية
             for (let i = 0; i < dto.orderedUuids.length; i++) {
-                const content = contents.find((c) => c.uuid === dto.orderedUuids[i]);
-                if (content) {
+                const c = contents.find((x) => x.uuid === dto.orderedUuids[i]);
+                if (c) {
                     await tx.lessonContent.update({
-                        where: { id: content.id },
+                        where: { id: c.id },
                         data: { orderIndex: i + 1 },
                     });
                 }

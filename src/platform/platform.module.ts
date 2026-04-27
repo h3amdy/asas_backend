@@ -4,6 +4,9 @@ import { PlatformAuthModule } from './auth/platform-auth.module';
 import { PlatformUsersModule } from './users/platform-users.module';
 import { PlatformSubjectsModule } from './subjects/platform-subjects.module';
 import { PlatformProfileModule } from './profile/platform-profile.module';
+import { PlatformUnitsModule } from './units/platform-units.module';
+import { PlatformLessonsModule } from './lessons/platform-lessons.module';
+import { PlatformQuestionsModule } from './questions/platform-questions.module';
 
 @Module({
   imports: [
@@ -11,6 +14,9 @@ import { PlatformProfileModule } from './profile/platform-profile.module';
     PlatformUsersModule,
     PlatformSubjectsModule,
     PlatformProfileModule,
+    PlatformUnitsModule,
+    PlatformLessonsModule,
+    PlatformQuestionsModule,
   ],
 })
 export class PlatformModule {}

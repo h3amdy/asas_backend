@@ -162,7 +162,7 @@ export class TeacherLessonTargetingService {
                         templateId: template.id,
                         schoolId,
                         teacherId,
-                        subjectId: template.subjectId,
+                        subjectId: template.subjectId!,
                         yearId: cy.id,
                         termId: cy.terms[0].id,
                         status: 'READY',

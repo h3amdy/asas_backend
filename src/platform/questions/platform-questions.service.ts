@@ -1,4 +1,4 @@
-// src/school/teacher/questions/teacher-questions.service.ts
+// src/platform/questions/platform-questions.service.ts
 import {
     BadRequestException,
     ConflictException,
@@ -6,110 +6,98 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
 
 /**
- * ❓ Teacher Questions Service
- * منطق إدارة أسئلة الدروس — TCH-090→094, TCH-096→101
+ * ❓ Platform Questions Service
+ * منطق إدارة أسئلة الدروس — منصة المحتوى
  */
 @Injectable()
-export class TeacherQuestionsService {
+export class PlatformQuestionsService {
     constructor(private readonly prisma: PrismaService) {}
 
     // ─────────────────────────────────────────────────────────
-    // Helper: التحقق أن المعلم يملك هذا الدرس
+    // Helper: التحقق أن المستخدم يملك هذا الدرس
     // ─────────────────────────────────────────────────────────
-    private async assertTeacherOwnsLesson(
-        schoolId: number,
-        userUuid: string,
+    private async assertOwnsLesson(
+        platformUserUuid: string,
         lessonUuid: string,
     ) {
-        const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, schoolId },
-            include: { teacher: { select: { userId: true } } },
+        const platformUser = await this.prisma.platformUser.findFirst({
+            where: { uuid: platformUserUuid, isDeleted: false, isActive: true },
         });
 
-        if (!user || !user.teacher) {
+        if (!platformUser) {
             throw new ForbiddenException('ليس لديك صلاحية لهذا الإجراء');
         }
 
         const lesson = await this.prisma.lessonTemplate.findFirst({
-            where: { uuid: lessonUuid, schoolId, isDeleted: false },
+            where: { uuid: lessonUuid, ownerType: 'PLATFORM', isDeleted: false },
         });
 
         if (!lesson) {
             throw new NotFoundException('الدرس غير موجود');
         }
 
-        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
-            where: {
-                teacherId: user.teacher.userId,
-                isDeleted: false,
-                isActive: true,
-                subjectSection: {
-                    subjectId: lesson.subjectId!,
-                    isDeleted: false,
+        if (platformUser.role !== 'PLATFORM_ADMIN' && lesson.subjectDictionaryId) {
+            const assignment = await this.prisma.platformUserSubject.findFirst({
+                where: {
+                    platformUserId: platformUser.id,
+                    subjectDictionaryId: lesson.subjectDictionaryId,
                 },
-            },
-        });
-
-        if (!assignment) {
-            throw new ForbiddenException('ليس لديك صلاحية لهذا الدرس');
+            });
+            if (!assignment) {
+                throw new ForbiddenException('ليس لديك صلاحية لهذا الدرس');
+            }
         }
 
-        return { lesson, userId: user.id, teacherId: user.teacher.userId };
+        return { lesson, platformUserId: platformUser.id };
     }
 
     // ─────────────────────────────────────────────────────────
-    // Helper: التحقق أن المعلم يملك هذا السؤال
+    // Helper: التحقق أن المستخدم يملك هذا السؤال
     // ─────────────────────────────────────────────────────────
-    private async assertTeacherOwnsQuestion(
-        schoolId: number,
-        userUuid: string,
+    private async assertOwnsQuestion(
+        platformUserUuid: string,
         questionUuid: string,
     ) {
-        const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, schoolId },
-            include: { teacher: { select: { userId: true } } },
+        const platformUser = await this.prisma.platformUser.findFirst({
+            where: { uuid: platformUserUuid, isDeleted: false, isActive: true },
         });
 
-        if (!user || !user.teacher) {
+        if (!platformUser) {
             throw new ForbiddenException('ليس لديك صلاحية لهذا الإجراء');
         }
 
         const question = await this.prisma.question.findFirst({
             where: { uuid: questionUuid, isDeleted: false },
-            include: { template: { select: { id: true, subjectId: true, schoolId: true } } },
+            include: { template: { select: { id: true, subjectDictionaryId: true, ownerType: true } } },
         });
 
         if (!question) {
             throw new NotFoundException('السؤال غير موجود');
         }
 
-        if (question.template.schoolId !== schoolId) {
-            throw new ForbiddenException('ليس لديك صلاحية لهذا السؤال');
+        if (question.template.ownerType !== 'PLATFORM') {
+            throw new ForbiddenException('هذا السؤال لا يتبع لمنصة المحتوى');
         }
 
-        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
-            where: {
-                teacherId: user.teacher.userId,
-                isDeleted: false,
-                isActive: true,
-                subjectSection: {
-                    subjectId: question.template.subjectId!,
-                    isDeleted: false,
+        if (platformUser.role !== 'PLATFORM_ADMIN' && question.template.subjectDictionaryId) {
+            const assignment = await this.prisma.platformUserSubject.findFirst({
+                where: {
+                    platformUserId: platformUser.id,
+                    subjectDictionaryId: question.template.subjectDictionaryId,
                 },
-            },
-        });
-
-        if (!assignment) {
-            throw new ForbiddenException('ليس لديك صلاحية لهذا السؤال');
+            });
+            if (!assignment) {
+                throw new ForbiddenException('ليس لديك صلاحية لهذا السؤال');
+            }
         }
 
-        return { question, userId: user.id, teacherId: user.teacher.userId };
+        return { question, platformUserId: platformUser.id };
     }
 
     // ─────────────────────────────────────────────────────────
@@ -257,11 +245,10 @@ export class TeacherQuestionsService {
     //  SRS-QST-01 — عرض قائمة الأسئلة
     // ═════════════════════════════════════════════════════════
     async getQuestions(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(schoolId, userUuid, lessonUuid);
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         const questions = await this.prisma.question.findMany({
             where: { templateId: lesson.id, isDeleted: false },
@@ -299,12 +286,11 @@ export class TeacherQuestionsService {
     //  SRS-QST-02 — إنشاء سؤال (Nested Transaction)
     // ═════════════════════════════════════════════════════════
     async createQuestion(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         dto: CreateQuestionDto,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(schoolId, userUuid, lessonUuid);
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         // BR-03: سؤال غير فارغ
         this.validateQuestionNotEmpty(dto);
@@ -364,11 +350,10 @@ export class TeacherQuestionsService {
     //  SRS-QST-03a — جلب سؤال بالتفصيل
     // ═════════════════════════════════════════════════════════
     async getQuestion(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         questionUuid: string,
     ) {
-        const { question } = await this.assertTeacherOwnsQuestion(schoolId, userUuid, questionUuid);
+        const { question } = await this.assertOwnsQuestion(platformUserUuid, questionUuid);
 
         const detail = await this.prisma.question.findUnique({
             where: { id: question.id },
@@ -382,12 +367,11 @@ export class TeacherQuestionsService {
     //  SRS-QST-03b — تعديل سؤال (Replace Strategy)
     // ═════════════════════════════════════════════════════════
     async updateQuestion(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         questionUuid: string,
         dto: UpdateQuestionDto,
     ) {
-        const { question } = await this.assertTeacherOwnsQuestion(schoolId, userUuid, questionUuid);
+        const { question } = await this.assertOwnsQuestion(platformUserUuid, questionUuid);
 
         // التحقق: إذا تم إرسال بيانات فرعية → تحقق من قواعد الاكتمال
         if (dto.options || dto.matchingPairs || dto.orderingItems || dto.fillBlanks || dto.fillAnswers) {
@@ -473,11 +457,10 @@ export class TeacherQuestionsService {
     //  SRS-QST-04 — حذف سؤال (Cascading Soft-Delete)
     // ═════════════════════════════════════════════════════════
     async deleteQuestion(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         questionUuid: string,
     ) {
-        const { question } = await this.assertTeacherOwnsQuestion(schoolId, userUuid, questionUuid);
+        const { question } = await this.assertOwnsQuestion(platformUserUuid, questionUuid);
 
         await this.prisma.$transaction(async (tx) => {
             const now = new Date();
@@ -518,12 +501,11 @@ export class TeacherQuestionsService {
     //  SRS-QST-05 — إعادة ترتيب الأسئلة
     // ═════════════════════════════════════════════════════════
     async reorderQuestions(
-        schoolId: number,
-        userUuid: string,
+        platformUserUuid: string,
         lessonUuid: string,
         dto: ReorderQuestionsDto,
     ) {
-        const { lesson } = await this.assertTeacherOwnsLesson(schoolId, userUuid, lessonUuid);
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
 
         // تحقق أن جميع الـ UUIDs تتبع لهذا الدرس
         const questions = await this.prisma.question.findMany({

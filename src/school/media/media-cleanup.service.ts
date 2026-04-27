@@ -142,8 +142,10 @@ export class MediaCleanupService implements OnModuleInit, OnModuleDestroy {
         let purged = 0;
         for (const asset of deletedAssets) {
             try {
-                // 1) Delete all variant files from storage
-                await this.storage.deleteAssetDir(asset.school.uuid, asset.uuid);
+                // 1) Delete all variant files from storage (skip if no school — platform assets)
+                if (asset.school) {
+                    await this.storage.deleteAssetDir(asset.school.uuid, asset.uuid);
+                }
 
                 // 2) Delete related upload sessions
                 await this.prisma.mediaUploadSession.deleteMany({
