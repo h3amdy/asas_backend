@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
-import { StorageService } from '../../school/media/storage.service';
+import { StorageService } from '../../shared/media/storage.service';
 
 /**
  * 📥 Public Media Controller
