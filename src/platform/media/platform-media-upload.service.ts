@@ -1,91 +1,79 @@
-// src/school/media/media-upload.service.ts
+// src/platform/media/platform-media-upload.service.ts
 import {
-    Injectable, NotFoundException, ConflictException, GoneException,
-    BadRequestException, Logger,
+    Injectable, Logger,
+    NotFoundException, BadRequestException,
+    ConflictException, GoneException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../shared/media/storage.service';
 import { MediaProcessingService } from '../../shared/media/media-processing.service';
-import { MediaKind, MediaUploadStatus, ProcessingStatus } from '@prisma/client';
-import { InitUploadSessionDto } from './dto/init-upload-session.dto';
 
-const DEFAULT_CHUNK_SIZE = 1048576; // 1MB
-const SESSION_EXPIRY_HOURS = 24;
+enum MediaKind { IMAGE = 'IMAGE', AUDIO = 'AUDIO' }
+enum MediaUploadStatus { INITIATED = 'INITIATED', UPLOADING = 'UPLOADING', COMPLETED = 'COMPLETED', CANCELED = 'CANCELED' }
+enum ProcessingStatus { PENDING = 'PENDING', PROCESSING = 'PROCESSING', DONE = 'DONE', ERROR = 'ERROR' }
 
-/** Per-kind max file size (bytes) */
-const MAX_FILE_SIZE: Record<string, number> = {
-    IMAGE: 20_971_520,  // 20MB
-    AUDIO: 52_428_800,  // 50MB
-};
-
+/**
+ * 📤 خدمة رفع وسائط المنصة
+ * نفس منطق school لكن:
+ * - ownerType = 'PLATFORM'
+ * - schoolId = null
+ * - storage key: platform/{assetUuid}/{variant}.{ext}
+ */
 @Injectable()
-export class MediaUploadService {
-    private readonly logger = new Logger(MediaUploadService.name);
+export class PlatformMediaUploadService {
+    private readonly logger = new Logger(PlatformMediaUploadService.name);
 
     constructor(
         private readonly prisma: PrismaService,
         private readonly storage: StorageService,
         private readonly processing: MediaProcessingService,
-    ) { }
+    ) {}
 
     /**
-     * ① Init Upload Session
-     * - Creates MediaAsset (placeholder)
-     * - Creates MediaUploadSession
-     * - Prepares temp storage location
+     * ① Init upload session
      */
-    async initSession(dto: InitUploadSessionDto, schoolId: number, schoolUuid: string, uploaderUserId: number) {
-        // Validate per-kind file size limit
-        const maxSize = MAX_FILE_SIZE[dto.kind] || MAX_FILE_SIZE['AUDIO'];
-        if (dto.totalSizeBytes > maxSize) {
-            throw new BadRequestException({
-                error: 'FILE_TOO_LARGE',
-                max_size_bytes: maxSize,
-                kind: dto.kind,
-            });
+    async initSession(dto: {
+        kind: string;
+        contentType: string;
+        totalSizeBytes: number;
+        chunkSizeBytes?: number;
+    }, platformUserId: number) {
+        const kind = dto.kind as MediaKind;
+
+        if (!this.isContentTypeValidForKind(dto.contentType, kind)) {
+            throw new BadRequestException('INVALID_CONTENT_TYPE_FOR_KIND');
         }
 
-        // Validate contentType matches kind
-        if (!this.isContentTypeValidForKind(dto.contentType, dto.kind)) {
-            throw new BadRequestException({
-                error: 'CONTENT_TYPE_MISMATCH',
-                kind: dto.kind,
-                content_type: dto.contentType,
-            });
-        }
+        const chunkSize = dto.chunkSizeBytes || 1024 * 1024; // 1MB default
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
-        const chunkSize = dto.chunkSizeBytes || DEFAULT_CHUNK_SIZE;
-        const expiresAt = new Date(Date.now() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
-
-        // Create MediaAsset placeholder
+        // Create placeholder asset
         const asset = await this.prisma.mediaAsset.create({
             data: {
-                schoolId,
-                ownerType: 'SCHOOL',
-                kind: dto.kind,
+                kind,
+                ownerType: 'PLATFORM',
+                schoolId: null,
                 contentType: dto.contentType,
                 sizeBytes: BigInt(dto.totalSizeBytes),
-                processingStatus: ProcessingStatus.PENDING,
+                processingStatus: 'PENDING',
             },
         });
 
-        // Temp storage key
-        const tempKey = `tmp/${asset.uuid}.part`;
+        const tempKey = this.storage.getTempPath(asset.uuid);
 
         // Create upload session
         const session = await this.prisma.mediaUploadSession.create({
             data: {
                 mediaAssetId: asset.id,
-                schoolId,
-                ownerType: 'SCHOOL',
-                uploaderUserId,
-                kind: dto.kind,
+                schoolId: null,
+                ownerType: 'PLATFORM',
+                platformUserId,
+                kind,
                 contentType: dto.contentType,
                 totalSizeBytes: BigInt(dto.totalSizeBytes),
                 chunkSizeBytes: chunkSize,
-                status: MediaUploadStatus.INITIATED,
-                tempStorageKey: tempKey,
                 expiresAt,
+                tempStorageKey: tempKey,
             },
         });
 
@@ -100,10 +88,9 @@ export class MediaUploadService {
     /**
      * ② Probe Session (for resume)
      */
-    async probeSession(sessionUuid: string, schoolId: number) {
-        const session = await this.getSession(sessionUuid, schoolId);
+    async probeSession(sessionUuid: string) {
+        const session = await this.getSession(sessionUuid);
 
-        // Check expiry
         if (session.expiresAt < new Date() && session.status !== MediaUploadStatus.COMPLETED) {
             throw new GoneException('SESSION_EXPIRED');
         }
@@ -122,19 +109,14 @@ export class MediaUploadService {
 
     /**
      * ③ Upload Chunk
-     * - Validates Content-Range
-     * - Appends to temp file
-     * - Updates bytes_received
      */
     async uploadChunk(
         sessionUuid: string,
-        schoolId: number,
         contentRange: string,
         chunk: Buffer,
     ) {
-        const session = await this.getSession(sessionUuid, schoolId);
+        const session = await this.getSession(sessionUuid);
 
-        // Validate session state
         if (session.status === MediaUploadStatus.COMPLETED) {
             throw new ConflictException('SESSION_ALREADY_COMPLETED');
         }
@@ -145,21 +127,15 @@ export class MediaUploadService {
             throw new GoneException('SESSION_EXPIRED');
         }
 
-        // Parse Content-Range: bytes <start>-<end>/<total>
         const rangeMatch = contentRange.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
         if (!rangeMatch) {
             throw new BadRequestException('INVALID_CONTENT_RANGE');
         }
 
         const start = parseInt(rangeMatch[1], 10);
-        const end = parseInt(rangeMatch[2], 10);
-        const total = parseInt(rangeMatch[3], 10);
-
         const currentBytesReceived = Number(session.bytesReceived);
 
-        // Validate: start must equal bytes_received (sequential chunks only)
         if (start !== currentBytesReceived) {
-            // Return 409 with current position for client to resync
             throw new ConflictException({
                 error: 'OUT_OF_ORDER',
                 bytes_received: currentBytesReceived,
@@ -167,10 +143,8 @@ export class MediaUploadService {
             });
         }
 
-        // Write chunk to temp file
         await this.storage.appendToTemp(session.uuid, chunk);
 
-        // Update session
         const newBytesReceived = currentBytesReceived + chunk.length;
         await this.prisma.mediaUploadSession.update({
             where: { id: session.id },
@@ -189,12 +163,9 @@ export class MediaUploadService {
 
     /**
      * ④ Complete Session
-     * - Validates all bytes received
-     * - Moves temp to original location
-     * - Triggers processing pipeline
      */
-    async completeSession(sessionUuid: string, schoolId: number, schoolUuid: string) {
-        const session = await this.getSession(sessionUuid, schoolId);
+    async completeSession(sessionUuid: string) {
+        const session = await this.getSession(sessionUuid);
 
         if (session.status === MediaUploadStatus.COMPLETED) {
             return {
@@ -203,7 +174,6 @@ export class MediaUploadService {
             };
         }
 
-        // Validate bytes
         const expected = session.totalSizeBytes ? Number(session.totalSizeBytes) : 0;
         const received = Number(session.bytesReceived);
 
@@ -215,15 +185,14 @@ export class MediaUploadService {
             });
         }
 
-        // Determine extension and move temp → original
+        // Storage key: platform/{assetUuid}/{variant}.{ext}
         const ext = this.getExtFromContentType(session.contentType);
         const originalStorageKey = this.storage.buildStorageKey(
-            schoolUuid, session.mediaAsset.uuid, 'original', ext,
+            'platform', session.mediaAsset.uuid, 'original', ext,
         );
 
         await this.storage.moveToFinal(session.uuid, originalStorageKey);
 
-        // Update session
         await this.prisma.mediaUploadSession.update({
             where: { id: session.id },
             data: {
@@ -233,7 +202,6 @@ export class MediaUploadService {
             },
         });
 
-        // Update asset storage key
         await this.prisma.mediaAsset.update({
             where: { id: session.mediaAssetId },
             data: {
@@ -242,10 +210,10 @@ export class MediaUploadService {
             },
         });
 
-        // Trigger processing pipeline (async — don't block response)
+        // Trigger processing pipeline (async)
         this.processing.processAsset(
             session.mediaAssetId,
-            schoolUuid,
+            'platform',  // pseudo schoolUuid for storage path
             session.mediaAsset.uuid,
             originalStorageKey,
             session.kind,
@@ -263,13 +231,11 @@ export class MediaUploadService {
     /**
      * ⑤ Cancel Session
      */
-    async cancelSession(sessionUuid: string, schoolId: number) {
-        const session = await this.getSession(sessionUuid, schoolId);
+    async cancelSession(sessionUuid: string) {
+        const session = await this.getSession(sessionUuid);
 
-        // Cleanup temp file
         await this.storage.deleteTempFile(session.uuid);
 
-        // Update session
         await this.prisma.mediaUploadSession.update({
             where: { id: session.id },
             data: {
@@ -278,7 +244,6 @@ export class MediaUploadService {
             },
         });
 
-        // Soft-delete the placeholder asset
         await this.prisma.mediaAsset.update({
             where: { id: session.mediaAssetId },
             data: { isDeleted: true, deletedAt: new Date() },
@@ -289,9 +254,9 @@ export class MediaUploadService {
 
     // ── Helpers ──
 
-    private async getSession(sessionUuid: string, schoolId: number) {
+    private async getSession(sessionUuid: string) {
         const session = await this.prisma.mediaUploadSession.findFirst({
-            where: { uuid: sessionUuid, schoolId, ownerType: 'SCHOOL' },
+            where: { uuid: sessionUuid, ownerType: 'PLATFORM' },
             include: { mediaAsset: { select: { id: true, uuid: true } } },
         });
 

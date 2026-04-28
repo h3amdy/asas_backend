@@ -80,7 +80,7 @@ model User {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
-  schoolId Int?    @map("school_id")
+  schoolId  Int?    @map("school_id")
   school   School? @relation(fields: [schoolId], references: [id])
 
   userType    UserType @map("user_type")
@@ -695,7 +695,7 @@ model AuthSession {
   userId Int  @map("user_id")
   user   User @relation(fields: [userId], references: [id])
 
-  schoolId Int?    @map("school_id")
+  schoolId  Int?    @map("school_id")
   school   School? @relation(fields: [schoolId], references: [id])
 
   deviceId Int?        @map("device_id")
@@ -745,7 +745,8 @@ model MediaAsset {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
-  schoolId Int?    @map("school_id")
+  schoolId  Int?    @map("school_id")
+  ownerType String  @default("SCHOOL") @map("owner_type")
   school   School? @relation("SchoolMediaAssets", fields: [schoolId], references: [id])
 
   kind MediaKind
@@ -800,6 +801,7 @@ model MediaAsset {
 
   @@index([schoolId], map: "media_assets_school_id_idx")
   @@index([kind], map: "media_assets_kind_idx")
+  @@index([ownerType], map: "media_assets_owner_type_idx")
   @@index([updatedAt], map: "media_assets_updated_at_idx")
   @@index([schoolId, updatedAt], map: "media_assets_school_updated_idx")
   @@map("media_assets")
@@ -813,11 +815,15 @@ model MediaUploadSession {
   mediaAssetId Int        @map("media_asset_id")
   mediaAsset   MediaAsset @relation(fields: [mediaAssetId], references: [id])
 
-  schoolId Int    @map("school_id")
-  school   School @relation("SchoolUploadSessions", fields: [schoolId], references: [id])
+  schoolId  Int?    @map("school_id")
+  school    School? @relation("SchoolUploadSessions", fields: [schoolId], references: [id])
+  ownerType String  @default("SCHOOL") @map("owner_type")
 
-  uploaderUserId Int  @map("uploader_user_id")
-  uploader       User @relation(fields: [uploaderUserId], references: [id])
+  uploaderUserId Int?  @map("uploader_user_id")
+  uploader       User? @relation(fields: [uploaderUserId], references: [id])
+
+  platformUserId    Int?          @map("platform_user_id")
+  platformUploader  PlatformUser? @relation(fields: [platformUserId], references: [id])
 
   kind           MediaKind
   contentType    String    @map("content_type")
@@ -1405,6 +1411,7 @@ model PlatformUser {
 
   assignedSubjects      PlatformUserSubject[]
   createdLessonTemplates LessonTemplate[]      @relation("PlatformLessonCreator")
+  uploadSessions         MediaUploadSession[]
 
   @@map("platform_users")
 }

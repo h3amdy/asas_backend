@@ -1,7 +1,7 @@
 // src/school/media/media-cleanup.service.ts
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { StorageService } from './storage.service';
+import { StorageService } from '../../shared/media/storage.service';
 import { MediaUploadStatus } from '@prisma/client';
 
 /**

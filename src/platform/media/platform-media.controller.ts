@@ -1,33 +1,29 @@
-// src/school/media/media.controller.ts
+// src/platform/media/platform-media.controller.ts
 import {
     Controller, Get, Param, Query, Req, Res, UseGuards,
-    NotFoundException, Headers, StreamableFile,
+    NotFoundException, Headers,
 } from '@nestjs/common';
-import type { Response, Request } from 'express';
-import { MediaService } from './media.service';
-import { SchoolJwtAuthGuard } from '../auth/guards/school-jwt-auth.guard';
-import { SchoolContextGuard } from '../common/guards/school-context.guard';
+import type { Response } from 'express';
+import { PlatformMediaService } from './platform-media.service';
 import { StorageService } from '../../shared/media/storage.service';
+import { PlatformJwtAuthGuard } from '../auth/guards/platform-jwt-auth.guard';
 
 /**
- * 📥 Media Download Controller
+ * 📥 Platform Media Download Controller
  *
- * GET /school/media/:uuid          → Download file (variant, Range, ETag)
- * GET /school/media/:uuid/meta     → Asset metadata
+ * GET /platform/media/:uuid          → Download file (variant, Range, ETag)
+ * GET /platform/media/:uuid/meta     → Asset metadata
  */
-@Controller('school/media')
-@UseGuards(SchoolJwtAuthGuard, SchoolContextGuard)
-export class MediaController {
+@Controller('platform/media')
+@UseGuards(PlatformJwtAuthGuard)
+export class PlatformMediaController {
     constructor(
-        private readonly mediaService: MediaService,
+        private readonly mediaService: PlatformMediaService,
         private readonly storage: StorageService,
-    ) { }
+    ) {}
 
     /**
      * 📥 Download media file
-     * - Supports Range header (206 Partial Content)
-     * - Supports If-None-Match (304 Not Modified)
-     * - Default variant: medium (IMAGE) / low (AUDIO)
      */
     @Get(':uuid')
     async download(
@@ -35,18 +31,13 @@ export class MediaController {
         @Query('variant') variant: string | undefined,
         @Headers('range') rangeHeader: string | undefined,
         @Headers('if-none-match') ifNoneMatch: string | undefined,
-        @Req() req: any,
         @Res() res: Response,
     ) {
-        const schoolId = req.schoolContext.id;
-
-        // Determine default variant from asset kind
-        const asset = await this.mediaService.getAsset(uuid, schoolId);
+        const asset = await this.mediaService.getAsset(uuid);
         const defaultVariant = asset.kind === 'IMAGE' ? 'medium' : 'low';
         const selectedVariant = variant || defaultVariant;
 
-        // Resolve variant storage key
-        const resolved = await this.mediaService.resolveVariantStorageKey(uuid, schoolId, selectedVariant);
+        const resolved = await this.mediaService.resolveVariantStorageKey(uuid, selectedVariant);
 
         // Check If-None-Match
         if (ifNoneMatch && ifNoneMatch === resolved.etag) {
@@ -54,7 +45,6 @@ export class MediaController {
             return;
         }
 
-        // Check file exists
         const exists = await this.storage.fileExists(resolved.storageKey);
         if (!exists) {
             throw new NotFoundException('FILE_NOT_FOUND');
@@ -81,7 +71,6 @@ export class MediaController {
                 }
 
                 const chunkSize = end - start + 1;
-
                 res.status(206);
                 res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
                 res.setHeader('Content-Length', chunkSize);
@@ -102,8 +91,7 @@ export class MediaController {
      * 📋 Get asset metadata
      */
     @Get(':uuid/meta')
-    async getMeta(@Param('uuid') uuid: string, @Req() req: any) {
-        const schoolId = req.schoolContext.id;
-        return this.mediaService.getAssetMeta(uuid, schoolId);
+    async getMeta(@Param('uuid') uuid: string) {
+        return this.mediaService.getAssetMeta(uuid);
     }
 }

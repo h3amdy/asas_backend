@@ -1,28 +1,26 @@
-// src/school/media/media.service.ts
+// src/platform/media/platform-media.service.ts
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../shared/media/storage.service';
 
 /**
- * 📦 خدمة الوسائط الأساسية
- * - جلب metadata
- * - تقديم الملفات للتنزيل
+ * 📦 خدمة وسائط المنصة — بدون school_id
  */
 @Injectable()
-export class MediaService {
-    private readonly logger = new Logger(MediaService.name);
+export class PlatformMediaService {
+    private readonly logger = new Logger(PlatformMediaService.name);
 
     constructor(
         private readonly prisma: PrismaService,
         private readonly storage: StorageService,
-    ) { }
+    ) {}
 
     /**
-     * Get asset by UUID (scoped to school)
+     * Get asset by UUID (platform scope — no school filter)
      */
-    async getAsset(assetUuid: string, schoolId: number) {
+    async getAsset(assetUuid: string) {
         const asset = await this.prisma.mediaAsset.findFirst({
-            where: { uuid: assetUuid, schoolId, ownerType: 'SCHOOL', isDeleted: false },
+            where: { uuid: assetUuid, ownerType: 'PLATFORM', isDeleted: false },
         });
 
         if (!asset) {
@@ -33,14 +31,13 @@ export class MediaService {
     }
 
     /**
-     * Get asset metadata for client (used by /meta endpoint)
+     * Get asset metadata for client
      */
-    async getAssetMeta(assetUuid: string, schoolId: number) {
-        const asset = await this.getAsset(assetUuid, schoolId);
+    async getAssetMeta(assetUuid: string) {
+        const asset = await this.getAsset(assetUuid);
 
         const variants = asset.variantsJson ? JSON.parse(asset.variantsJson) : {};
 
-        // Strip storage_key from variant data (client should not know internal paths)
         const clientVariants: Record<string, any> = {};
         for (const [key, val] of Object.entries(variants)) {
             const v = val as any;
@@ -66,13 +63,13 @@ export class MediaService {
     /**
      * Resolve variant storage key for download
      */
-    async resolveVariantStorageKey(assetUuid: string, schoolId: number, variant: string): Promise<{
+    async resolveVariantStorageKey(assetUuid: string, variant: string): Promise<{
         storageKey: string;
         etag: string;
         contentType: string;
         sizeBytes: number;
     }> {
-        const asset = await this.getAsset(assetUuid, schoolId);
+        const asset = await this.getAsset(assetUuid);
 
         if (!asset.variantsJson) {
             throw new NotFoundException('VARIANTS_NOT_READY');
@@ -82,7 +79,6 @@ export class MediaService {
         const variantData = variants[variant];
 
         if (!variantData) {
-            // Fallback: try default variant
             const defaultVariant = asset.kind === 'IMAGE' ? 'medium' : 'low';
             const fallback = variants[defaultVariant] || variants['original'];
             if (!fallback) {
@@ -107,8 +103,8 @@ export class MediaService {
     /**
      * Soft-delete an asset
      */
-    async softDeleteAsset(assetUuid: string, schoolId: number) {
-        const asset = await this.getAsset(assetUuid, schoolId);
+    async softDeleteAsset(assetUuid: string) {
+        const asset = await this.getAsset(assetUuid);
         return this.prisma.mediaAsset.update({
             where: { id: asset.id },
             data: {

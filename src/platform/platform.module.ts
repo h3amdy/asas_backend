@@ -7,6 +7,7 @@ import { PlatformProfileModule } from './profile/platform-profile.module';
 import { PlatformUnitsModule } from './units/platform-units.module';
 import { PlatformLessonsModule } from './lessons/platform-lessons.module';
 import { PlatformQuestionsModule } from './questions/platform-questions.module';
+import { PlatformMediaModule } from './media/platform-media.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PlatformQuestionsModule } from './questions/platform-questions.module';
     PlatformUnitsModule,
     PlatformLessonsModule,
     PlatformQuestionsModule,
+    PlatformMediaModule,
   ],
 })
 export class PlatformModule {}
