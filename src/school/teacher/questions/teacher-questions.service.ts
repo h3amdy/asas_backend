@@ -574,6 +574,7 @@ export class TeacherQuestionsService {
                 if (dto.matchingPairs) await this.createMatchingPairs(tx, questionId, dto.matchingPairs);
                 break;
             case 'ORDERING':
+            case 'IMAGE_STEP_SORTING':
                 if (dto.orderingItems) await this.createOrderingItems(tx, questionId, dto.orderingItems);
                 break;
             case 'FILL':
@@ -694,6 +695,7 @@ export class TeacherQuestionsService {
                 this.validateMatching(dto.matchingPairs);
                 break;
             case 'ORDERING':
+            case 'IMAGE_STEP_SORTING':
                 this.validateOrdering(dto.orderingItems);
                 break;
             case 'FILL':
@@ -715,6 +717,7 @@ export class TeacherQuestionsService {
                 if (dto.matchingPairs) this.validateMatching(dto.matchingPairs);
                 break;
             case 'ORDERING':
+            case 'IMAGE_STEP_SORTING':
                 if (dto.orderingItems) this.validateOrdering(dto.orderingItems);
                 break;
             case 'FILL':

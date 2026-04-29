@@ -15,8 +15,8 @@ import {
 import { Type, Transform } from 'class-transformer';
 
 // ── النوع الرئيسي ──────────────────────────────────────────────────────
-export type QuestionType = 'MCQ' | 'TRUE_FALSE' | 'MATCHING' | 'FILL' | 'ORDERING';
-const QUESTION_TYPES: QuestionType[] = ['MCQ', 'TRUE_FALSE', 'MATCHING', 'FILL', 'ORDERING'];
+export type QuestionType = 'MCQ' | 'TRUE_FALSE' | 'MATCHING' | 'FILL' | 'ORDERING' | 'IMAGE_STEP_SORTING';
+const QUESTION_TYPES: QuestionType[] = ['MCQ', 'TRUE_FALSE', 'MATCHING', 'FILL', 'ORDERING', 'IMAGE_STEP_SORTING'];
 
 // ── DTOs فرعية ──────────────────────────────────────────────────────────
 
@@ -230,7 +230,7 @@ export class CreateQuestionDto {
     @Type(() => CreateMatchingPairDto)
     matchingPairs?: CreateMatchingPairDto[];
 
-    @ValidateIf((o) => o.type === 'ORDERING')
+    @ValidateIf((o) => o.type === 'ORDERING' || o.type === 'IMAGE_STEP_SORTING')
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => CreateOrderingItemDto)
