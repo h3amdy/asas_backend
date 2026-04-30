@@ -989,7 +989,7 @@ model Question {
   templateId Int            @map("template_id")
   template   LessonTemplate @relation(fields: [templateId], references: [id])
 
-  type       String // MCQ / TRUE_FALSE / MATCHING / FILL / ORDERING
+  type       String // MCQ / TRUE_FALSE / MATCHING / FILL / ORDERING / IMAGE_STEP_SORTING
   orderIndex Int    @map("order_index")
 
   instructionText      String?     @map("instruction_text") // نص التعليمات (اختياري) — مثل: "أكمل الفراغات التالية"

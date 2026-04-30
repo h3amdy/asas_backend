@@ -184,6 +184,7 @@ export class StudentQuizService {
                     break;
 
                 case 'ORDERING':
+                case 'IMAGE_STEP_SORTING':
                     base.orderingItems = q.orderingItems.map((i) => ({
                         uuid: i.uuid,
                         itemText: i.itemText,
@@ -551,6 +552,7 @@ export class StudentQuizService {
                     }));
                     break;
                 case 'ORDERING':
+                case 'IMAGE_STEP_SORTING':
                     base.orderingItems = q.orderingItems.map(i => ({
                         uuid: i.uuid, itemText: i.itemText,
                         imageAssetUuid: i.imageAsset?.uuid ?? null,
@@ -607,7 +609,8 @@ export class StudentQuizService {
                 );
             }
 
-            case 'ORDERING': {
+            case 'ORDERING':
+            case 'IMAGE_STEP_SORTING': {
                 if (!answerValue?.orderedItemUuids || !Array.isArray(answerValue.orderedItemUuids)) return false;
                 const correctOrder = question.orderingItems
                     .sort((a: any, b: any) => a.correctIndex - b.correctIndex)
