@@ -12,6 +12,7 @@ export class PlatformSubjectsService {
 
   /**
    * عرض المواد الرسمية المتاحة — مجمّعة حسب الصف (PLT-020)
+   * يتضمن عدد الدروس وعدد الأسئلة لكل مادة
    */
   async findAllSubjects() {
     const subjects = await this.prisma.subjectDictionary.findMany({
@@ -31,6 +32,21 @@ export class PlatformSubjectsService {
             sortOrder: true,
           },
         },
+        _count: {
+          select: {
+            lessonTemplates: { where: { isDeleted: false } },
+          },
+        },
+        lessonTemplates: {
+          where: { isDeleted: false },
+          select: {
+            _count: {
+              select: {
+                questions: { where: { isDeleted: false } },
+              },
+            },
+          },
+        },
       },
       orderBy: [
         { gradeDictionary: { sortOrder: 'asc' } },
@@ -38,7 +54,19 @@ export class PlatformSubjectsService {
       ],
     });
 
-    return subjects;
+    return subjects.map((s) => ({
+      uuid: s.uuid,
+      code: s.code,
+      defaultName: s.defaultName,
+      shortName: s.shortName,
+      sortOrder: s.sortOrder,
+      gradeDictionary: s.gradeDictionary,
+      lessonsCount: s._count.lessonTemplates,
+      questionsCount: s.lessonTemplates.reduce(
+        (sum, lt) => sum + lt._count.questions,
+        0,
+      ),
+    }));
   }
 
   /**
