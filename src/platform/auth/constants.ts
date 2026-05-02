@@ -5,10 +5,10 @@
  * منفصلة عن Owner Auth و School Auth لضمان عدم تداخل التوكنات
  */
 export const PLATFORM_AUTH_JWT = {
-  accessTokenTtlSec: 60 * 60 * 24,       // 1 يوم
-  refreshTokenTtlSec: 60 * 60 * 24 * 7,  // 7 أيام
+  accessTokenTtlSec: 60 * 15,             // 15 دقيقة (أكثر أماناً مع وجود refresh)
+  refreshTokenTtlSec: 60 * 60 * 24 * 7,   // 7 أيام
   issuer: 'asas-backend',
-  audience: 'asas-platform',              // ≠ asas-owner-panel ≠ asas-school-app
+  audience: 'asas-platform',               // ≠ asas-owner-panel ≠ asas-school-app
 };
 
 /**
@@ -21,4 +21,5 @@ export const PLATFORM_AUTH_ERRORS = {
   UNAUTHORIZED: 'غير مصرح',
   ADMIN_ONLY: 'هذا الإجراء متاح لمدير المنصة فقط',
   WRONG_PASSWORD: 'كلمة المرور الحالية غير صحيحة',
+  INVALID_REFRESH_TOKEN: 'رمز التجديد غير صالح أو منتهي الصلاحية',
 };

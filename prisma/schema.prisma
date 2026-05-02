@@ -1404,6 +1404,10 @@ model PlatformUser {
   role     PlatformRole @default(PLATFORM_TEACHER)
   isActive Boolean      @default(true) @map("is_active")
 
+  // Refresh Token Support
+  refreshTokenHash String?   @unique @map("refresh_token_hash")
+  refreshExpiresAt DateTime? @map("refresh_expires_at")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   isDeleted Boolean   @default(false) @map("is_deleted")
