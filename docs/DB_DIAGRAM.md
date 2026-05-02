@@ -792,7 +792,7 @@ Table student_lesson_progress {
   lesson_id     int
   status        varchar   // NOT_STARTED/IN_PROGRESS/COMPLETED
   last_position varchar   // JSON or any pointer
- created_at datetime
+  created_at datetime
   updated_at    datetime
   row_version   int [default: 0]  // ✅ مفيد للتعارضات (اختياري لكن أنصح به)
   is_deleted    boolean [default: false]
