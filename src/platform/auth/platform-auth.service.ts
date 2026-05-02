@@ -94,7 +94,7 @@ export class PlatformAuthService {
       },
     });
 
-    let matchedUser = null;
+    let matchedUser: (typeof users)[number] | null = null;
     for (const user of users) {
       if (user.refreshTokenHash) {
         const isValid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
