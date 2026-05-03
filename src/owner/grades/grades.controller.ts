@@ -6,13 +6,17 @@ import {
   Param,
   Patch,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { GradesService } from './grades.service';
 import { CreateGradeDto } from './dto/create-grade.dto';
 import { UpdateGradeDto } from './dto/update-grade.dto';
 import { UpdateGradeStatusDto } from './dto/update-grade-status.dto';
+import { PlatformJwtAuthGuard } from '../../platform/auth/guards/platform-jwt-auth.guard';
+import { PlatformAdminGuard } from '../../platform/auth/guards/platform-admin.guard';
 
 @Controller('grades')
+@UseGuards(PlatformJwtAuthGuard, PlatformAdminGuard)
 export class GradesController {
   constructor(private readonly gradesService: GradesService) {}
 

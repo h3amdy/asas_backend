@@ -7,14 +7,18 @@ import {
   Patch,
   Post,
   Delete,
+  UseGuards,
 } from '@nestjs/common';
 import { SchoolsService } from './schools.service';
 import { CreateSchoolDto } from './dto/create-school.dto';
 import { UpdateSchoolDto } from './dto/update-school.dto';
 import { UpdateSchoolStatusDto } from './dto/update-school-status.dto';
 import { CreateSchoolManagerDto } from './dto/create-school-manager.dto';
+import { PlatformJwtAuthGuard } from '../../platform/auth/guards/platform-jwt-auth.guard';
+import { PlatformAdminGuard } from '../../platform/auth/guards/platform-admin.guard';
 
 @Controller('schools')
+@UseGuards(PlatformJwtAuthGuard, PlatformAdminGuard)
 export class SchoolsController {
   constructor(private readonly schoolsService: SchoolsService) {}
 

@@ -1,12 +1,15 @@
 // src/owner/schools/schools-sync.controller.ts
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { SchoolsSyncService } from './schools-sync.service';
 import {
   SchoolsSyncPullQueryDto,
   SchoolsSyncPushDto,
 } from './dto/school-sync.dto';
+import { PlatformJwtAuthGuard } from '../../platform/auth/guards/platform-jwt-auth.guard';
+import { PlatformAdminGuard } from '../../platform/auth/guards/platform-admin.guard';
 
 @Controller('schools-sync')
+@UseGuards(PlatformJwtAuthGuard, PlatformAdminGuard)
 export class SchoolsSyncController {
   constructor(private readonly syncService: SchoolsSyncService) {}
 

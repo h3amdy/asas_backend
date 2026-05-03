@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
-import { OwnerModule } from './owner/owner.module';
 import { SchoolsModule } from './owner/schools/schools.module';
 import { GradesModule } from './owner/grades/grades.module';
 import { StatusModule } from './status/status.module';
@@ -14,7 +13,6 @@ import { PlatformModule } from './platform/platform.module';
 @Module({
   imports: [
     PrismaModule,
-    OwnerModule,
     SchoolsModule,
     GradesModule,
 
