@@ -34,8 +34,7 @@ export class SchoolAuthService {
 
   async login(input: {
     schoolUuid: string;
-    userCode?: number;
-    phone?: string;
+    identifier: string;
     password: string;
     deviceFingerprint: string;
     deviceType: 'ANDROID' | 'IOS' | 'WEB';
@@ -50,36 +49,62 @@ export class SchoolAuthService {
     if (!school) throw new NotFoundException(SCHOOL_AUTH_ERRORS.SCHOOL_NOT_FOUND);
     if (!school.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_INACTIVE);
 
-    // 2) find user by login mode
-    const hasPhone = !!(input.phone && input.phone.trim());
-    const hasCode = Number.isInteger(input.userCode) && (input.userCode as number) > 0;
-
-    if (!hasPhone && !hasCode) {
-      throw new BadRequestException('Either phone or userCode is required');
-    }
-    if (hasPhone && hasCode) {
-      throw new BadRequestException('Provide only one of phone or userCode');
+    // 2) Smart identifier resolution:
+    //    أولاً: حاول تحويله إلى رقم → ابحث بالـ code (ADMIN/TEACHER/STUDENT)
+    //    ثانياً: إذا لم يوجد → ابحث بالـ phone (PARENT فقط)
+    const identifier = input.identifier.trim();
+    if (!identifier) {
+      throw new BadRequestException('identifier is required');
     }
 
-    const user = await this.prisma.user.findFirst({
-      where: {
-        schoolId: school.id,
-        isDeleted: false,
-        ...(hasPhone
-          ? { userType: 'PARENT', phone: input.phone!.trim() }
-          : { userType: { in: ['ADMIN', 'TEACHER', 'STUDENT'] }, code: input.userCode! }),
-      },
-      select: {
-        id: true,
-        uuid: true,
-        userType: true,
-        code: true,
-        displayName: true,
-        name: true,
-        passwordHash: true,
-        isActive: true,
-      },
-    });
+    const userSelectFields = {
+      id: true,
+      uuid: true,
+      userType: true,
+      code: true,
+      displayName: true,
+      name: true,
+      passwordHash: true,
+      isActive: true,
+    } as const;
+
+    let user: {
+      id: number;
+      uuid: string;
+      userType: string;
+      code: number | null;
+      displayName: string | null;
+      name: string;
+      passwordHash: string;
+      isActive: boolean;
+    } | null = null;
+
+    // محاولة 1: البحث بالرقم المدرسي (code)
+    const codeNum = Number(identifier);
+    if (Number.isInteger(codeNum) && codeNum > 0) {
+      user = await this.prisma.user.findFirst({
+        where: {
+          schoolId: school.id,
+          isDeleted: false,
+          code: codeNum,
+          userType: { in: ['ADMIN', 'TEACHER', 'STUDENT'] },
+        },
+        select: userSelectFields,
+      });
+    }
+
+    // محاولة 2: البحث بالهاتف (ولي أمر فقط)
+    if (!user) {
+      user = await this.prisma.user.findFirst({
+        where: {
+          schoolId: school.id,
+          isDeleted: false,
+          userType: 'PARENT',
+          phone: identifier,
+        },
+        select: userSelectFields,
+      });
+    }
 
     if (!user) throw new UnauthorizedException(SCHOOL_AUTH_ERRORS.INVALID_CREDENTIALS);
 

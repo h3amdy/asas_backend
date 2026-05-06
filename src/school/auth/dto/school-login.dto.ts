@@ -1,23 +1,21 @@
 // src/school/auth/dto/school-login.dto.ts
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /**
  * DTO لتسجيل دخول مستخدمي المدرسة
- * يدعم تسجيل الدخول بالكود (ADMIN/TEACHER/STUDENT) أو بالهاتف (PARENT)
+ *
+ * حقل `identifier` موحّد:
+ * - إذا كان رقماً → يُبحث عنه كـ code (ADMIN/TEACHER/STUDENT)
+ * - إذا لم يُوجد → يُبحث عنه كـ phone (PARENT)
  */
 export class SchoolLoginDto {
   @IsUUID()
   schoolUuid!: string;
 
-  @IsOptional()
-  @IsInt()
-  userCode?: number;
-
-  @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : String(value)))
   @IsString()
-  phone?: string;
+  identifier!: string;
 
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
