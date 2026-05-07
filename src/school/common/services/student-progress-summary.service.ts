@@ -124,8 +124,10 @@ export class StudentProgressSummaryService {
      * حل السياق الأكاديمي تلقائياً:
      * 1️⃣ الفصل الحالي النشط
      * 2️⃣ آخر فصل يحتوي دروس (fallback للإجازات/الفترات الانتقالية)
+     *
+     * ⚠️ public لإعادة الاستخدام من ParentChildrenService (PAR-021)
      */
-    private async resolveAcademicContext(
+    async resolveAcademicContext(
         schoolId: number,
     ): Promise<{ yearId: number; termId: number; termName: string; isFallback: boolean } | null> {
         // 1️⃣ محاولة: الفصل الحالي النشط
