@@ -276,6 +276,236 @@ export class ParentChildrenService {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // PAR-022/023 — دروس مادة لابن معيّن
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * GET /school/parent/child/:childUuid/subject/:subjectUuid/lessons
+     * جلب دروس مادة معيّنة لابن — مجمّعة بالوحدات + حالة كل درس
+     *
+     * DEC-PROGRESSION-ACCESS-01: ترتيب منهجي (Curriculum Order)
+     * DEC-PAR-023-02: 4 حالات: COMPLETED, CURRENT, AVAILABLE, LOCKED
+     */
+    async getChildSubjectLessons(
+        schoolId: number,
+        parentUserUuid: string,
+        childUuid: string,
+        subjectUuid: string,
+    ) {
+        // 1. التحقق من ارتباط ولي الأمر بالابن
+        const { childName, childStudentId, enrollment } =
+            await this.verifyParentChildLink(schoolId, parentUserUuid, childUuid);
+
+        if (!enrollment) {
+            return {
+                subjectName: '',
+                subjectUuid,
+                termName: null,
+                isFallbackTerm: false,
+                units: [],
+            };
+        }
+
+        // 2. جلب المادة
+        const subject = await this.prisma.subject.findFirst({
+            where: { uuid: subjectUuid, schoolId, isDeleted: false },
+        });
+
+        if (!subject) {
+            throw new NotFoundException('SUBJECT_NOT_FOUND');
+        }
+
+        // 3. حل السياق الأكاديمي
+        const context = await this.progressService.resolveAcademicContext(schoolId);
+
+        if (!context) {
+            return {
+                subjectName: subject.displayName,
+                subjectUuid: subject.uuid,
+                termName: null,
+                isFallbackTerm: false,
+                units: [],
+            };
+        }
+
+        // 4. جلب جميع الدروس (templates) للمادة — مرتبة منهجياً
+        //    نجلب كل templates المادة لعرض الترتيب المنهجي الكامل
+        const allTemplates = await this.prisma.lessonTemplate.findMany({
+            where: {
+                subjectId: subject.id,
+                schoolId,
+                isDeleted: false,
+            },
+            include: {
+                unit: { select: { title: true, orderIndex: true } },
+                coverMediaAsset: { select: { uuid: true } },
+                _count: {
+                    select: {
+                        questions: { where: { isDeleted: false } },
+                    },
+                },
+                contents: {
+                    where: { isDeleted: false, type: 'AUDIO' },
+                    select: { id: true },
+                    take: 1,
+                },
+            },
+            orderBy: [{ orderIndex: 'asc' }],
+        });
+
+        // 5. جلب الدروس المنشورة والمستهدفة للشعبة ضمن السياق
+        const publishedTargets = await this.prisma.lessonTarget.findMany({
+            where: {
+                sectionId: enrollment.sectionId,
+                lesson: {
+                    subjectId: subject.id,
+                    schoolId,
+                    yearId: context.yearId,
+                    termId: context.termId,
+                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    isDeleted: false,
+                    isActive: true,
+                },
+            },
+            include: {
+                lesson: {
+                    select: {
+                        id: true,
+                        uuid: true,
+                        templateId: true,
+                        publishedAt: true,
+                    },
+                },
+            },
+        });
+
+        // Map: templateId → lesson (published)
+        const publishedMap = new Map<number, { lessonId: number; lessonUuid: string; publishedAt: Date | null }>();
+        for (const target of publishedTargets) {
+            publishedMap.set(target.lesson.templateId, {
+                lessonId: target.lesson.id,
+                lessonUuid: target.lesson.uuid,
+                publishedAt: target.lesson.publishedAt,
+            });
+        }
+
+        // 6. جلب نتائج الطالب
+        const lessonIds = publishedTargets.map(t => t.lesson.id);
+        const lessonResults = await this.prisma.studentLessonResult.findMany({
+            where: {
+                studentId: childStudentId,
+                lessonId: { in: lessonIds },
+                isDeleted: false,
+            },
+            orderBy: { percent: 'desc' },
+        });
+
+        // Map: lessonId → best result + attempt count
+        const progressMap = new Map<number, {
+            bestPercent: number;
+            bestGradeLabel: string;
+            attemptCount: number;
+            completedAt: Date;
+        }>();
+        const attemptCountMap = new Map<number, number>();
+
+        for (const r of lessonResults) {
+            attemptCountMap.set(r.lessonId, (attemptCountMap.get(r.lessonId) ?? 0) + 1);
+            if (!progressMap.has(r.lessonId)) {
+                progressMap.set(r.lessonId, {
+                    bestPercent: r.percent,
+                    bestGradeLabel: r.gradeLabel,
+                    attemptCount: 0,
+                    completedAt: r.createdAt,
+                });
+            }
+        }
+        for (const [lessonId, count] of attemptCountMap) {
+            const entry = progressMap.get(lessonId);
+            if (entry) entry.attemptCount = count;
+        }
+
+        // 7. بناء القائمة — ترتيب منهجي مع حالات
+        let foundCurrentPoint = false;
+
+        const lessonsWithState = allTemplates.map(template => {
+            const published = publishedMap.get(template.id);
+            const isPublished = !!published;
+            const progress = published ? progressMap.get(published.lessonId) : null;
+            const isCompleted = !!progress;
+
+            // تحديد الحالة (DEC-PAR-023-02)
+            let status: string;
+            if (isCompleted) {
+                status = 'COMPLETED';
+            } else if (isPublished && !foundCurrentPoint) {
+                status = 'CURRENT';
+                foundCurrentPoint = true;
+            } else if (isPublished) {
+                status = 'AVAILABLE';
+            } else {
+                status = 'LOCKED';
+            }
+
+            return {
+                uuid: published?.lessonUuid ?? template.uuid,
+                title: template.title,
+                orderIndex: template.orderIndex,
+                unitTitle: template.unit?.title ?? '',
+                unitOrder: template.unit?.orderIndex ?? 0,
+                questionCount: template._count.questions,
+                hasAudio: template.contents.length > 0,
+                coverMediaAssetUuid: template.coverMediaAsset?.uuid ?? null,
+                status,
+                progress: progress
+                    ? {
+                        bestPercent: progress.bestPercent,
+                        bestGradeLabel: progress.bestGradeLabel,
+                        attemptCount: progress.attemptCount,
+                        completedAt: progress.completedAt,
+                    }
+                    : null,
+            };
+        });
+
+        // 8. تجميع حسب الوحدات
+        const unitsMap = new Map<string, {
+            title: string;
+            orderIndex: number;
+            lessons: typeof lessonsWithState;
+        }>();
+
+        for (const lesson of lessonsWithState) {
+            const key = `${lesson.unitOrder}_${lesson.unitTitle}`;
+            if (!unitsMap.has(key)) {
+                unitsMap.set(key, {
+                    title: lesson.unitTitle,
+                    orderIndex: lesson.unitOrder,
+                    lessons: [],
+                });
+            }
+            unitsMap.get(key)!.lessons.push(lesson);
+        }
+
+        // ترتيب الوحدات
+        const units = Array.from(unitsMap.values())
+            .sort((a, b) => a.orderIndex - b.orderIndex)
+            .map(unit => ({
+                title: unit.title,
+                orderIndex: unit.orderIndex,
+                lessons: unit.lessons.sort((a, b) => a.orderIndex - b.orderIndex),
+            }));
+
+        return {
+            subjectName: subject.displayName,
+            subjectUuid: subject.uuid,
+            termName: context.termName,
+            isFallbackTerm: context.isFallback,
+            units,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Helpers
     // ═══════════════════════════════════════════════════════════════════
 

@@ -8,10 +8,9 @@ import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 /**
  * 👨‍👧‍👦 Parent Children Controller
  *
- * GET /school/parent/my-children              → قائمة الأبناء (PAR-010)
- * GET /school/parent/child/:uuid/subjects     → مواد ابن مع الإنجاز (PAR-021)
- *
- * SRS-PAR-010 | SRS-PAR-020/021
+ * GET /school/parent/my-children                                    → PAR-010
+ * GET /school/parent/child/:uuid/subjects                           → PAR-021
+ * GET /school/parent/child/:childUuid/subject/:subjectUuid/lessons  → PAR-022/023
  */
 @Controller('school/parent')
 @UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
@@ -33,6 +32,20 @@ export class ParentChildrenController {
             req.schoolContext.id,
             req.user.sub,
             childUuid,
+        );
+    }
+
+    @Get('child/:childUuid/subject/:subjectUuid/lessons')
+    getChildSubjectLessons(
+        @Req() req: any,
+        @Param('childUuid') childUuid: string,
+        @Param('subjectUuid') subjectUuid: string,
+    ) {
+        return this.service.getChildSubjectLessons(
+            req.schoolContext.id,
+            req.user.sub,
+            childUuid,
+            subjectUuid,
         );
     }
 }
