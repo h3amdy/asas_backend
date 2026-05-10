@@ -275,7 +275,7 @@ export class ParentChildrenService {
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════════
+   // ═══════════════════════════════════════════════════════════════════
     // PAR-022/023 — دروس مادة لابن معيّن
     // ═══════════════════════════════════════════════════════════════════
 
@@ -284,7 +284,7 @@ export class ParentChildrenService {
      * جلب دروس مادة معيّنة لابن — مجمّعة بالوحدات + حالة كل درس
      *
      * DEC-PROGRESSION-ACCESS-01: ترتيب منهجي (Curriculum Order)
-     * DEC-PAR-023-02: 4 حالات: COMPLETED, CURRENT, AVAILABLE, LOCKED
+     * DEC-PAR-023-02: 3 حالات فقط: COMPLETED, CURRENT, AVAILABLE (بدون LOCKED)
      */
     async getChildSubjectLessons(
         schoolId: number,
@@ -328,32 +328,7 @@ export class ParentChildrenService {
             };
         }
 
-        // 4. جلب جميع الدروس (templates) للمادة — مرتبة منهجياً
-        //    نجلب كل templates المادة لعرض الترتيب المنهجي الكامل
-        const allTemplates = await this.prisma.lessonTemplate.findMany({
-            where: {
-                subjectId: subject.id,
-                schoolId,
-                isDeleted: false,
-            },
-            include: {
-                unit: { select: { title: true, orderIndex: true } },
-                coverMediaAsset: { select: { uuid: true } },
-                _count: {
-                    select: {
-                        questions: { where: { isDeleted: false } },
-                    },
-                },
-                contents: {
-                    where: { isDeleted: false, type: 'AUDIO' },
-                    select: { id: true },
-                    take: 1,
-                },
-            },
-            orderBy: [{ orderIndex: 'asc' }],
-        });
-
-        // 5. جلب الدروس المنشورة والمستهدفة للشعبة ضمن السياق
+        // 4. جلب الدروس المنشورة والمستهدفة للشعبة ضمن السياق
         const publishedTargets = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId: enrollment.sectionId,
@@ -379,15 +354,81 @@ export class ParentChildrenService {
             },
         });
 
+        // إذا لم يكن هناك أي دروس منشورة، نرجع قائمة فارغة مباشرة
+        if (publishedTargets.length === 0) {
+            return {
+                subjectName: subject.displayName,
+                subjectUuid: subject.uuid,
+                termName: context.termName,
+                isFallbackTerm: context.isFallback,
+                units: [],
+            };
+        }
+
+        // 🔴 التعديل 2: استخراج templateIds بدون تكرار (Deduplication)
+        const templateIds = [
+            ...new Set(
+                publishedTargets
+                    .map(t => t.lesson.templateId)
+                    .filter((id): id is number => id !== null)
+            ),
+        ];
+
         // Map: templateId → lesson (published)
         const publishedMap = new Map<number, { lessonId: number; lessonUuid: string; publishedAt: Date | null }>();
+        
+        // 🔴 التعديل 3: منع الـ Overwrite العشوائي والاحتفاظ بالنسخة الأحدث
         for (const target of publishedTargets) {
-            publishedMap.set(target.lesson.templateId, {
-                lessonId: target.lesson.id,
-                lessonUuid: target.lesson.uuid,
-                publishedAt: target.lesson.publishedAt,
-            });
+            const templateId = target.lesson.templateId;
+            if (templateId) {
+                const existing = publishedMap.get(templateId);
+                
+                if (
+                    !existing ||
+                    (target.lesson.publishedAt &&
+                        existing.publishedAt &&
+                        target.lesson.publishedAt > existing.publishedAt)
+                ) {
+                    publishedMap.set(templateId, {
+                        lessonId: target.lesson.id,
+                        lessonUuid: target.lesson.uuid,
+                        publishedAt: target.lesson.publishedAt,
+                    });
+                }
+            }
         }
+
+        // 5. جلب (templates) المرتبطة بالدروس المنشورة فقط — مرتبة منهجياً
+        const publishedTemplates = await this.prisma.lessonTemplate.findMany({
+            where: {
+                id: { in: templateIds }, 
+                schoolId,
+                isDeleted: false,
+            },
+            include: {
+                unit: { select: { title: true, orderIndex: true } },
+                coverMediaAsset: { select: { uuid: true } },
+                _count: {
+                    select: {
+                        questions: { where: { isDeleted: false } },
+                    },
+                },
+                contents: {
+                    where: { isDeleted: false, type: 'AUDIO' },
+                    select: { id: true },
+                    take: 1,
+                },
+            },
+            // 🔴 التعديل 1: ترتيب مزدوج يضمن عدم اختلاط الدروس بين الوحدات
+            orderBy: [
+                {
+                    unit: { orderIndex: 'asc' },
+                },
+                {
+                    orderIndex: 'asc',
+                },
+            ],
+        });
 
         // 6. جلب نتائج الطالب
         const lessonIds = publishedTargets.map(t => t.lesson.id);
@@ -425,33 +466,30 @@ export class ParentChildrenService {
             if (entry) entry.attemptCount = count;
         }
 
-        // 7. بناء القائمة — ترتيب منهجي مع حالات
+        // 7. بناء القائمة — ترتيب منهجي للدروس المتاحة فقط
         let foundCurrentPoint = false;
 
-        const lessonsWithState = allTemplates.map(template => {
-            const published = publishedMap.get(template.id);
-            const isPublished = !!published;
-            const progress = published ? progressMap.get(published.lessonId) : null;
+        const lessonsWithState = publishedTemplates.map(template => {
+            const published = publishedMap.get(template.id)!; 
+            const progress = progressMap.get(published.lessonId);
             const isCompleted = !!progress;
 
-            // تحديد الحالة (DEC-PAR-023-02)
             let status: string;
             if (isCompleted) {
                 status = 'COMPLETED';
-            } else if (isPublished && !foundCurrentPoint) {
+            } else if (!foundCurrentPoint) {
                 status = 'CURRENT';
                 foundCurrentPoint = true;
-            } else if (isPublished) {
-                status = 'AVAILABLE';
             } else {
-                status = 'LOCKED';
+                status = 'AVAILABLE';
             }
 
             return {
-                uuid: published?.lessonUuid ?? template.uuid,
+                uuid: published.lessonUuid, 
                 title: template.title,
                 orderIndex: template.orderIndex,
-                unitTitle: template.unit?.title ?? '',
+                // 🔴 التعديل 4: رسالة واضحة في حال عدم وجود وحدة
+                unitTitle: template.unit?.title ?? 'بدون وحدة',
                 unitOrder: template.unit?.orderIndex ?? 0,
                 questionCount: template._count.questions,
                 hasAudio: template.contents.length > 0,
@@ -504,7 +542,6 @@ export class ParentChildrenService {
             units,
         };
     }
-
     // ═══════════════════════════════════════════════════════════════════
     // Helpers
     // ═══════════════════════════════════════════════════════════════════
