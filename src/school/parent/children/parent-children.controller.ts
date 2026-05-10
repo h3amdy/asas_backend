@@ -11,6 +11,8 @@ import { RolesGuard, Roles } from '../../common/guards/roles.guard';
  * GET /school/parent/my-children                                    → PAR-010
  * GET /school/parent/child/:uuid/subjects                           → PAR-021
  * GET /school/parent/child/:childUuid/subject/:subjectUuid/lessons  → PAR-022/023
+ * GET /school/parent/child/:childUuid/results                       → PAR-030/031
+ * GET /school/parent/child/:childUuid/subject/:subjectUuid/results  → PAR-032
  */
 @Controller('school/parent')
 @UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
@@ -42,6 +44,34 @@ export class ParentChildrenController {
         @Param('subjectUuid') subjectUuid: string,
     ) {
         return this.service.getChildSubjectLessons(
+            req.schoolContext.id,
+            req.user.sub,
+            childUuid,
+            subjectUuid,
+        );
+    }
+
+    // ── PAR-030/031: نتائج ابن (ملخص عام + مواد) ──
+    @Get('child/:childUuid/results')
+    getChildResults(
+        @Req() req: any,
+        @Param('childUuid') childUuid: string,
+    ) {
+        return this.service.getChildResults(
+            req.schoolContext.id,
+            req.user.sub,
+            childUuid,
+        );
+    }
+
+    // ── PAR-032: نتائج دروس مادة معيّنة ──
+    @Get('child/:childUuid/subject/:subjectUuid/results')
+    getChildSubjectResults(
+        @Req() req: any,
+        @Param('childUuid') childUuid: string,
+        @Param('subjectUuid') subjectUuid: string,
+    ) {
+        return this.service.getChildSubjectResults(
             req.schoolContext.id,
             req.user.sub,
             childUuid,

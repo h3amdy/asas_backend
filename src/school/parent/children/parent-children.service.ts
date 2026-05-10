@@ -2,6 +2,7 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { StudentProgressSummaryService } from '../../common/services/student-progress-summary.service';
+import { StudentResultsAggregationService } from '../../common/services/student-results-aggregation.service';
 
 /**
  * 👨‍👧‍👦 خدمة أبناء ولي الأمر
@@ -16,6 +17,7 @@ export class ParentChildrenService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly progressService: StudentProgressSummaryService,
+        private readonly resultsService: StudentResultsAggregationService,
     ) { }
 
     /**
@@ -606,5 +608,92 @@ export class ParentChildrenService {
             childStudentId: childUser.student.userId,
             enrollment: childUser.student.enrollments[0] ?? null,
         };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  PAR-030/031: نتائج ابن (ملخص عام + مواد)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * GET /school/parent/child/:childUuid/results
+     *
+     * DEC-RESULTS-01: مسار مستقل عن الإنجاز
+     */
+    async getChildResults(
+        schoolId: number,
+        parentUserUuid: string,
+        childUuid: string,
+    ) {
+        const { childName, childStudentId, enrollment } =
+            await this.verifyParentChildLink(schoolId, parentUserUuid, childUuid);
+
+        if (!enrollment) {
+            return {
+                childName,
+                overallScorePercent: 0,
+                overallGradeLabel: '',
+                subjectCount: 0,
+                termName: null,
+                isFallbackTerm: false,
+                subjects: [],
+            };
+        }
+
+        const overview = await this.resultsService.aggregateChildResults(
+            schoolId,
+            childStudentId,
+            enrollment.sectionId,
+        );
+
+        return {
+            childName,
+            ...overview,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  PAR-032: نتائج دروس مادة معيّنة
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * GET /school/parent/child/:childUuid/subject/:subjectUuid/results
+     *
+     * DEC-RESULTS-07: فقط الدروس التي لها نتائج فعلية
+     */
+    async getChildSubjectResults(
+        schoolId: number,
+        parentUserUuid: string,
+        childUuid: string,
+        subjectUuid: string,
+    ) {
+        const { childStudentId, enrollment } =
+            await this.verifyParentChildLink(schoolId, parentUserUuid, childUuid);
+
+        if (!enrollment) {
+            throw new NotFoundException('ENROLLMENT_NOT_FOUND');
+        }
+
+        // جلب المادة بالـ UUID
+        const subject = await this.prisma.subject.findFirst({
+            where: { uuid: subjectUuid, schoolId, isDeleted: false },
+            select: { id: true },
+        });
+
+        if (!subject) {
+            throw new NotFoundException('SUBJECT_NOT_FOUND');
+        }
+
+        const results = await this.resultsService.aggregateSubjectResults(
+            schoolId,
+            childStudentId,
+            enrollment.sectionId,
+            subject.id,
+        );
+
+        if (!results) {
+            throw new NotFoundException('NO_RESULTS_FOUND');
+        }
+
+        return results;
     }
 }
