@@ -78,4 +78,20 @@ export class ParentChildrenController {
             subjectUuid,
         );
     }
+
+    // ── PAR-033: مراجعة إجابات درس معيّن ──
+    @Get('child/:childUuid/lesson/:lessonUuid/review')
+    getChildLessonReview(
+        @Req() req: any,
+        @Param('childUuid') childUuid: string,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        return this.service.getChildLessonReview(
+            req.schoolContext.id,
+            req.user.sub,
+            childUuid,
+            lessonUuid,
+        );
+    }
 }
+
