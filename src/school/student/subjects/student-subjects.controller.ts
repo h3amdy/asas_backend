@@ -1,8 +1,8 @@
-// src/school/student/subjects/student-subjects.controller.ts
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { StudentSubjectsService } from './student-subjects.service';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
+import { ParentStudentContextGuard } from '../../common/guards/parent-student-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 
 /**
@@ -11,7 +11,7 @@ import { RolesGuard, Roles } from '../../common/guards/roles.guard';
  * GET /school/student/my-subjects → المواد المسجّلة للطالب
  */
 @Controller('school/student')
-@UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
+@UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, ParentStudentContextGuard, RolesGuard)
 @Roles('STUDENT')
 export class StudentSubjectsController {
     constructor(private readonly service: StudentSubjectsService) { }

@@ -1,8 +1,8 @@
-// src/school/student/timetable/student-timetable.controller.ts
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { StudentTimetableService } from './student-timetable.service';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
+import { ParentStudentContextGuard } from '../../common/guards/parent-student-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 
 /**
@@ -10,7 +10,7 @@ import { RolesGuard, Roles } from '../../common/guards/roles.guard';
  * GET /school/student/my-timetable — جدول الطالب الأسبوعي
  */
 @Controller('school/student')
-@UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
+@UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, ParentStudentContextGuard, RolesGuard)
 @Roles('STUDENT')
 export class StudentTimetableController {
     constructor(private readonly service: StudentTimetableService) {}

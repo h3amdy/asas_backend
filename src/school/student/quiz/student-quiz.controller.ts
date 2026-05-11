@@ -1,8 +1,8 @@
-// src/school/student/quiz/student-quiz.controller.ts
 import { Controller, Get, Post, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { StudentQuizService } from './student-quiz.service';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
+import { ParentStudentContextGuard } from '../../common/guards/parent-student-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 
 /**
@@ -14,7 +14,7 @@ import { RolesGuard, Roles } from '../../common/guards/roles.guard';
  * GET  /school/student/lesson/:lessonUuid/result         → جلب آخر نتيجة
  */
 @Controller('school/student')
-@UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
+@UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, ParentStudentContextGuard, RolesGuard)
 @Roles('STUDENT')
 export class StudentQuizController {
     constructor(private readonly service: StudentQuizService) { }
