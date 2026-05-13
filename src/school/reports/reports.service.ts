@@ -129,7 +129,7 @@ export class ReportsService {
             include: {
                 student: {
                     include: {
-                        user: { select: { uuid: true, name: true } },
+                        user: { select: { uuid: true, name: true, avatarMediaAsset: { select: { uuid: true } } } },
                     },
                 },
                 grade: { select: { displayName: true } },
@@ -157,6 +157,7 @@ export class ReportsService {
                 return {
                     uuid: enrollment.student.user.uuid,
                     name: enrollment.student.user.name,
+                    avatarAssetUuid: enrollment.student.user.avatarMediaAsset?.uuid ?? null,
                     grade: enrollment.grade.displayName,
                     section: enrollment.section.name,
                     totalLessons: progress.totalLessons,
@@ -201,6 +202,7 @@ export class ReportsService {
             select: {
                 uuid: true,
                 name: true,
+                avatarMediaAsset: { select: { uuid: true } },
                 student: {
                     include: {
                         enrollments: {
@@ -242,7 +244,7 @@ export class ReportsService {
                 isActive: true,
                 grade: { id: enrollment.gradeId },
             },
-            select: { id: true, uuid: true, displayName: true },
+            select: { id: true, uuid: true, displayName: true, coverMediaAsset: { select: { uuid: true } } },
             orderBy: { displayName: 'asc' },
         });
 
@@ -256,6 +258,7 @@ export class ReportsService {
                     return {
                         uuid: subject.uuid,
                         name: subject.displayName,
+                        coverAssetUuid: subject.coverMediaAsset?.uuid ?? null,
                         totalLessons: progress.totalLessons,
                         completedLessons: progress.completedLessons,
                         progressPercent: progress.progressPercent,
@@ -269,6 +272,7 @@ export class ReportsService {
             student: {
                 uuid: studentUser.uuid,
                 name: studentUser.name,
+                avatarAssetUuid: studentUser.avatarMediaAsset?.uuid ?? null,
                 grade: enrollment.grade.displayName,
                 section: enrollment.section.name,
             },
@@ -293,6 +297,7 @@ export class ReportsService {
             select: {
                 uuid: true,
                 name: true,
+                avatarMediaAsset: { select: { uuid: true } },
                 student: {
                     include: {
                         enrollments: {
@@ -315,7 +320,7 @@ export class ReportsService {
         // ── جلب المادة ──
         const subject = await this.prisma.subject.findFirst({
             where: { uuid: subjectUuid, schoolId, isDeleted: false },
-            select: { id: true, uuid: true, displayName: true },
+            select: { id: true, uuid: true, displayName: true, coverMediaAsset: { select: { uuid: true } } },
         });
 
         if (!subject) {
@@ -391,15 +396,210 @@ export class ReportsService {
             student: {
                 uuid: studentUser.uuid,
                 name: studentUser.name,
+                avatarAssetUuid: studentUser.avatarMediaAsset?.uuid ?? null,
                 grade: enrollment.grade.displayName,
                 section: enrollment.section.name,
             },
             subject: {
                 uuid: subject.uuid,
                 name: subject.displayName,
+                coverAssetUuid: subject.coverMediaAsset?.uuid ?? null,
             },
             summary,
             lessons,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Endpoint 4: مراجعة إجابات طالب في درس (ADM-073d)
+    // ═══════════════════════════════════════════════════════════════════
+
+    async getStudentLessonReview(
+        schoolId: number,
+        studentUuid: string,
+        lessonUuid: string,
+    ) {
+        // ── جلب الطالب ──
+        const studentUser = await this.prisma.user.findFirst({
+            where: { uuid: studentUuid, schoolId, isDeleted: false },
+            select: {
+                student: { select: { userId: true } },
+            },
+        });
+
+        if (!studentUser?.student) {
+            throw new NotFoundException('الطالب غير موجود');
+        }
+
+        // ── جلب الدرس ──
+        const lesson = await this.prisma.lesson.findFirst({
+            where: { uuid: lessonUuid, schoolId, isDeleted: false },
+            select: { id: true, templateId: true },
+        });
+
+        if (!lesson) {
+            throw new NotFoundException('LESSON_NOT_FOUND');
+        }
+
+        // ── آخر نتيجة ──
+        const result = await this.prisma.studentLessonResult.findFirst({
+            where: { studentId: studentUser.student.userId, lessonId: lesson.id, isDeleted: false },
+            orderBy: { calculatedAt: 'desc' },
+        });
+        if (!result) throw new NotFoundException('RESULT_NOT_FOUND');
+
+        // ── الأسئلة (نفس بنية parent-children.service) ──
+        const questions = await this.prisma.question.findMany({
+            where: { templateId: lesson.templateId, isDeleted: false },
+            orderBy: { orderIndex: 'asc' },
+            include: {
+                options: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    select: {
+                        uuid: true, optionText: true,
+                        imageAssetId: true, imageAsset: { select: { uuid: true } },
+                        audioAssetId: true, audioAsset: { select: { uuid: true } },
+                        isCorrect: true, orderIndex: true,
+                    },
+                },
+                matchingPairs: {
+                    where: { isDeleted: false },
+                    select: {
+                        uuid: true, pairKey: true,
+                        leftText: true, leftImageAsset: { select: { uuid: true } },
+                        leftAudioAsset: { select: { uuid: true } },
+                        rightText: true, rightImageAsset: { select: { uuid: true } },
+                        rightAudioAsset: { select: { uuid: true } },
+                        leftOrderIndex: true, rightOrderIndex: true,
+                    },
+                },
+                orderingItems: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    select: {
+                        uuid: true, itemText: true,
+                        imageAsset: { select: { uuid: true } },
+                        correctIndex: true, orderIndex: true,
+                    },
+                },
+                fillBlanks: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    select: { uuid: true, blankKey: true, orderIndex: true, placeholder: true },
+                },
+                fillAnswers: {
+                    where: { isDeleted: false },
+                    select: { blankKey: true, answerText: true, isPrimary: true },
+                },
+                questionImageAsset: { select: { uuid: true } },
+                questionAudioAsset: { select: { uuid: true } },
+                explanationImageAsset: { select: { uuid: true } },
+                explanationAudioAsset: { select: { uuid: true } },
+            },
+        });
+
+        // ── إجابات الطالب ──
+        const questionIds = questions.map(q => q.id);
+        const studentAnswers = await this.prisma.studentAnswer.findMany({
+            where: {
+                studentId: studentUser.student.userId,
+                questionId: { in: questionIds },
+                isDeleted: false,
+            },
+        });
+        const answerMap = new Map(studentAnswers.map(a => [a.questionId, a]));
+
+        // ── تجميع المراجعة (نفس بنية parent-children.service) ──
+        const reviewQuestions = questions.map(q => {
+            const studentAns = answerMap.get(q.id);
+
+            let parsedAnswer: any = null;
+            if (studentAns) {
+                try {
+                    parsedAnswer = typeof studentAns.answerValue === 'string'
+                        ? JSON.parse(studentAns.answerValue)
+                        : studentAns.answerValue;
+                } catch {
+                    parsedAnswer = studentAns.answerValue;
+                }
+            }
+
+            const base: any = {
+                uuid: q.uuid,
+                type: q.type,
+                orderIndex: q.orderIndex,
+                questionText: q.questionText,
+                instructionText: (q as any).instructionText ?? null,
+                questionImageAssetUuid: q.questionImageAsset?.uuid ?? null,
+                questionAudioAssetUuid: q.questionAudioAsset?.uuid ?? null,
+                score: q.score ?? 1,
+                explanation: {
+                    text: q.explanationText ?? null,
+                    imageAssetUuid: q.explanationImageAsset?.uuid ?? null,
+                    audioAssetUuid: q.explanationAudioAsset?.uuid ?? null,
+                },
+                studentAnswer: studentAns ? {
+                    answerValue: parsedAnswer,
+                    isCorrect: studentAns.isCorrect ?? false,
+                    scoreAwarded: studentAns.scoreAwarded ?? 0,
+                } : null,
+            };
+
+            switch (q.type) {
+                case 'MCQ':
+                case 'TRUE_FALSE':
+                    base.options = q.options.map(o => ({
+                        uuid: o.uuid, optionText: o.optionText,
+                        imageAssetUuid: o.imageAsset?.uuid ?? null,
+                        audioAssetUuid: o.audioAsset?.uuid ?? null,
+                        isCorrect: o.isCorrect, orderIndex: o.orderIndex,
+                    }));
+                    break;
+                case 'MATCHING':
+                    base.matchingPairs = q.matchingPairs.map(p => ({
+                        uuid: p.uuid, pairKey: p.pairKey,
+                        leftText: p.leftText, leftImageAssetUuid: p.leftImageAsset?.uuid ?? null,
+                        leftAudioAssetUuid: (p as any).leftAudioAsset?.uuid ?? null,
+                        rightText: p.rightText, rightImageAssetUuid: p.rightImageAsset?.uuid ?? null,
+                        rightAudioAssetUuid: (p as any).rightAudioAsset?.uuid ?? null,
+                        leftOrderIndex: p.leftOrderIndex, rightOrderIndex: p.rightOrderIndex,
+                    }));
+                    break;
+                case 'ORDERING':
+                case 'IMAGE_STEP_SORTING':
+                    base.orderingItems = q.orderingItems.map(i => ({
+                        uuid: i.uuid, itemText: i.itemText,
+                        imageAssetUuid: i.imageAsset?.uuid ?? null,
+                        correctIndex: i.correctIndex, orderIndex: i.orderIndex,
+                    }));
+                    break;
+                case 'FILL':
+                    base.fillBlanks = q.fillBlanks.map(b => ({
+                        uuid: b.uuid, blankKey: b.blankKey,
+                        orderIndex: b.orderIndex, placeholder: b.placeholder,
+                    }));
+                    base.fillCorrectAnswers = q.fillAnswers.reduce((acc: any, a) => {
+                        if (!acc[a.blankKey]) acc[a.blankKey] = [];
+                        acc[a.blankKey].push(a.answerText.trim());
+                        return acc;
+                    }, {});
+                    break;
+            }
+            return base;
+        });
+
+        return {
+            result: {
+                resultUuid: result.uuid,
+                totalQuestions: result.totalQuestions,
+                correctQuestions: result.correctQuestions,
+                totalPoints: result.totalPoints,
+                earnedPoints: result.earnedPoints,
+                percent: Math.round(result.percent),
+                gradeLabel: result.gradeLabel,
+            },
+            questions: reviewQuestions,
         };
     }
 

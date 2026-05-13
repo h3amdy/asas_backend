@@ -81,4 +81,18 @@ export class ReportsController {
             },
         );
     }
+
+    // ── Endpoint 4: مراجعة إجابات طالب في درس (ADM-073d) ──
+    @Get('students/:studentUuid/lessons/:lessonUuid/review')
+    getStudentLessonReview(
+        @Req() req: any,
+        @Param('studentUuid') studentUuid: string,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        return this.service.getStudentLessonReview(
+            req.schoolContext.id,
+            studentUuid,
+            lessonUuid,
+        );
+    }
 }
