@@ -619,6 +619,14 @@ export class ReportsService {
         dateFilter: any,
         subjectId?: number,
     ) {
+        // ── حل فلتر "آخر يوم" ديناميكياً ──
+        let resolvedDateFilter = dateFilter;
+        if (dateFilter === '__LAST_DAY__') {
+            resolvedDateFilter = await this.resolveLastPublishedDayFilter(
+                schoolId, yearId, termId, sectionId, subjectId,
+            );
+        }
+
         const targetWhere: any = {
             sectionId,
             lesson: {
@@ -632,11 +640,12 @@ export class ReportsService {
         };
 
         if (subjectId) targetWhere.lesson.subjectId = subjectId;
-        if (dateFilter) targetWhere.lesson.publishedAt = dateFilter;
+        if (resolvedDateFilter) targetWhere.lesson.publishedAt = resolvedDateFilter;
 
-        const targets = await this.prisma.lessonTarget.findMany({
+        // DEC-RPT-005: DISTINCT lessonId لتجنب حساب targets مكررة
+        const targets = await this.prisma.lessonTarget.groupBy({
+            by: ['lessonId'],
             where: targetWhere,
-            select: { lessonId: true },
         });
 
         const totalLessons = targets.length;
@@ -701,8 +710,8 @@ export class ReportsService {
             case 'this_week': {
                 const startOfWeek = new Date(now);
                 // السبت = بداية الأسبوع في السياق العربي
-                const day = startOfWeek.getDay();
-                const diff = day === 6 ? 0 : day + 1; // السبت = 6
+                const day = startOfWeek.getDay(); // 0=Sun, 6=Sat
+                const diff = (day + 1) % 7; // السبت(6)→0, الأحد(0)→1, الاثنين(1)→2 ...
                 startOfWeek.setDate(startOfWeek.getDate() - diff);
                 startOfWeek.setHours(0, 0, 0, 0);
                 return { gte: startOfWeek };
@@ -711,15 +720,55 @@ export class ReportsService {
                 const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
                 return { gte: startOfMonth };
             }
-            case 'last_day': {
-                // DEC-RPT-001: لا نستخدم this — يُحسب ديناميكياً في كل query
-                // نرجع null هنا ونعالج في calculateStudentProgress
-                return undefined; // سيُعالج خاصّاً
-            }
+            case 'last_day':
+                // يُعالج خاصاً عبر resolveLastPublishedDayFilter
+                return '__LAST_DAY__';
             case 'full_semester':
             default:
                 return undefined; // لا فلتر زمني
         }
+    }
+
+    /**
+     * DEC-RPT-004: حساب "آخر يوم" ضمن سياق التقرير الحالي
+     * يبحث عن MAX(DATE(publishedAt)) ضمن الفلاتر الحالية
+     */
+    private async resolveLastPublishedDayFilter(
+        schoolId: number,
+        yearId: number,
+        termId: number,
+        sectionId?: number,
+        subjectId?: number,
+    ): Promise<any> {
+        const where: any = {
+            schoolId,
+            yearId,
+            termId,
+            status: { in: ['PUBLISHED', 'DELIVERED'] },
+            isDeleted: false,
+            isActive: true,
+        };
+        if (subjectId) where.subjectId = subjectId;
+
+        // إذا عندنا section نبحث فقط في الدروس المستهدفة لهذه الشعبة
+        if (sectionId) {
+            where.targets = { some: { sectionId } };
+        }
+
+        const lastLesson = await this.prisma.lesson.findFirst({
+            where,
+            orderBy: { publishedAt: 'desc' },
+            select: { publishedAt: true },
+        });
+
+        if (!lastLesson?.publishedAt) return undefined;
+
+        const lastDate = new Date(lastLesson.publishedAt);
+        const startOfDay = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+        const nextDay = new Date(startOfDay);
+        nextDay.setDate(nextDay.getDate() + 1);
+
+        return { gte: startOfDay, lt: nextDay };
     }
 
     private emptyPagination(filters: ReportFilters) {
