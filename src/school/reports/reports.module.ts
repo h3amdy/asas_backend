@@ -5,6 +5,7 @@ import { SchoolCommonModule } from '../common/school-common.module';
 import { StudentProgressSummaryService } from '../common/services/student-progress-summary.service';
 import { ReportsController } from './reports.controller';
 import { GradesReportController } from './grades-report.controller';
+import { ComprehensiveReportController } from './comprehensive-report.controller';
 import { ReportsService } from './reports.service';
 
 /**
@@ -12,13 +13,14 @@ import { ReportsService } from './reports.service';
  *
  * ADM-073: تقرير إنجاز الطلاب
  * ADM-074: تقرير درجات الطلاب
+ * ADM-075: مؤشر الأداء الشامل
  *
  * حالياً: @Roles('ADMIN') فقط
  * مستقبلاً: TEACHER + SUPERVISOR مع فلتر نطاق الإسناد
  */
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
-    controllers: [ReportsController, GradesReportController],
+    controllers: [ReportsController, GradesReportController, ComprehensiveReportController],
     providers: [ReportsService, StudentProgressSummaryService],
 })
 export class ReportsModule { }

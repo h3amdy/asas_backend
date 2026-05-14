@@ -17,6 +17,7 @@ type TimePeriod = 'last_day' | 'this_week' | 'this_month' | 'full_semester';
 
 interface ReportFilters {
     yearUuid?: string;
+    termUuid?: string;
     gradeUuid?: string;
     sectionUuid?: string;
     subjectUuid?: string;
@@ -27,6 +28,7 @@ interface ReportFilters {
 
 interface DetailFilters {
     yearUuid?: string;
+    termUuid?: string;
     period: TimePeriod;
 }
 
@@ -42,7 +44,7 @@ export class ReportsService {
     // ═══════════════════════════════════════════════════════════════════
 
     async getFilterOptions(schoolId: number) {
-        const [years, grades, sections, subjects] = await Promise.all([
+        const [years, grades, sections, subjects, terms] = await Promise.all([
             this.prisma.year.findMany({
                 where: { schoolId, isDeleted: false },
                 select: { uuid: true, name: true, isCurrent: true },
@@ -71,6 +73,16 @@ export class ReportsService {
                 },
                 orderBy: { displayName: 'asc' },
             }),
+            this.prisma.term.findMany({
+                where: { year: { schoolId, isDeleted: false }, isDeleted: false },
+                select: {
+                    uuid: true,
+                    name: true,
+                    isCurrent: true,
+                    year: { select: { uuid: true } },
+                },
+                orderBy: { orderIndex: 'asc' },
+            }),
         ]);
 
         return {
@@ -85,6 +97,12 @@ export class ReportsService {
                 uuid: s.uuid,
                 name: s.displayName,
                 gradeUuid: s.grade.uuid,
+            })),
+            terms: terms.map(t => ({
+                uuid: t.uuid,
+                name: t.name,
+                isCurrent: t.isCurrent,
+                yearUuid: t.year.uuid,
             })),
         };
     }
@@ -101,7 +119,7 @@ export class ReportsService {
         }
 
         // ── 2. تحديد الفصل ──
-        const termId = await this.resolveTermId(yearId);
+        const termId = await this.resolveTermId(yearId, filters.termUuid);
         if (!termId) {
             return { summary: { totalStudents: 0, averageProgress: 0, lateStudentsCount: 0 }, students: [], pagination: this.emptyPagination(filters) };
         }
@@ -224,7 +242,7 @@ export class ReportsService {
 
         const enrollment = studentUser.student.enrollments[0];
         const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
-        const termId = yearId ? await this.resolveTermId(yearId) : null;
+        const termId = yearId ? await this.resolveTermId(yearId, filters.termUuid) : null;
         const dateFilter = this.getDateFilter(filters.period);
 
         // ── ملخص الإنجاز العام ──
@@ -329,7 +347,7 @@ export class ReportsService {
 
         const enrollment = studentUser.student.enrollments[0];
         const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
-        const termId = yearId ? await this.resolveTermId(yearId) : null;
+        const termId = yearId ? await this.resolveTermId(yearId, filters.termUuid) : null;
         const dateFilter = this.getDateFilter(filters.period);
 
         // ── ملخص الإنجاز في المادة ──
@@ -690,7 +708,15 @@ export class ReportsService {
     /**
      * تحديد termId (الفصل الحالي للسنة)
      */
-    private async resolveTermId(yearId: number): Promise<number | null> {
+    private async resolveTermId(yearId: number, termUuid?: string): Promise<number | null> {
+        if (termUuid) {
+            const term = await this.prisma.term.findFirst({
+                where: { uuid: termUuid, yearId, isDeleted: false },
+                select: { id: true },
+            });
+            return term?.id ?? null;
+        }
+        // الافتراضي: الفصل الحالي
         const term = await this.prisma.term.findFirst({
             where: { yearId, isCurrent: true, isDeleted: false },
             select: { id: true },
@@ -781,6 +807,203 @@ export class ReportsService {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // ADM-075: مؤشر الأداء الشامل
+    // DEC-PERF-001: performance = (gradePercent / 100) × progressPercent
+    // ═══════════════════════════════════════════════════════════════════
+
+    async getComprehensiveReport(schoolId: number, filters: ReportFilters) {
+        const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
+        if (!yearId) {
+            return this.emptyComprehensiveReport(filters);
+        }
+
+        const termId = await this.resolveTermId(yearId, filters.termUuid);
+        if (!termId) {
+            return this.emptyComprehensiveReport(filters);
+        }
+
+        // ── جلب الطلاب المسجلين (مع الفلاتر) ──
+        const enrollmentWhere: any = {
+            isCurrent: true,
+            isDeleted: false,
+            yearId,
+            student: { user: { schoolId, isDeleted: false } },
+        };
+        if (filters.gradeUuid) enrollmentWhere.grade = { uuid: filters.gradeUuid };
+        if (filters.sectionUuid) enrollmentWhere.section = { uuid: filters.sectionUuid };
+
+        const totalCount = await this.prisma.studentEnrollment.count({ where: enrollmentWhere });
+
+        const enrollments = await this.prisma.studentEnrollment.findMany({
+            where: enrollmentWhere,
+            include: {
+                student: {
+                    include: {
+                        user: { select: { uuid: true, name: true, avatarMediaAsset: { select: { uuid: true } } } },
+                    },
+                },
+                grade: { select: { uuid: true, displayName: true } },
+                section: { select: { uuid: true, name: true } },
+            },
+            skip: (filters.page - 1) * filters.pageSize,
+            take: filters.pageSize,
+            orderBy: { student: { user: { name: 'asc' } } },
+        });
+
+        const dateFilter = this.getDateFilter(filters.period);
+        const subjectId = filters.subjectUuid
+            ? (await this.prisma.subject.findFirst({ where: { uuid: filters.subjectUuid, schoolId } }))?.id
+            : undefined;
+
+        // ── حساب الإنجاز + الدرجات + الأداء الشامل لكل طالب ──
+        const students = await Promise.all(
+            enrollments.map(async (enrollment) => {
+                const [progress, grades] = await Promise.all([
+                    this.calculateStudentProgress(
+                        schoolId, enrollment.studentId, enrollment.sectionId,
+                        yearId, termId, dateFilter, subjectId,
+                    ),
+                    this.calculateStudentGrades(
+                        schoolId, enrollment.studentId, enrollment.sectionId,
+                        yearId, termId, dateFilter, subjectId,
+                    ),
+                ]);
+
+                // DEC-PERF-001: performance = grade × progress / 100
+                const gradePercent = grades.averagePercent ?? 0;
+                const progressPercent = progress.progressPercent;
+                const performancePercent = Math.round((gradePercent * progressPercent / 100) * 10) / 10;
+
+                return {
+                    uuid: enrollment.student.user.uuid,
+                    name: enrollment.student.user.name,
+                    avatarAssetUuid: enrollment.student.user.avatarMediaAsset?.uuid ?? null,
+                    grade: enrollment.grade.displayName,
+                    gradeUuid: enrollment.grade.uuid,
+                    section: enrollment.section.name,
+                    sectionUuid: enrollment.section.uuid,
+                    progressPercent,
+                    gradePercent: grades.averagePercent,
+                    performancePercent,
+                    evaluationLabel: this.getEvaluationLabel(performancePercent),
+                };
+            }),
+        );
+
+        // ── KPIs ──
+        const averageProgress = students.length > 0
+            ? Math.round((students.reduce((s, st) => s + st.progressPercent, 0) / students.length) * 10) / 10
+            : 0;
+
+        const studentsWithGrades = students.filter(s => s.gradePercent !== null);
+        const averageGrade = studentsWithGrades.length > 0
+            ? Math.round((studentsWithGrades.reduce((s, st) => s + st.gradePercent!, 0) / studentsWithGrades.length) * 10) / 10
+            : null;
+
+        const averagePerformance = students.length > 0
+            ? Math.round((students.reduce((s, st) => s + st.performancePercent, 0) / students.length) * 10) / 10
+            : 0;
+
+        const weakStudentsCount = students.filter(s => s.performancePercent < 50).length;
+
+        // ── Charts: توزيع التقديرات ──
+        const distributionBuckets = [
+            { label: 'ممتاز', min: 90, max: 101, count: 0 },
+            { label: 'جيد جداً', min: 80, max: 90, count: 0 },
+            { label: 'جيد', min: 70, max: 80, count: 0 },
+            { label: 'مقبول', min: 60, max: 70, count: 0 },
+            { label: 'ضعيف', min: 0, max: 60, count: 0 },
+        ];
+
+        // نحتاج كل الطلاب (ليس فقط الصفحة الحالية) للـ charts
+        // لكن لتجنب ثقل الاستعلام، نحسب التوزيع من البيانات المتاحة
+        for (const s of students) {
+            for (const b of distributionBuckets) {
+                if (s.performancePercent >= b.min && s.performancePercent < b.max) {
+                    b.count++;
+                    break;
+                }
+            }
+        }
+
+        const distribution = distributionBuckets.map(b => ({
+            label: b.label,
+            count: b.count,
+            percent: students.length > 0 ? Math.round((b.count / students.length) * 100) : 0,
+        }));
+
+        // ── Charts: أعلى 5 طلاب ──
+        const topStudents = [...students]
+            .sort((a, b) => b.performancePercent - a.performancePercent)
+            .slice(0, 5)
+            .map(s => ({ name: s.name, performancePercent: s.performancePercent }));
+
+        // ── Charts: متوسط الأداء حسب المجموعة (صفوف أو شعب) ──
+        // إذا تم اختيار صف → المحور = الشعب، وإلا → المحور = الصفوف
+        const groupBySection = !!filters.gradeUuid;
+        const groupMap = new Map<string, { progress: number[]; grade: number[]; performance: number[]; label: string }>();
+
+        for (const s of students) {
+            const key = groupBySection ? s.sectionUuid : s.gradeUuid;
+            const label = groupBySection ? s.section : s.grade;
+            if (!groupMap.has(key)) {
+                groupMap.set(key, { progress: [], grade: [], performance: [], label });
+            }
+            const g = groupMap.get(key)!;
+            g.progress.push(s.progressPercent);
+            g.grade.push(s.gradePercent ?? 0);
+            g.performance.push(s.performancePercent);
+        }
+
+        const groupChart = Array.from(groupMap.values()).map(g => ({
+            label: g.label,
+            avgProgress: g.progress.length > 0 ? Math.round(g.progress.reduce((a, b) => a + b, 0) / g.progress.length) : 0,
+            avgGrade: g.grade.length > 0 ? Math.round(g.grade.reduce((a, b) => a + b, 0) / g.grade.length) : 0,
+            avgPerformance: g.performance.length > 0 ? Math.round(g.performance.reduce((a, b) => a + b, 0) / g.performance.length) : 0,
+        }));
+
+        return {
+            kpis: {
+                totalStudents: totalCount,
+                averageProgress,
+                averageGrade,
+                averagePerformance,
+                weakStudentsCount,
+            },
+            students,
+            pagination: {
+                page: filters.page,
+                pageSize: filters.pageSize,
+                totalCount,
+                totalPages: Math.ceil(totalCount / filters.pageSize),
+            },
+            charts: {
+                distribution,
+                topStudents,
+                groupChart,
+                groupBySection,
+            },
+        };
+    }
+
+    private getEvaluationLabel(performance: number): string {
+        if (performance >= 90) return 'ممتاز';
+        if (performance >= 80) return 'جيد جداً';
+        if (performance >= 70) return 'جيد';
+        if (performance >= 60) return 'مقبول';
+        return 'ضعيف';
+    }
+
+    private emptyComprehensiveReport(filters: ReportFilters) {
+        return {
+            kpis: { totalStudents: 0, averageProgress: 0, averageGrade: null, averagePerformance: 0, weakStudentsCount: 0 },
+            students: [],
+            pagination: this.emptyPagination(filters),
+            charts: { distribution: [], topStudents: [], groupChart: [], groupBySection: false },
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // ADM-074: تقرير درجات الطلاب
     // ═══════════════════════════════════════════════════════════════════
 
@@ -792,7 +1015,7 @@ export class ReportsService {
             return { summary: { totalStudents: 0, averageGrade: null, weakStudentsCount: 0 }, students: [], pagination: this.emptyPagination(filters) };
         }
 
-        const termId = await this.resolveTermId(yearId);
+        const termId = await this.resolveTermId(yearId, filters.termUuid);
         if (!termId) {
             return { summary: { totalStudents: 0, averageGrade: null, weakStudentsCount: 0 }, students: [], pagination: this.emptyPagination(filters) };
         }
@@ -900,7 +1123,7 @@ export class ReportsService {
 
         const enrollment = studentUser.student.enrollments[0];
         const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
-        const termId = yearId ? await this.resolveTermId(yearId) : null;
+        const termId = yearId ? await this.resolveTermId(yearId, filters.termUuid) : null;
         const dateFilter = this.getDateFilter(filters.period);
 
         // ── ملخص الدرجات العام ──
@@ -1004,7 +1227,7 @@ export class ReportsService {
 
         const enrollment = studentUser.student.enrollments[0];
         const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
-        const termId = yearId ? await this.resolveTermId(yearId) : null;
+        const termId = yearId ? await this.resolveTermId(yearId, filters.termUuid) : null;
         const dateFilter = this.getDateFilter(filters.period);
 
         // ── ملخص الدرجات في المادة ──
