@@ -779,4 +779,439 @@ export class ReportsService {
             totalPages: 0,
         };
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ADM-074: تقرير درجات الطلاب
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── Endpoint: تقرير درجات الطلاب (ADM-074a) ──
+
+    async getStudentGradesReport(schoolId: number, filters: ReportFilters) {
+        const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
+        if (!yearId) {
+            return { summary: { totalStudents: 0, averageGrade: null, weakStudentsCount: 0 }, students: [], pagination: this.emptyPagination(filters) };
+        }
+
+        const termId = await this.resolveTermId(yearId);
+        if (!termId) {
+            return { summary: { totalStudents: 0, averageGrade: null, weakStudentsCount: 0 }, students: [], pagination: this.emptyPagination(filters) };
+        }
+
+        // ── جلب الطلاب المسجلين ──
+        const enrollmentWhere: any = {
+            isCurrent: true,
+            isDeleted: false,
+            yearId,
+            student: { user: { schoolId, isDeleted: false } },
+        };
+        if (filters.gradeUuid) enrollmentWhere.grade = { uuid: filters.gradeUuid };
+        if (filters.sectionUuid) enrollmentWhere.section = { uuid: filters.sectionUuid };
+
+        const totalCount = await this.prisma.studentEnrollment.count({ where: enrollmentWhere });
+
+        const enrollments = await this.prisma.studentEnrollment.findMany({
+            where: enrollmentWhere,
+            include: {
+                student: {
+                    include: {
+                        user: { select: { uuid: true, name: true, avatarMediaAsset: { select: { uuid: true } } } },
+                    },
+                },
+                grade: { select: { displayName: true } },
+                section: { select: { name: true } },
+            },
+            skip: (filters.page - 1) * filters.pageSize,
+            take: filters.pageSize,
+            orderBy: { student: { user: { name: 'asc' } } },
+        });
+
+        const dateFilter = this.getDateFilter(filters.period);
+        const subjectId = filters.subjectUuid
+            ? (await this.prisma.subject.findFirst({ where: { uuid: filters.subjectUuid, schoolId } }))?.id
+            : undefined;
+
+        const students = await Promise.all(
+            enrollments.map(async (enrollment) => {
+                const grades = await this.calculateStudentGrades(
+                    schoolId, enrollment.studentId, enrollment.sectionId,
+                    yearId, termId, dateFilter, subjectId,
+                );
+                return {
+                    uuid: enrollment.student.user.uuid,
+                    name: enrollment.student.user.name,
+                    avatarAssetUuid: enrollment.student.user.avatarMediaAsset?.uuid ?? null,
+                    grade: enrollment.grade.displayName,
+                    section: enrollment.section.name,
+                    ...grades,
+                };
+            }),
+        );
+
+        // ── الملخص ──
+        const studentsWithGrades = students.filter(s => s.averagePercent !== null);
+        const averageGrade = studentsWithGrades.length > 0
+            ? Math.round((studentsWithGrades.reduce((sum, s) => sum + s.averagePercent!, 0) / studentsWithGrades.length) * 10) / 10
+            : null;
+        const weakStudentsCount = studentsWithGrades.filter(s => s.averagePercent! < 50).length;
+
+        return {
+            summary: { totalStudents: totalCount, averageGrade, weakStudentsCount },
+            students,
+            pagination: {
+                page: filters.page,
+                pageSize: filters.pageSize,
+                totalCount,
+                totalPages: Math.ceil(totalCount / filters.pageSize),
+            },
+        };
+    }
+
+    // ── Endpoint: تفاصيل درجات طالب (ADM-074b) ──
+
+    async getStudentGradesDetail(
+        schoolId: number,
+        studentUuid: string,
+        filters: DetailFilters,
+    ) {
+        const studentUser = await this.prisma.user.findFirst({
+            where: { uuid: studentUuid, schoolId, isDeleted: false },
+            select: {
+                uuid: true,
+                name: true,
+                avatarMediaAsset: { select: { uuid: true } },
+                student: {
+                    include: {
+                        enrollments: {
+                            where: { isCurrent: true, isDeleted: false },
+                            include: {
+                                grade: { select: { displayName: true, id: true } },
+                                section: { select: { name: true, id: true } },
+                            },
+                            take: 1,
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!studentUser?.student?.enrollments[0]) {
+            throw new NotFoundException('الطالب غير موجود أو ليس لديه قيد حالي');
+        }
+
+        const enrollment = studentUser.student.enrollments[0];
+        const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
+        const termId = yearId ? await this.resolveTermId(yearId) : null;
+        const dateFilter = this.getDateFilter(filters.period);
+
+        // ── ملخص الدرجات العام ──
+        let overallGrades = { averagePercent: null as number | null, earnedPoints: 0, totalPoints: 0, evaluatedLessonsCount: 0 };
+        if (yearId && termId) {
+            overallGrades = await this.calculateStudentGrades(
+                schoolId, studentUser.student.userId, enrollment.sectionId,
+                yearId, termId, dateFilter,
+            );
+        }
+
+        // ── الدرجات حسب المواد ──
+        const subjects = await this.prisma.subject.findMany({
+            where: {
+                schoolId,
+                isDeleted: false,
+                isActive: true,
+                grade: { id: enrollment.gradeId },
+            },
+            select: { id: true, uuid: true, displayName: true, coverMediaAsset: { select: { uuid: true } } },
+            orderBy: { displayName: 'asc' },
+        });
+
+        const subjectGrades = yearId && termId
+            ? await Promise.all(
+                subjects.map(async (subject) => {
+                    const grades = await this.calculateStudentGrades(
+                        schoolId, studentUser.student!.userId, enrollment.sectionId,
+                        yearId, termId, dateFilter, subject.id,
+                    );
+                    return {
+                        uuid: subject.uuid,
+                        name: subject.displayName,
+                        coverAssetUuid: subject.coverMediaAsset?.uuid ?? null,
+                        ...grades,
+                    };
+                }),
+            )
+            : [];
+
+        return {
+            student: {
+                uuid: studentUser.uuid,
+                name: studentUser.name,
+                avatarAssetUuid: studentUser.avatarMediaAsset?.uuid ?? null,
+                grade: enrollment.grade.displayName,
+                section: enrollment.section.name,
+            },
+            summary: {
+                averagePercent: overallGrades.averagePercent,
+                totalSubjects: subjects.length,
+                evaluatedLessonsCount: overallGrades.evaluatedLessonsCount,
+                earnedPoints: overallGrades.earnedPoints,
+                totalPoints: overallGrades.totalPoints,
+            },
+            subjects: subjectGrades,
+        };
+    }
+
+    // ── Endpoint: درجات طالب في مادة (ADM-074c) ──
+
+    async getStudentSubjectGrades(
+        schoolId: number,
+        studentUuid: string,
+        subjectUuid: string,
+        filters: DetailFilters,
+    ) {
+        const studentUser = await this.prisma.user.findFirst({
+            where: { uuid: studentUuid, schoolId, isDeleted: false },
+            select: {
+                uuid: true,
+                name: true,
+                avatarMediaAsset: { select: { uuid: true } },
+                student: {
+                    include: {
+                        enrollments: {
+                            where: { isCurrent: true, isDeleted: false },
+                            include: {
+                                grade: { select: { displayName: true } },
+                                section: { select: { name: true, id: true } },
+                            },
+                            take: 1,
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!studentUser?.student?.enrollments[0]) {
+            throw new NotFoundException('الطالب غير موجود');
+        }
+
+        const subject = await this.prisma.subject.findFirst({
+            where: { uuid: subjectUuid, schoolId, isDeleted: false },
+            select: { id: true, uuid: true, displayName: true, coverMediaAsset: { select: { uuid: true } } },
+        });
+
+        if (!subject) {
+            throw new NotFoundException('المادة غير موجودة');
+        }
+
+        const enrollment = studentUser.student.enrollments[0];
+        const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
+        const termId = yearId ? await this.resolveTermId(yearId) : null;
+        const dateFilter = this.getDateFilter(filters.period);
+
+        // ── ملخص الدرجات في المادة ──
+        let summary = { averagePercent: null as number | null, earnedPoints: 0, totalPoints: 0, evaluatedLessonsCount: 0 };
+        if (yearId && termId) {
+            summary = await this.calculateStudentGrades(
+                schoolId, studentUser.student.userId, enrollment.sectionId,
+                yearId, termId, dateFilter, subject.id,
+            );
+        }
+
+        // ── قائمة الدروس المنجزة مع درجاتها ──
+        const lessonTargetWhere: any = {
+            sectionId: enrollment.sectionId,
+            lesson: {
+                schoolId,
+                subjectId: subject.id,
+                status: { in: ['PUBLISHED', 'DELIVERED'] },
+                isDeleted: false,
+                isActive: true,
+            },
+        };
+
+        if (yearId) lessonTargetWhere.lesson.yearId = yearId;
+        if (termId) lessonTargetWhere.lesson.termId = termId;
+
+        // ── حل فلتر الفترة ──
+        let resolvedDateFilter = dateFilter;
+        if (dateFilter === '__LAST_DAY__' && yearId && termId) {
+            resolvedDateFilter = await this.resolveLastPublishedDayFilter(
+                schoolId, yearId, termId, enrollment.sectionId, subject.id,
+            );
+        }
+        if (resolvedDateFilter && resolvedDateFilter !== '__LAST_DAY__') {
+            lessonTargetWhere.lesson.publishedAt = resolvedDateFilter;
+        }
+
+        const targets = await this.prisma.lessonTarget.findMany({
+            where: lessonTargetWhere,
+            select: {
+                lessonId: true,
+                lesson: {
+                    select: {
+                        uuid: true,
+                        template: { select: { title: true } },
+                        publishedAt: true,
+                    },
+                },
+            },
+            orderBy: { lesson: { publishedAt: 'desc' } },
+        });
+
+        // ── Deduplicate by lessonId ──
+        const seenLessonIds = new Set<number>();
+        const uniqueTargets = targets.filter(t => {
+            if (seenLessonIds.has(t.lessonId)) return false;
+            seenLessonIds.add(t.lessonId);
+            return true;
+        });
+
+        // ── جلب نتائج الطالب لهذه الدروس (آخر محاولة لكل درس) ──
+        const lessonIds = uniqueTargets.map(t => t.lessonId);
+        const results = await this.prisma.studentLessonResult.findMany({
+            where: {
+                studentId: studentUser.student!.userId,
+                lessonId: { in: lessonIds },
+                isDeleted: false,
+            },
+            orderBy: { calculatedAt: 'desc' },
+        });
+
+        // DEC-GRD-003: آخر محاولة لكل درس
+        const resultMap = new Map<number, typeof results[0]>();
+        for (const r of results) {
+            if (!resultMap.has(r.lessonId)) {
+                resultMap.set(r.lessonId, r);
+            }
+        }
+
+        const lessons = uniqueTargets.map(t => {
+            const result = resultMap.get(t.lessonId);
+            return {
+                uuid: t.lesson.uuid,
+                title: t.lesson.template.title,
+                publishedAt: t.lesson.publishedAt,
+                isCompleted: !!result,
+                completedAt: result?.calculatedAt ?? null,
+                totalQuestions: result?.totalQuestions ?? null,
+                correctQuestions: result?.correctQuestions ?? null,
+                earnedPoints: result?.earnedPoints ?? null,
+                totalPoints: result?.totalPoints ?? null,
+                percent: result ? Math.round(result.percent) : null,
+                hasReview: !!result,
+            };
+        });
+
+        return {
+            student: {
+                uuid: studentUser.uuid,
+                name: studentUser.name,
+                avatarAssetUuid: studentUser.avatarMediaAsset?.uuid ?? null,
+                grade: enrollment.grade.displayName,
+                section: enrollment.section.name,
+            },
+            subject: {
+                uuid: subject.uuid,
+                name: subject.displayName,
+                coverAssetUuid: subject.coverMediaAsset?.uuid ?? null,
+            },
+            summary,
+            lessons,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Helper: حساب درجات طالب (weighted points aggregation)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * DEC-GRD-001: المتوسط من الدروس المنجزة فقط
+     * DEC-GRD-002: غير المنجزة لا تدخل بصفر
+     * DEC-GRD-003: آخر محاولة (ORDER BY calculatedAt DESC)
+     * DEC-GRD-008: weighted points — SUM(earned) / SUM(total)
+     */
+    private async calculateStudentGrades(
+        schoolId: number,
+        studentId: number,
+        sectionId: number,
+        yearId: number,
+        termId: number,
+        dateFilter: any,
+        subjectId?: number,
+    ) {
+        // ── حل فلتر "آخر يوم" ──
+        let resolvedDateFilter = dateFilter;
+        if (dateFilter === '__LAST_DAY__') {
+            resolvedDateFilter = await this.resolveLastPublishedDayFilter(
+                schoolId, yearId, termId, sectionId, subjectId,
+            );
+        }
+
+        // ── الدروس المستهدفة ──
+        const targetWhere: any = {
+            sectionId,
+            lesson: {
+                schoolId,
+                yearId,
+                termId,
+                status: { in: ['PUBLISHED', 'DELIVERED'] },
+                isDeleted: false,
+                isActive: true,
+            },
+        };
+        if (subjectId) targetWhere.lesson.subjectId = subjectId;
+        if (resolvedDateFilter) targetWhere.lesson.publishedAt = resolvedDateFilter;
+
+        const targets = await this.prisma.lessonTarget.groupBy({
+            by: ['lessonId'],
+            where: targetWhere,
+        });
+
+        if (targets.length === 0) {
+            return { averagePercent: null, earnedPoints: 0, totalPoints: 0, evaluatedLessonsCount: 0 };
+        }
+
+        const lessonIds = targets.map(t => t.lessonId);
+
+        // ── نتائج الطالب ──
+        const results = await this.prisma.studentLessonResult.findMany({
+            where: {
+                studentId,
+                lessonId: { in: lessonIds },
+                isDeleted: false,
+            },
+            select: { lessonId: true, earnedPoints: true, totalPoints: true, calculatedAt: true },
+            orderBy: { calculatedAt: 'desc' },
+        });
+
+        // DEC-GRD-003: آخر محاولة لكل درس
+        const lastResultPerLesson = new Map<number, { earnedPoints: number; totalPoints: number }>();
+        for (const r of results) {
+            if (!lastResultPerLesson.has(r.lessonId)) {
+                lastResultPerLesson.set(r.lessonId, { earnedPoints: r.earnedPoints, totalPoints: r.totalPoints });
+            }
+        }
+
+        if (lastResultPerLesson.size === 0) {
+            return { averagePercent: null, earnedPoints: 0, totalPoints: 0, evaluatedLessonsCount: 0 };
+        }
+
+        // DEC-GRD-008: weighted — SUM(earned) / SUM(total)
+        let totalEarned = 0;
+        let totalMax = 0;
+        for (const [, r] of lastResultPerLesson) {
+            totalEarned += r.earnedPoints;
+            totalMax += r.totalPoints;
+        }
+
+        const averagePercent = totalMax > 0
+            ? Math.round((totalEarned / totalMax) * 1000) / 10
+            : null;
+
+        return {
+            averagePercent,
+            earnedPoints: Math.round(totalEarned * 10) / 10,
+            totalPoints: Math.round(totalMax * 10) / 10,
+            evaluatedLessonsCount: lastResultPerLesson.size,
+        };
+    }
 }
