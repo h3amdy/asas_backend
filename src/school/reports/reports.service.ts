@@ -834,7 +834,8 @@ export class ReportsService {
 
         const totalCount = await this.prisma.studentEnrollment.count({ where: enrollmentWhere });
 
-        const enrollments = await this.prisma.studentEnrollment.findMany({
+        // جلب كل الطلاب (بدون pagination) لحساب الإحصائيات
+        const allEnrollments = await this.prisma.studentEnrollment.findMany({
             where: enrollmentWhere,
             include: {
                 student: {
@@ -845,8 +846,6 @@ export class ReportsService {
                 grade: { select: { uuid: true, displayName: true } },
                 section: { select: { uuid: true, name: true } },
             },
-            skip: (filters.page - 1) * filters.pageSize,
-            take: filters.pageSize,
             orderBy: { student: { user: { name: 'asc' } } },
         });
 
@@ -856,8 +855,8 @@ export class ReportsService {
             : undefined;
 
         // ── حساب الإنجاز + الدرجات + الأداء الشامل لكل طالب ──
-        const students = await Promise.all(
-            enrollments.map(async (enrollment) => {
+        const allStudents = await Promise.all(
+            allEnrollments.map(async (enrollment) => {
                 const [progress, grades] = await Promise.all([
                     this.calculateStudentProgress(
                         schoolId, enrollment.studentId, enrollment.sectionId,
@@ -890,23 +889,27 @@ export class ReportsService {
             }),
         );
 
-        // ── KPIs ──
-        const averageProgress = students.length > 0
-            ? Math.round((students.reduce((s, st) => s + st.progressPercent, 0) / students.length) * 10) / 10
+        // ── Pagination: شريحة الصفحة الحالية للجدول فقط ──
+        const startIndex = (filters.page - 1) * filters.pageSize;
+        const paginatedStudents = allStudents.slice(startIndex, startIndex + filters.pageSize);
+
+        // ── KPIs (من كل الطلاب) ──
+        const averageProgress = allStudents.length > 0
+            ? Math.round((allStudents.reduce((s, st) => s + st.progressPercent, 0) / allStudents.length) * 10) / 10
             : 0;
 
-        const studentsWithGrades = students.filter(s => s.gradePercent !== null);
+        const studentsWithGrades = allStudents.filter(s => s.gradePercent !== null);
         const averageGrade = studentsWithGrades.length > 0
             ? Math.round((studentsWithGrades.reduce((s, st) => s + st.gradePercent!, 0) / studentsWithGrades.length) * 10) / 10
             : null;
 
-        const averagePerformance = students.length > 0
-            ? Math.round((students.reduce((s, st) => s + st.performancePercent, 0) / students.length) * 10) / 10
+        const averagePerformance = allStudents.length > 0
+            ? Math.round((allStudents.reduce((s, st) => s + st.performancePercent, 0) / allStudents.length) * 10) / 10
             : 0;
 
-        const weakStudentsCount = students.filter(s => s.performancePercent < 50).length;
+        const weakStudentsCount = allStudents.filter(s => s.performancePercent < 50).length;
 
-        // ── Charts: توزيع التقديرات ──
+        // ── Charts: توزيع التقديرات (من كل الطلاب) ──
         const distributionBuckets = [
             { label: 'ممتاز', min: 90, max: 101, count: 0 },
             { label: 'جيد جداً', min: 80, max: 90, count: 0 },
@@ -915,9 +918,7 @@ export class ReportsService {
             { label: 'ضعيف', min: 0, max: 60, count: 0 },
         ];
 
-        // نحتاج كل الطلاب (ليس فقط الصفحة الحالية) للـ charts
-        // لكن لتجنب ثقل الاستعلام، نحسب التوزيع من البيانات المتاحة
-        for (const s of students) {
+        for (const s of allStudents) {
             for (const b of distributionBuckets) {
                 if (s.performancePercent >= b.min && s.performancePercent < b.max) {
                     b.count++;
@@ -929,21 +930,20 @@ export class ReportsService {
         const distribution = distributionBuckets.map(b => ({
             label: b.label,
             count: b.count,
-            percent: students.length > 0 ? Math.round((b.count / students.length) * 100) : 0,
+            percent: allStudents.length > 0 ? Math.round((b.count / allStudents.length) * 100) : 0,
         }));
 
-        // ── Charts: أعلى 5 طلاب ──
-        const topStudents = [...students]
+        // ── Charts: أعلى 5 طلاب (من كل الطلاب) ──
+        const topStudents = [...allStudents]
             .sort((a, b) => b.performancePercent - a.performancePercent)
             .slice(0, 5)
             .map(s => ({ name: s.name, performancePercent: s.performancePercent }));
 
-        // ── Charts: متوسط الأداء حسب المجموعة (صفوف أو شعب) ──
-        // إذا تم اختيار صف → المحور = الشعب، وإلا → المحور = الصفوف
+        // ── Charts: متوسط الأداء حسب المجموعة (من كل الطلاب) ──
         const groupBySection = !!filters.gradeUuid;
         const groupMap = new Map<string, { progress: number[]; grade: number[]; performance: number[]; label: string }>();
 
-        for (const s of students) {
+        for (const s of allStudents) {
             const key = groupBySection ? s.sectionUuid : s.gradeUuid;
             const label = groupBySection ? s.section : s.grade;
             if (!groupMap.has(key)) {
@@ -970,7 +970,7 @@ export class ReportsService {
                 averagePerformance,
                 weakStudentsCount,
             },
-            students,
+            students: paginatedStudents,
             pagination: {
                 page: filters.page,
                 pageSize: filters.pageSize,
