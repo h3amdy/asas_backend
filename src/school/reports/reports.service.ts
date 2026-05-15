@@ -889,9 +889,8 @@ export class ReportsService {
             }),
         );
 
-        // ── Pagination: شريحة الصفحة الحالية للجدول فقط ──
-        const startIndex = (filters.page - 1) * filters.pageSize;
-        const paginatedStudents = allStudents.slice(startIndex, startIndex + filters.pageSize);
+        // ── Pagination: تُدار محلياً في الواجهة ──
+        // الباكند يُعيد كل الطلاب والواجهة تقسمهم على صفحات
 
         // ── KPIs (من كل الطلاب) ──
         const averageProgress = allStudents.length > 0
@@ -970,13 +969,7 @@ export class ReportsService {
                 averagePerformance,
                 weakStudentsCount,
             },
-            students: paginatedStudents,
-            pagination: {
-                page: filters.page,
-                pageSize: filters.pageSize,
-                totalCount,
-                totalPages: Math.ceil(totalCount / filters.pageSize),
-            },
+            students: allStudents,
             charts: {
                 distribution,
                 topStudents,
