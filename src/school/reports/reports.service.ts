@@ -997,7 +997,293 @@ export class ReportsService {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // ADM-074: تقرير درجات الطلاب
+    // ADM-076a: تفاصيل الأداء الشامل لطالب (كل المواد)
+    // ═══════════════════════════════════════════════════════════════════
+
+    async getStudentComprehensiveDetail(
+        schoolId: number,
+        studentUuid: string,
+        filters: DetailFilters,
+    ) {
+        // ── جلب الطالب + قيده ──
+        const studentUser = await this.prisma.user.findFirst({
+            where: { uuid: studentUuid, schoolId, isDeleted: false },
+            select: {
+                uuid: true,
+                name: true,
+                avatarMediaAsset: { select: { uuid: true } },
+                student: {
+                    include: {
+                        enrollments: {
+                            where: { isCurrent: true, isDeleted: false },
+                            include: {
+                                grade: { select: { displayName: true, id: true } },
+                                section: { select: { name: true, id: true } },
+                            },
+                            take: 1,
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!studentUser?.student?.enrollments[0]) {
+            throw new NotFoundException('الطالب غير موجود أو ليس لديه قيد حالي');
+        }
+
+        const enrollment = studentUser.student.enrollments[0];
+        const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
+        const termId = yearId ? await this.resolveTermId(yearId, filters.termUuid) : null;
+        const dateFilter = this.getDateFilter(filters.period);
+
+        // ── المواد المرتبطة بالصف ──
+        const subjects = await this.prisma.subject.findMany({
+            where: {
+                schoolId,
+                isDeleted: false,
+                isActive: true,
+                grade: { id: enrollment.gradeId },
+            },
+            select: { id: true, uuid: true, displayName: true, coverMediaAsset: { select: { uuid: true } } },
+            orderBy: { displayName: 'asc' },
+        });
+
+        // ── حساب الإنجاز + الدرجات لكل مادة ──
+        let totalProgressSum = 0;
+        let totalGradeSum = 0;
+        let gradedSubjectsCount = 0;
+        let overallTotalLessons = 0;
+        let overallCompletedLessons = 0;
+
+        const subjectResults = yearId && termId
+            ? await Promise.all(
+                subjects.map(async (subject) => {
+                    const progress = await this.calculateStudentProgress(
+                        schoolId, studentUser.student!.userId, enrollment.sectionId,
+                        yearId, termId, dateFilter, subject.id,
+                    );
+                    const grades = await this.calculateStudentGrades(
+                        schoolId, studentUser.student!.userId, enrollment.sectionId,
+                        yearId, termId, dateFilter, subject.id,
+                    );
+
+                    const gradePercent = grades.averagePercent ?? 0;
+                    const progressPercent = progress.progressPercent;
+                    const performancePercent = Math.round((progressPercent * gradePercent) / 100 * 10) / 10;
+
+                    totalProgressSum += progressPercent;
+                    overallTotalLessons += progress.totalLessons;
+                    overallCompletedLessons += progress.completedLessons;
+
+                    if (grades.averagePercent !== null) {
+                        totalGradeSum += grades.averagePercent;
+                        gradedSubjectsCount++;
+                    }
+
+                    return {
+                        uuid: subject.uuid,
+                        name: subject.displayName,
+                        coverAssetUuid: subject.coverMediaAsset?.uuid ?? null,
+                        progressPercent,
+                        totalLessons: progress.totalLessons,
+                        completedLessons: progress.completedLessons,
+                        gradePercent: grades.averagePercent,
+                        performancePercent,
+                        evaluationLabel: this.getEvaluationLabel(performancePercent),
+                    };
+                }),
+            )
+            : [];
+
+        // ── KPIs الإجمالية ──
+        const avgProgress = subjects.length > 0
+            ? Math.round((totalProgressSum / subjects.length) * 10) / 10
+            : 0;
+        const avgGrade = gradedSubjectsCount > 0
+            ? Math.round((totalGradeSum / gradedSubjectsCount) * 10) / 10
+            : null;
+        const avgPerformance = avgGrade !== null
+            ? Math.round((avgProgress * avgGrade) / 100 * 10) / 10
+            : 0;
+
+        return {
+            student: {
+                uuid: studentUser.uuid,
+                name: studentUser.name,
+                avatarAssetUuid: studentUser.avatarMediaAsset?.uuid ?? null,
+                grade: enrollment.grade.displayName,
+                section: enrollment.section.name,
+            },
+            overallKpis: {
+                performancePercent: avgPerformance,
+                gradePercent: avgGrade,
+                progressPercent: avgProgress,
+                evaluationLabel: this.getEvaluationLabel(avgPerformance),
+                totalLessons: overallTotalLessons,
+                completedLessons: overallCompletedLessons,
+                remainingLessons: overallTotalLessons - overallCompletedLessons,
+            },
+            subjects: subjectResults,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ADM-076b: تفاصيل الأداء الشامل لطالب في مادة (الدروس)
+    // ═══════════════════════════════════════════════════════════════════
+
+    async getStudentSubjectComprehensive(
+        schoolId: number,
+        studentUuid: string,
+        subjectUuid: string,
+        filters: DetailFilters,
+    ) {
+        // ── جلب الطالب ──
+        const studentUser = await this.prisma.user.findFirst({
+            where: { uuid: studentUuid, schoolId, isDeleted: false },
+            select: {
+                uuid: true,
+                name: true,
+                avatarMediaAsset: { select: { uuid: true } },
+                student: {
+                    include: {
+                        enrollments: {
+                            where: { isCurrent: true, isDeleted: false },
+                            include: {
+                                grade: { select: { displayName: true } },
+                                section: { select: { name: true, id: true } },
+                            },
+                            take: 1,
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!studentUser?.student?.enrollments[0]) {
+            throw new NotFoundException('الطالب غير موجود');
+        }
+
+        // ── جلب المادة ──
+        const subject = await this.prisma.subject.findFirst({
+            where: { uuid: subjectUuid, schoolId, isDeleted: false },
+            select: { id: true, uuid: true, displayName: true },
+        });
+
+        if (!subject) {
+            throw new NotFoundException('المادة غير موجودة');
+        }
+
+        const enrollment = studentUser.student.enrollments[0];
+        const yearId = await this.resolveYearId(schoolId, filters.yearUuid);
+        const termId = yearId ? await this.resolveTermId(yearId, filters.termUuid) : null;
+        const dateFilter = this.getDateFilter(filters.period);
+
+        // ── ملخص الإنجاز + الدرجات ──
+        let summary = { totalLessons: 0, completedLessons: 0, progressPercent: 0 };
+        let grades = { averagePercent: null as number | null, earnedPoints: 0, totalPoints: 0, evaluatedLessonsCount: 0 };
+
+        if (yearId && termId) {
+            summary = await this.calculateStudentProgress(
+                schoolId, studentUser.student.userId, enrollment.sectionId,
+                yearId, termId, dateFilter, subject.id,
+            );
+            grades = await this.calculateStudentGrades(
+                schoolId, studentUser.student.userId, enrollment.sectionId,
+                yearId, termId, dateFilter, subject.id,
+            );
+        }
+
+        const gradePercent = grades.averagePercent ?? 0;
+        const performancePercent = Math.round((summary.progressPercent * gradePercent) / 100 * 10) / 10;
+
+        // ── قائمة الدروس ──
+        const lessonTargetWhere: any = {
+            sectionId: enrollment.sectionId,
+            lesson: {
+                schoolId,
+                subjectId: subject.id,
+                status: { in: ['PUBLISHED', 'DELIVERED'] },
+                isDeleted: false,
+                isActive: true,
+            },
+        };
+
+        if (yearId) lessonTargetWhere.lesson.yearId = yearId;
+        if (termId) lessonTargetWhere.lesson.termId = termId;
+        if (dateFilter) lessonTargetWhere.lesson.publishedAt = dateFilter;
+
+        const targets = await this.prisma.lessonTarget.findMany({
+            where: lessonTargetWhere,
+            include: {
+                lesson: {
+                    include: {
+                        template: { select: { title: true } },
+                        studentResults: {
+                            where: {
+                                studentId: studentUser.student.userId,
+                                isDeleted: false,
+                            },
+                            select: { lessonId: true, earnedPoints: true, totalPoints: true, calculatedAt: true },
+                            orderBy: { calculatedAt: 'desc' as const },
+                            take: 1,
+                        },
+                    },
+                },
+            },
+        });
+
+        // Sort by publishedAt + remove duplicates
+        targets.sort((a, b) => {
+            const dateA = a.lesson.publishedAt?.getTime() ?? 0;
+            const dateB = b.lesson.publishedAt?.getTime() ?? 0;
+            return dateA - dateB;
+        });
+
+        const seenLessonIds = new Set<number>();
+        const lessons = targets
+            .filter(t => {
+                if (seenLessonIds.has(t.lessonId)) return false;
+                seenLessonIds.add(t.lessonId);
+                return true;
+            })
+            .map(t => {
+                const result = t.lesson.studentResults[0];
+                const isCompleted = !!result;
+                const scorePercent = isCompleted && result.totalPoints > 0
+                    ? Math.round((result.earnedPoints / result.totalPoints) * 1000) / 10
+                    : null;
+
+                return {
+                    uuid: t.lesson.uuid,
+                    title: t.lesson.template.title,
+                    status: isCompleted ? 'completed' : 'pending',
+                    scorePercent,
+                    publishedAt: t.lesson.publishedAt,
+                };
+            });
+
+        return {
+            student: {
+                uuid: studentUser.uuid,
+                name: studentUser.name,
+                avatarAssetUuid: studentUser.avatarMediaAsset?.uuid ?? null,
+                grade: enrollment.grade.displayName,
+                section: enrollment.section.name,
+            },
+            subjectKpis: {
+                subjectName: subject.displayName,
+                performancePercent,
+                gradePercent: grades.averagePercent,
+                progressPercent: summary.progressPercent,
+                evaluationLabel: this.getEvaluationLabel(performancePercent),
+                totalLessons: summary.totalLessons,
+                completedLessons: summary.completedLessons,
+                remainingLessons: summary.totalLessons - summary.completedLessons,
+            },
+            lessons,
+        };
+    }
+
     // ═══════════════════════════════════════════════════════════════════
 
     // ── Endpoint: تقرير درجات الطلاب (ADM-074a) ──

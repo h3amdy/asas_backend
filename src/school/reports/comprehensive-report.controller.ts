@@ -1,15 +1,17 @@
 // src/school/reports/comprehensive-report.controller.ts
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { SchoolJwtAuthGuard } from '../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../common/guards/roles.guard';
 
 /**
- * 📊 Comprehensive Performance Report Controller — ADM-075
+ * 📊 Comprehensive Performance Report Controller — ADM-075 / ADM-076
  *
- * GET /school/reports/comprehensive/filter-options  → خيارات الفلاتر (♻️)
- * GET /school/reports/comprehensive                 → التقرير الشامل
+ * GET /school/reports/comprehensive/filter-options                              → خيارات الفلاتر (♻️)
+ * GET /school/reports/comprehensive                                            → التقرير الشامل
+ * GET /school/reports/comprehensive/students/:studentUuid                      → ADM-076a تفاصيل طالب
+ * GET /school/reports/comprehensive/students/:studentUuid/subjects/:subjectUuid → ADM-076b طالب + مادة
  */
 @Controller('school/reports/comprehensive')
 @UseGuards(SchoolJwtAuthGuard, SchoolContextGuard, RolesGuard)
@@ -47,4 +49,47 @@ export class ComprehensiveReportController {
             pageSize: pageSize ? parseInt(pageSize, 10) : 20,
         });
     }
+
+    // ── ADM-076a: تفاصيل الأداء الشامل لطالب (كل المواد) ──
+    @Get('students/:studentUuid')
+    getStudentComprehensiveDetail(
+        @Req() req: any,
+        @Param('studentUuid') studentUuid: string,
+        @Query('yearUuid') yearUuid?: string,
+        @Query('termUuid') termUuid?: string,
+        @Query('period') period?: string,
+    ) {
+        return this.service.getStudentComprehensiveDetail(
+            req.schoolContext.id,
+            studentUuid,
+            {
+                yearUuid,
+                termUuid,
+                period: period as any ?? 'full_semester',
+            },
+        );
+    }
+
+    // ── ADM-076b: تفاصيل الأداء الشامل لطالب في مادة (الدروس) ──
+    @Get('students/:studentUuid/subjects/:subjectUuid')
+    getStudentSubjectComprehensive(
+        @Req() req: any,
+        @Param('studentUuid') studentUuid: string,
+        @Param('subjectUuid') subjectUuid: string,
+        @Query('yearUuid') yearUuid?: string,
+        @Query('termUuid') termUuid?: string,
+        @Query('period') period?: string,
+    ) {
+        return this.service.getStudentSubjectComprehensive(
+            req.schoolContext.id,
+            studentUuid,
+            subjectUuid,
+            {
+                yearUuid,
+                termUuid,
+                period: period as any ?? 'full_semester',
+            },
+        );
+    }
 }
+
