@@ -1196,6 +1196,14 @@ export class ReportsService {
         const gradePercent = grades.averagePercent ?? 0;
         const performancePercent = Math.round((summary.progressPercent * gradePercent) / 100 * 10) / 10;
 
+        // ── حل فلتر "آخر يوم" ديناميكياً ──
+        let resolvedDateFilter = dateFilter;
+        if (dateFilter === '__LAST_DAY__' && yearId && termId) {
+            resolvedDateFilter = await this.resolveLastPublishedDayFilter(
+                schoolId, yearId, termId, enrollment.sectionId, subject.id,
+            );
+        }
+
         // ── قائمة الدروس ──
         const lessonTargetWhere: any = {
             sectionId: enrollment.sectionId,
@@ -1210,7 +1218,7 @@ export class ReportsService {
 
         if (yearId) lessonTargetWhere.lesson.yearId = yearId;
         if (termId) lessonTargetWhere.lesson.termId = termId;
-        if (dateFilter) lessonTargetWhere.lesson.publishedAt = dateFilter;
+        if (resolvedDateFilter) lessonTargetWhere.lesson.publishedAt = resolvedDateFilter;
 
         const targets = await this.prisma.lessonTarget.findMany({
             where: lessonTargetWhere,
