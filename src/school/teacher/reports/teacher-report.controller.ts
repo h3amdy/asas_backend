@@ -1,5 +1,5 @@
 // src/school/teacher/reports/teacher-report.controller.ts
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ReportsService } from '../../reports/reports.service';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
@@ -9,7 +9,9 @@ import { PrismaService } from '../../../prisma/prisma.service';
 /**
  * 📊 TCH-RPT-01: Teacher Comprehensive Report Controller
  *
- * GET /school/teacher/reports/comprehensive → التقرير الشامل للمعلم في مادة
+ * GET /school/teacher/reports/comprehensive                                    → التقرير الشامل للمعلم في مادة
+ * GET /school/teacher/reports/comprehensive/students/:studentUuid              → تفاصيل طالب (كل المواد)
+ * GET /school/teacher/reports/comprehensive/students/:studentUuid/subjects/:subjectUuid → تفاصيل طالب في مادة
  *
  * يجلب الشُعب المسندة للمعلم تلقائياً من JWT ويمررها كـ sectionIds
  */
@@ -91,5 +93,47 @@ export class TeacherReportController {
             page: 1,
             pageSize: 9999, // كل الطلاب (بدون pagination سيرفرية)
         });
+    }
+
+    // ── تفاصيل الأداء الشامل لطالب (كل المواد) ──
+    @Get('comprehensive/students/:studentUuid')
+    getStudentComprehensiveDetail(
+        @Req() req: any,
+        @Param('studentUuid') studentUuid: string,
+        @Query('yearUuid') yearUuid?: string,
+        @Query('termUuid') termUuid?: string,
+        @Query('period') period?: string,
+    ) {
+        return this.reportsService.getStudentComprehensiveDetail(
+            req.schoolContext.id,
+            studentUuid,
+            {
+                yearUuid,
+                termUuid,
+                period: (period as any) ?? 'full_semester',
+            },
+        );
+    }
+
+    // ── تفاصيل أداء طالب في مادة (الدروس) ──
+    @Get('comprehensive/students/:studentUuid/subjects/:subjectUuid')
+    getStudentSubjectComprehensive(
+        @Req() req: any,
+        @Param('studentUuid') studentUuid: string,
+        @Param('subjectUuid') subjectUuid: string,
+        @Query('yearUuid') yearUuid?: string,
+        @Query('termUuid') termUuid?: string,
+        @Query('period') period?: string,
+    ) {
+        return this.reportsService.getStudentSubjectComprehensive(
+            req.schoolContext.id,
+            studentUuid,
+            subjectUuid,
+            {
+                yearUuid,
+                termUuid,
+                period: (period as any) ?? 'full_semester',
+            },
+        );
     }
 }
