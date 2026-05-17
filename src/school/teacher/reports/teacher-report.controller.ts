@@ -24,6 +24,12 @@ export class TeacherReportController {
         private readonly prisma: PrismaService,
     ) { }
 
+    // ── خيارات الفلاتر (فصول دراسية + سنوات) ──
+    @Get('filter-options')
+    getFilterOptions(@Req() req: any) {
+        return this.reportsService.getFilterOptions(req.schoolContext.id);
+    }
+
     @Get('comprehensive')
     async getComprehensiveReport(
         @Req() req: any,
