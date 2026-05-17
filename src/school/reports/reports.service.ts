@@ -20,6 +20,7 @@ interface ReportFilters {
     termUuid?: string;
     gradeUuid?: string;
     sectionUuid?: string;
+    sectionIds?: number[];   // TCH-RPT-01: فلترة على عدة شُعب (سياق المعلم)
     subjectUuid?: string;
     period: TimePeriod;
     page: number;
@@ -831,6 +832,8 @@ export class ReportsService {
         };
         if (filters.gradeUuid) enrollmentWhere.grade = { uuid: filters.gradeUuid };
         if (filters.sectionUuid) enrollmentWhere.section = { uuid: filters.sectionUuid };
+        // TCH-RPT-01: فلترة على عدة شُعب (سياق المعلم)
+        if (filters.sectionIds?.length) enrollmentWhere.sectionId = { in: filters.sectionIds };
 
         const totalCount = await this.prisma.studentEnrollment.count({ where: enrollmentWhere });
 

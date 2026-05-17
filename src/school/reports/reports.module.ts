@@ -22,6 +22,7 @@ import { ReportsService } from './reports.service';
     imports: [PrismaModule, SchoolCommonModule],
     controllers: [ReportsController, GradesReportController, ComprehensiveReportController],
     providers: [ReportsService, StudentProgressSummaryService],
+    exports: [ReportsService],
 })
 export class ReportsModule { }
 
