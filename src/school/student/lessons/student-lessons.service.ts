@@ -77,10 +77,17 @@ export class StudentLessonsService {
                                         },
                                     },
                                 },
-                                contents: {
-                                    where: { isDeleted: false, type: 'AUDIO' },
-                                    select: { id: true },
-                                    take: 1,
+                                // فحص وجود صوت في الفقرات الجديدة
+                                contentBlocks: {
+                                    where: { isDeleted: false },
+                                    select: {
+                                        items: {
+                                            where: { isDeleted: false, itemType: 'AUDIO' },
+                                            select: { id: true },
+                                            take: 1,
+                                        },
+                                    },
+                                    take: 10,
                                 },
                             },
                         },
@@ -135,7 +142,7 @@ export class StudentLessonsService {
                     questionCount: template._count.questions,
                     publishedAt: lesson.publishedAt,
                     coverMediaAssetUuid: template.coverMediaAsset?.uuid ?? null,
-                    hasAudio: template.contents.length > 0,
+                    hasAudio: template.contentBlocks.some((b) => b.items.length > 0),
                     // STD-055: حالة التقدم
                     progress: prog
                         ? {
@@ -189,15 +196,23 @@ export class StudentLessonsService {
                 template: {
                     include: {
                         unit: { select: { title: true } },
-                        contents: {
+                        // النظام الجديد: فقرات + عناصر
+                        contentBlocks: {
                             where: { isDeleted: false },
                             orderBy: { orderIndex: 'asc' },
                             include: {
-                                mediaAsset: {
-                                    select: {
-                                        uuid: true,
-                                        contentType: true,
-                                        durationSec: true,
+                                items: {
+                                    where: { isDeleted: false },
+                                    orderBy: { orderIndex: 'asc' },
+                                    include: {
+                                        mediaAsset: {
+                                            select: {
+                                                uuid: true,
+                                                kind: true,
+                                                contentType: true,
+                                                durationSec: true,
+                                            },
+                                        },
                                     },
                                 },
                             },
@@ -219,16 +234,22 @@ export class StudentLessonsService {
             throw new NotFoundException('LESSON_NOT_FOUND');
         }
 
-        // 2. بناء كتل المحتوى
-        const contentBlocks = lesson.template.contents.map((c) => ({
-            uuid: c.uuid,
-            type: c.type,
-            title: c.title,
-            contentText: c.contentText,
-            orderIndex: c.orderIndex,
-            mediaAssetUuid: c.mediaAsset?.uuid ?? null,
-            contentType: c.mediaAsset?.contentType ?? null,
-            durationSec: c.mediaAsset?.durationSec ?? null,
+        // 2. بناء الفقرات مع عناصرها
+        const blocks = lesson.template.contentBlocks.map((b) => ({
+            uuid: b.uuid,
+            title: b.title,
+            orderIndex: b.orderIndex,
+            items: b.items.map((item) => ({
+                uuid: item.uuid,
+                itemType: item.itemType,
+                orderIndex: item.orderIndex,
+                textContent: item.textContent,
+                mediaAssetUuid: item.mediaAsset?.uuid ?? null,
+                mediaAssetKind: item.mediaAsset?.kind ?? null,
+                contentType: item.mediaAsset?.contentType ?? null,
+                durationSec: item.mediaAsset?.durationSec ?? null,
+                caption: item.caption,
+            })),
         }));
 
         return {
@@ -238,7 +259,7 @@ export class StudentLessonsService {
             unitName: lesson.template.unit?.title ?? '',
             questionCount: lesson.template._count.questions,
             publishedAt: lesson.publishedAt,
-            contentBlocks,
+            blocks,
         };
     }
 

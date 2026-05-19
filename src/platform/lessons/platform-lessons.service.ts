@@ -13,6 +13,12 @@ import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
 import { ReorderContentsDto } from './dto/reorder-contents.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { CreateBlockDto } from './dto/create-block.dto';
+import { UpdateBlockDto } from './dto/update-block.dto';
+import { CreateBlockItemDto } from './dto/create-block-item.dto';
+import { UpdateBlockItemDto } from './dto/update-block-item.dto';
+import { ReorderBlocksDto } from './dto/reorder-blocks.dto';
+import { ReorderBlockItemsDto } from './dto/reorder-block-items.dto';
 
 @Injectable()
 export class PlatformLessonsService {
@@ -560,5 +566,206 @@ export class PlatformLessonsService {
         });
 
         return { message: 'تم إعادة ترتيب المحتوى بنجاح' };
+    }
+    // ══════════════════════════════════════════════════════════════
+    //  فقرات المحتوى (Content Blocks) — النظام الجديد
+    // ══════════════════════════════════════════════════════════════
+
+    async getBlocks(platformUserUuid: string, lessonUuid: string) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+
+        const blocks = await this.prisma.lessonContentBlock.findMany({
+            where: { templateId: lesson.id, isDeleted: false },
+            orderBy: { orderIndex: 'asc' },
+            include: {
+                items: {
+                    where: { isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                    include: { mediaAsset: { select: { uuid: true, kind: true } } },
+                },
+            },
+        });
+
+        return {
+            blocks: blocks.map((b) => ({
+                uuid: b.uuid,
+                title: b.title,
+                orderIndex: b.orderIndex,
+                items: b.items.map((item) => ({
+                    uuid: item.uuid,
+                    itemType: item.itemType,
+                    orderIndex: item.orderIndex,
+                    textContent: item.textContent,
+                    mediaAssetUuid: item.mediaAsset?.uuid ?? null,
+                    mediaAssetKind: item.mediaAsset?.kind ?? null,
+                    caption: item.caption,
+                })),
+            })),
+        };
+    }
+
+    async createBlock(platformUserUuid: string, lessonUuid: string, dto: CreateBlockDto) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+
+        const existing = await this.prisma.lessonContentBlock.findFirst({
+            where: { templateId: lesson.id, orderIndex: dto.orderIndex, isDeleted: false },
+        });
+
+        let finalOrderIndex = dto.orderIndex;
+        if (existing) {
+            const maxOrder = await this.prisma.lessonContentBlock.aggregate({
+                where: { templateId: lesson.id, isDeleted: false },
+                _max: { orderIndex: true },
+            });
+            finalOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
+        }
+
+        const block = await this.prisma.lessonContentBlock.create({
+            data: { templateId: lesson.id, title: dto.title ?? null, orderIndex: finalOrderIndex },
+        });
+
+        return { uuid: block.uuid, title: block.title, orderIndex: block.orderIndex, items: [] };
+    }
+
+    async updateBlock(platformUserUuid: string, lessonUuid: string, blockUuid: string, dto: UpdateBlockDto) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+        const block = await this.prisma.lessonContentBlock.findFirst({
+            where: { uuid: blockUuid, templateId: lesson.id, isDeleted: false },
+        });
+        if (!block) throw new NotFoundException('الفقرة غير موجودة');
+
+        const updated = await this.prisma.lessonContentBlock.update({
+            where: { id: block.id },
+            data: { ...(dto.title !== undefined && { title: dto.title }) },
+        });
+        return { uuid: updated.uuid, title: updated.title, orderIndex: updated.orderIndex };
+    }
+
+    async deleteBlock(platformUserUuid: string, lessonUuid: string, blockUuid: string) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+        const block = await this.prisma.lessonContentBlock.findFirst({
+            where: { uuid: blockUuid, templateId: lesson.id, isDeleted: false },
+        });
+        if (!block) throw new NotFoundException('الفقرة غير موجودة');
+
+        const now = new Date();
+        await this.prisma.$transaction([
+            this.prisma.lessonBlockItem.updateMany({ where: { blockId: block.id, isDeleted: false }, data: { isDeleted: true, deletedAt: now } }),
+            this.prisma.lessonContentBlock.update({ where: { id: block.id }, data: { isDeleted: true, deletedAt: now } }),
+        ]);
+        return { message: 'تم حذف الفقرة بنجاح' };
+    }
+
+    async reorderBlocks(platformUserUuid: string, lessonUuid: string, dto: ReorderBlocksDto) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+        const blocks = await this.prisma.lessonContentBlock.findMany({
+            where: { templateId: lesson.id, isDeleted: false, uuid: { in: dto.orderedUuids } },
+        });
+        if (blocks.length !== dto.orderedUuids.length) throw new NotFoundException('بعض الفقرات غير موجودة');
+
+        await this.prisma.$transaction(
+            dto.orderedUuids.map((uuid, i) => {
+                const block = blocks.find((b) => b.uuid === uuid)!;
+                return this.prisma.lessonContentBlock.update({ where: { id: block.id }, data: { orderIndex: i + 1 } });
+            }),
+        );
+        return { message: 'تم إعادة ترتيب الفقرات بنجاح' };
+    }
+
+    async createBlockItem(platformUserUuid: string, lessonUuid: string, blockUuid: string, dto: CreateBlockItemDto) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+        const block = await this.prisma.lessonContentBlock.findFirst({
+            where: { uuid: blockUuid, templateId: lesson.id, isDeleted: false },
+        });
+        if (!block) throw new NotFoundException('الفقرة غير موجودة');
+
+        let finalOrderIndex = dto.orderIndex;
+        const existingOrder = await this.prisma.lessonBlockItem.findFirst({
+            where: { blockId: block.id, orderIndex: dto.orderIndex, isDeleted: false },
+        });
+        if (existingOrder) {
+            const maxOrder = await this.prisma.lessonBlockItem.aggregate({
+                where: { blockId: block.id, isDeleted: false }, _max: { orderIndex: true },
+            });
+            finalOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
+        }
+
+        let mediaAssetId: number | null = null;
+        if (dto.mediaAssetUuid) {
+            const asset = await this.prisma.mediaAsset.findFirst({
+                where: { uuid: dto.mediaAssetUuid, isDeleted: false }, select: { id: true },
+            });
+            if (!asset) throw new NotFoundException('الوسيط غير موجود: ' + dto.mediaAssetUuid);
+            mediaAssetId = asset.id;
+        }
+
+        const item = await this.prisma.lessonBlockItem.create({
+            data: { blockId: block.id, itemType: dto.itemType, orderIndex: finalOrderIndex, textContent: dto.textContent ?? null, mediaAssetId, caption: dto.caption ?? null },
+            include: { mediaAsset: { select: { uuid: true, kind: true } } },
+        });
+
+        return {
+            uuid: item.uuid, itemType: item.itemType, orderIndex: item.orderIndex,
+            textContent: item.textContent, mediaAssetUuid: item.mediaAsset?.uuid ?? null,
+            mediaAssetKind: item.mediaAsset?.kind ?? null, caption: item.caption,
+        };
+    }
+
+    async updateBlockItem(platformUserUuid: string, lessonUuid: string, blockUuid: string, itemUuid: string, dto: UpdateBlockItemDto) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+        const block = await this.prisma.lessonContentBlock.findFirst({ where: { uuid: blockUuid, templateId: lesson.id, isDeleted: false } });
+        if (!block) throw new NotFoundException('الفقرة غير موجودة');
+        const item = await this.prisma.lessonBlockItem.findFirst({ where: { uuid: itemUuid, blockId: block.id, isDeleted: false } });
+        if (!item) throw new NotFoundException('العنصر غير موجود');
+
+        let resolvedMediaAssetId: number | undefined = undefined;
+        if (dto.mediaAssetUuid !== undefined) {
+            const asset = await this.prisma.mediaAsset.findFirst({ where: { uuid: dto.mediaAssetUuid, isDeleted: false }, select: { id: true } });
+            if (!asset) throw new NotFoundException('الوسيط غير موجود: ' + dto.mediaAssetUuid);
+            resolvedMediaAssetId = asset.id;
+        }
+
+        const updated = await this.prisma.lessonBlockItem.update({
+            where: { id: item.id },
+            data: {
+                ...(dto.textContent !== undefined && { textContent: dto.textContent }),
+                ...(resolvedMediaAssetId !== undefined && { mediaAssetId: resolvedMediaAssetId }),
+                ...(dto.caption !== undefined && { caption: dto.caption }),
+            },
+            include: { mediaAsset: { select: { uuid: true, kind: true } } },
+        });
+
+        return {
+            uuid: updated.uuid, itemType: updated.itemType, orderIndex: updated.orderIndex,
+            textContent: updated.textContent, mediaAssetUuid: updated.mediaAsset?.uuid ?? null,
+            mediaAssetKind: updated.mediaAsset?.kind ?? null, caption: updated.caption,
+        };
+    }
+
+    async deleteBlockItem(platformUserUuid: string, lessonUuid: string, blockUuid: string, itemUuid: string) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+        const block = await this.prisma.lessonContentBlock.findFirst({ where: { uuid: blockUuid, templateId: lesson.id, isDeleted: false } });
+        if (!block) throw new NotFoundException('الفقرة غير موجودة');
+        const item = await this.prisma.lessonBlockItem.findFirst({ where: { uuid: itemUuid, blockId: block.id, isDeleted: false } });
+        if (!item) throw new NotFoundException('العنصر غير موجود');
+
+        await this.prisma.lessonBlockItem.update({ where: { id: item.id }, data: { isDeleted: true, deletedAt: new Date() } });
+        return { message: 'تم حذف العنصر بنجاح' };
+    }
+
+    async reorderBlockItems(platformUserUuid: string, lessonUuid: string, blockUuid: string, dto: ReorderBlockItemsDto) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+        const block = await this.prisma.lessonContentBlock.findFirst({ where: { uuid: blockUuid, templateId: lesson.id, isDeleted: false } });
+        if (!block) throw new NotFoundException('الفقرة غير موجودة');
+        const items = await this.prisma.lessonBlockItem.findMany({ where: { blockId: block.id, isDeleted: false, uuid: { in: dto.orderedUuids } } });
+        if (items.length !== dto.orderedUuids.length) throw new NotFoundException('بعض العناصر غير موجودة');
+
+        await this.prisma.$transaction(
+            dto.orderedUuids.map((uuid, i) => {
+                const item = items.find((it) => it.uuid === uuid)!;
+                return this.prisma.lessonBlockItem.update({ where: { id: item.id }, data: { orderIndex: i + 1 } });
+            }),
+        );
+        return { message: 'تم إعادة ترتيب العناصر بنجاح' };
     }
 }

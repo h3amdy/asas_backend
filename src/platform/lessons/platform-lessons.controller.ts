@@ -17,6 +17,12 @@ import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
 import { ReorderContentsDto } from './dto/reorder-contents.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { CreateBlockDto } from './dto/create-block.dto';
+import { UpdateBlockDto } from './dto/update-block.dto';
+import { CreateBlockItemDto } from './dto/create-block-item.dto';
+import { UpdateBlockItemDto } from './dto/update-block-item.dto';
+import { ReorderBlocksDto } from './dto/reorder-blocks.dto';
+import { ReorderBlockItemsDto } from './dto/reorder-block-items.dto';
 import { PlatformJwtAuthGuard } from '../auth/guards/platform-jwt-auth.guard';
 
 /**
@@ -134,4 +140,56 @@ export class PlatformLessonsController {
     ) {
         return this.service.deleteContent(req.user.sub, lessonUuid, contentUuid);
     }
+
+    // ══════════════════════════════════════════════════
+    //  الفقرات (Blocks) — النظام الجديد
+    // ══════════════════════════════════════════════════
+
+    @Get('lessons/:lessonUuid/blocks')
+    getBlocks(@Req() req: any, @Param('lessonUuid') lessonUuid: string) {
+        return this.service.getBlocks(req.user.sub, lessonUuid);
+    }
+
+    @Post('lessons/:lessonUuid/blocks')
+    createBlock(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Body() dto: CreateBlockDto) {
+        return this.service.createBlock(req.user.sub, lessonUuid, dto);
+    }
+
+    @Patch('lessons/:lessonUuid/blocks/reorder')
+    reorderBlocks(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Body() dto: ReorderBlocksDto) {
+        return this.service.reorderBlocks(req.user.sub, lessonUuid, dto);
+    }
+
+    @Patch('lessons/:lessonUuid/blocks/:blockUuid')
+    updateBlock(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Param('blockUuid') blockUuid: string, @Body() dto: UpdateBlockDto) {
+        return this.service.updateBlock(req.user.sub, lessonUuid, blockUuid, dto);
+    }
+
+    @Delete('lessons/:lessonUuid/blocks/:blockUuid')
+    deleteBlock(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Param('blockUuid') blockUuid: string) {
+        return this.service.deleteBlock(req.user.sub, lessonUuid, blockUuid);
+    }
+
+    // ─── عناصر الفقرة (Block Items) ───
+
+    @Post('lessons/:lessonUuid/blocks/:blockUuid/items')
+    createBlockItem(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Param('blockUuid') blockUuid: string, @Body() dto: CreateBlockItemDto) {
+        return this.service.createBlockItem(req.user.sub, lessonUuid, blockUuid, dto);
+    }
+
+    @Patch('lessons/:lessonUuid/blocks/:blockUuid/items/reorder')
+    reorderBlockItems(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Param('blockUuid') blockUuid: string, @Body() dto: ReorderBlockItemsDto) {
+        return this.service.reorderBlockItems(req.user.sub, lessonUuid, blockUuid, dto);
+    }
+
+    @Patch('lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid')
+    updateBlockItem(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Param('blockUuid') blockUuid: string, @Param('itemUuid') itemUuid: string, @Body() dto: UpdateBlockItemDto) {
+        return this.service.updateBlockItem(req.user.sub, lessonUuid, blockUuid, itemUuid, dto);
+    }
+
+    @Delete('lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid')
+    deleteBlockItem(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Param('blockUuid') blockUuid: string, @Param('itemUuid') itemUuid: string) {
+        return this.service.deleteBlockItem(req.user.sub, lessonUuid, blockUuid, itemUuid);
+    }
 }
+

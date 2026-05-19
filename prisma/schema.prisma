@@ -80,7 +80,7 @@ model User {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
 
-  schoolId  Int?    @map("school_id")
+  schoolId Int?    @map("school_id")
   school   School? @relation(fields: [schoolId], references: [id])
 
   userType    UserType @map("user_type")
@@ -695,7 +695,7 @@ model AuthSession {
   userId Int  @map("user_id")
   user   User @relation(fields: [userId], references: [id])
 
-  schoolId  Int?    @map("school_id")
+  schoolId Int?    @map("school_id")
   school   School? @relation(fields: [schoolId], references: [id])
 
   deviceId Int?        @map("device_id")
@@ -747,7 +747,7 @@ model MediaAsset {
 
   schoolId  Int?    @map("school_id")
   ownerType String  @default("SCHOOL") @map("owner_type")
-  school   School? @relation("SchoolMediaAssets", fields: [schoolId], references: [id])
+  school    School? @relation("SchoolMediaAssets", fields: [schoolId], references: [id])
 
   kind MediaKind
 
@@ -784,6 +784,7 @@ model MediaAsset {
   usersAsAvatar          User[]              @relation("UserAvatar")
   lessonTemplatesAsCover LessonTemplate[]    @relation("LessonTemplateCover")
   lessonContentsAsMedia  LessonContent[]     @relation("LessonContentMedia")
+  blockItemsAsMedia      LessonBlockItem[]   @relation("BlockItemMedia")
 
   // Question relations
   questionsAsImage            Question[]             @relation("QuestionImage")
@@ -822,8 +823,8 @@ model MediaUploadSession {
   uploaderUserId Int?  @map("uploader_user_id")
   uploader       User? @relation(fields: [uploaderUserId], references: [id])
 
-  platformUserId    Int?          @map("platform_user_id")
-  platformUploader  PlatformUser? @relation(fields: [platformUserId], references: [id])
+  platformUserId   Int?          @map("platform_user_id")
+  platformUploader PlatformUser? @relation(fields: [platformUserId], references: [id])
 
   kind           MediaKind
   contentType    String    @map("content_type")
@@ -863,10 +864,10 @@ model Unit {
   uuid String @unique @default(uuid())
 
   // ربط بالمادة: واحد فقط حسب owner_type
-  subjectId            Int?               @map("subject_id")
-  subject              Subject?           @relation(fields: [subjectId], references: [id])
-  subjectDictionaryId  Int?               @map("subject_dictionary_id")
-  subjectDictionary    SubjectDictionary? @relation(fields: [subjectDictionaryId], references: [id])
+  subjectId           Int?               @map("subject_id")
+  subject             Subject?           @relation(fields: [subjectId], references: [id])
+  subjectDictionaryId Int?               @map("subject_dictionary_id")
+  subjectDictionary   SubjectDictionary? @relation(fields: [subjectDictionaryId], references: [id])
 
   ownerType String  @default("SCHOOL") @map("owner_type")
   schoolId  Int?    @map("school_id")
@@ -901,10 +902,10 @@ model LessonTemplate {
   school    School? @relation(fields: [schoolId], references: [id])
 
   // ربط بالمادة: واحد فقط حسب owner_type
-  subjectId            Int?               @map("subject_id")
-  subject              Subject?           @relation(fields: [subjectId], references: [id])
-  subjectDictionaryId  Int?               @map("subject_dictionary_id")
-  subjectDictionary    SubjectDictionary? @relation(fields: [subjectDictionaryId], references: [id])
+  subjectId           Int?               @map("subject_id")
+  subject             Subject?           @relation(fields: [subjectId], references: [id])
+  subjectDictionaryId Int?               @map("subject_dictionary_id")
+  subjectDictionary   SubjectDictionary? @relation(fields: [subjectDictionaryId], references: [id])
 
   unitId Int?  @map("unit_id")
   unit   Unit? @relation(fields: [unitId], references: [id])
@@ -922,10 +923,10 @@ model LessonTemplate {
   clonedTemplates  LessonTemplate[] @relation("LessonTemplateClone")
 
   // من أنشأ القالب (حسب owner_type)
-  createdByUserId         Int?           @map("created_by_user_id")
-  createdByUser           User?          @relation("LessonTemplateCreator", fields: [createdByUserId], references: [id])
-  createdByPlatformUserId Int?           @map("created_by_platform_user_id")
-  createdByPlatformUser   PlatformUser?  @relation("PlatformLessonCreator", fields: [createdByPlatformUserId], references: [id])
+  createdByUserId         Int?          @map("created_by_user_id")
+  createdByUser           User?         @relation("LessonTemplateCreator", fields: [createdByUserId], references: [id])
+  createdByPlatformUserId Int?          @map("created_by_platform_user_id")
+  createdByPlatformUser   PlatformUser? @relation("PlatformLessonCreator", fields: [createdByPlatformUserId], references: [id])
 
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at")
@@ -933,9 +934,10 @@ model LessonTemplate {
   isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  contents  LessonContent[]
-  questions Question[]
-  lessons   Lesson[]
+  contents      LessonContent[]
+  contentBlocks LessonContentBlock[]
+  questions     Question[]
+  lessons       Lesson[]
 
   @@unique([unitId, orderIndex], map: "lesson_templates_unit_order_idx")
   @@index([schoolId], map: "lesson_templates_school_id_idx")
@@ -975,6 +977,62 @@ model LessonContent {
   @@index([templateId], map: "lesson_contents_template_id_idx")
   @@index([mediaAssetId], map: "lesson_contents_media_asset_id_idx")
   @@map("lesson_contents")
+}
+
+// ── فقرات محتوى الدرس (النظام الجديد) ─────────────────────────────────
+model LessonContentBlock {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  templateId Int            @map("template_id")
+  template   LessonTemplate @relation(fields: [templateId], references: [id])
+
+  title      String?
+  orderIndex Int     @map("order_index")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  items LessonBlockItem[]
+
+  // بدون unique constraint — soft-delete يُبقي السجل بنفس orderIndex
+  @@index([templateId, isDeleted, orderIndex], map: "lesson_content_blocks_template_order_idx")
+  @@index([templateId], map: "lesson_content_blocks_template_id_idx")
+  @@index([updatedAt], map: "lesson_content_blocks_updated_at_idx")
+  @@map("lesson_content_blocks")
+}
+
+// ── عناصر الفقرة ──────────────────────────────────────────────────────
+model LessonBlockItem {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  blockId Int                @map("block_id")
+  block   LessonContentBlock @relation(fields: [blockId], references: [id])
+
+  itemType   String @map("item_type") // TEXT | IMAGE | AUDIO
+  orderIndex Int    @map("order_index")
+
+  textContent  String?     @map("text_content") @db.Text
+  mediaAssetId Int?        @map("media_asset_id")
+  mediaAsset   MediaAsset? @relation("BlockItemMedia", fields: [mediaAssetId], references: [id])
+
+  caption      String?
+  metadataJson Json?   @map("metadata_json")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  // بدون unique constraint — نفس السبب (soft-delete)
+  @@index([blockId, isDeleted, orderIndex], map: "lesson_block_items_block_order_idx")
+  @@index([blockId], map: "lesson_block_items_block_id_idx")
+  @@index([mediaAssetId], map: "lesson_block_items_media_asset_id_idx")
+  @@index([updatedAt], map: "lesson_block_items_updated_at_idx")
+  @@map("lesson_block_items")
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1395,7 +1453,7 @@ model PlatformUser {
   uuid String @unique @default(uuid())
 
   username     String  @unique
-  email        String?  @unique
+  email        String? @unique
   passwordHash String  @map("password_hash")
   name         String
   displayName  String? @map("display_name")
@@ -1413,7 +1471,7 @@ model PlatformUser {
   isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  assignedSubjects      PlatformUserSubject[]
+  assignedSubjects       PlatformUserSubject[]
   createdLessonTemplates LessonTemplate[]      @relation("PlatformLessonCreator")
   uploadSessions         MediaUploadSession[]
 

@@ -17,6 +17,12 @@ import { CreateContentDto } from './dto/create-content.dto';
 import { UpdateContentDto } from './dto/update-content.dto';
 import { ReorderContentsDto } from './dto/reorder-contents.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { CreateBlockDto } from './dto/create-block.dto';
+import { UpdateBlockDto } from './dto/update-block.dto';
+import { CreateBlockItemDto } from './dto/create-block-item.dto';
+import { UpdateBlockItemDto } from './dto/update-block-item.dto';
+import { ReorderBlocksDto } from './dto/reorder-blocks.dto';
+import { ReorderBlockItemsDto } from './dto/reorder-block-items.dto';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
@@ -186,6 +192,159 @@ export class TeacherLessonsController {
             req.user.sub,
             lessonUuid,
             contentUuid,
+        );
+    }
+
+    // ══════════════════════════════════════════════════
+    //  الفقرات (Blocks) — النظام الجديد
+    // ══════════════════════════════════════════════════
+
+    /** GET — جلب الفقرات مع عناصرها */
+    @Get('lessons/:lessonUuid/blocks')
+    getBlocks(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        return this.service.getBlocks(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+        );
+    }
+
+    /** POST — إنشاء فقرة */
+    @Post('lessons/:lessonUuid/blocks')
+    createBlock(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Body() dto: CreateBlockDto,
+    ) {
+        return this.service.createBlock(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            dto,
+        );
+    }
+
+    /** PATCH — إعادة ترتيب الفقرات (يجب أن يكون قبل :blockUuid) */
+    @Patch('lessons/:lessonUuid/blocks/reorder')
+    reorderBlocks(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Body() dto: ReorderBlocksDto,
+    ) {
+        return this.service.reorderBlocks(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            dto,
+        );
+    }
+
+    /** PATCH — تعديل فقرة */
+    @Patch('lessons/:lessonUuid/blocks/:blockUuid')
+    updateBlock(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Param('blockUuid') blockUuid: string,
+        @Body() dto: UpdateBlockDto,
+    ) {
+        return this.service.updateBlock(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            blockUuid,
+            dto,
+        );
+    }
+
+    /** DELETE — حذف فقرة */
+    @Delete('lessons/:lessonUuid/blocks/:blockUuid')
+    deleteBlock(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Param('blockUuid') blockUuid: string,
+    ) {
+        return this.service.deleteBlock(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            blockUuid,
+        );
+    }
+
+    // ══════════════════════════════════════════════════
+    //  عناصر الفقرة (Block Items)
+    // ══════════════════════════════════════════════════
+
+    /** POST — إضافة عنصر داخل فقرة */
+    @Post('lessons/:lessonUuid/blocks/:blockUuid/items')
+    createBlockItem(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Param('blockUuid') blockUuid: string,
+        @Body() dto: CreateBlockItemDto,
+    ) {
+        return this.service.createBlockItem(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            blockUuid,
+            dto,
+        );
+    }
+
+    /** PATCH — إعادة ترتيب عناصر فقرة (يجب أن يكون قبل :itemUuid) */
+    @Patch('lessons/:lessonUuid/blocks/:blockUuid/items/reorder')
+    reorderBlockItems(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Param('blockUuid') blockUuid: string,
+        @Body() dto: ReorderBlockItemsDto,
+    ) {
+        return this.service.reorderBlockItems(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            blockUuid,
+            dto,
+        );
+    }
+
+    /** PATCH — تعديل عنصر */
+    @Patch('lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid')
+    updateBlockItem(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Param('blockUuid') blockUuid: string,
+        @Param('itemUuid') itemUuid: string,
+        @Body() dto: UpdateBlockItemDto,
+    ) {
+        return this.service.updateBlockItem(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            blockUuid,
+            itemUuid,
+            dto,
+        );
+    }
+
+    /** DELETE — حذف عنصر */
+    @Delete('lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid')
+    deleteBlockItem(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Param('blockUuid') blockUuid: string,
+        @Param('itemUuid') itemUuid: string,
+    ) {
+        return this.service.deleteBlockItem(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+            blockUuid,
+            itemUuid,
         );
     }
 }
