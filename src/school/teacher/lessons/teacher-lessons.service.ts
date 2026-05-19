@@ -10,6 +10,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { MoveBlockItemDto } from './dto/move-block-item.dto';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { UpdateBlockDto } from './dto/update-block.dto';
 import { CreateBlockItemDto } from './dto/create-block-item.dto';
@@ -850,5 +851,105 @@ export class TeacherLessonsService {
         );
 
         return { message: 'تم إعادة ترتيب العناصر بنجاح' };
+    }
+
+    // ─────── نقل عنصر من فقرة لأخرى ─────────────────────────────────
+    async moveItemToBlock(
+        schoolId: number,
+        userUuid: string,
+        lessonUuid: string,
+        sourceBlockUuid: string,
+        itemUuid: string,
+        dto: MoveBlockItemDto,
+    ) {
+        const { lesson } = await this.assertTeacherOwnsLesson(
+            schoolId,
+            userUuid,
+            lessonUuid,
+        );
+
+        // التحقق من الفقرة المصدر
+        const sourceBlock = await this.prisma.lessonContentBlock.findFirst({
+            where: { uuid: sourceBlockUuid, templateId: lesson.id, isDeleted: false },
+        });
+        if (!sourceBlock) {
+            throw new NotFoundException('الفقرة المصدر غير موجودة');
+        }
+
+        // التحقق من الفقرة الهدف
+        const targetBlock = await this.prisma.lessonContentBlock.findFirst({
+            where: { uuid: dto.targetBlockUuid, templateId: lesson.id, isDeleted: false },
+        });
+        if (!targetBlock) {
+            throw new NotFoundException('الفقرة الهدف غير موجودة');
+        }
+
+        // التحقق من العنصر
+        const item = await this.prisma.lessonBlockItem.findFirst({
+            where: { uuid: itemUuid, blockId: sourceBlock.id, isDeleted: false },
+        });
+        if (!item) {
+            throw new NotFoundException('العنصر غير موجود');
+        }
+
+        // إذا نفس الفقرة — مجرد إعادة ترتيب
+        if (sourceBlock.id === targetBlock.id) {
+            await this.prisma.lessonBlockItem.update({
+                where: { id: item.id },
+                data: { orderIndex: dto.targetOrderIndex },
+            });
+            // إعادة ترقيم كل عناصر الفقرة
+            const items = await this.prisma.lessonBlockItem.findMany({
+                where: { blockId: sourceBlock.id, isDeleted: false },
+                orderBy: { orderIndex: 'asc' },
+            });
+            await this.prisma.$transaction(
+                items.map((it, i) =>
+                    this.prisma.lessonBlockItem.update({
+                        where: { id: it.id },
+                        data: { orderIndex: i + 1 },
+                    }),
+                ),
+            );
+            return { message: 'تم نقل العنصر بنجاح' };
+        }
+
+        // نقل بين فقرتين مختلفتين
+        await this.prisma.$transaction(async (tx) => {
+            // 1. نقل العنصر للفقرة الهدف
+            await tx.lessonBlockItem.update({
+                where: { id: item.id },
+                data: {
+                    blockId: targetBlock.id,
+                    orderIndex: dto.targetOrderIndex,
+                },
+            });
+
+            // 2. إعادة ترقيم عناصر الفقرة المصدر
+            const sourceItems = await tx.lessonBlockItem.findMany({
+                where: { blockId: sourceBlock.id, isDeleted: false },
+                orderBy: { orderIndex: 'asc' },
+            });
+            for (let i = 0; i < sourceItems.length; i++) {
+                await tx.lessonBlockItem.update({
+                    where: { id: sourceItems[i].id },
+                    data: { orderIndex: i + 1 },
+                });
+            }
+
+            // 3. إعادة ترقيم عناصر الفقرة الهدف
+            const targetItems = await tx.lessonBlockItem.findMany({
+                where: { blockId: targetBlock.id, isDeleted: false },
+                orderBy: { orderIndex: 'asc' },
+            });
+            for (let i = 0; i < targetItems.length; i++) {
+                await tx.lessonBlockItem.update({
+                    where: { id: targetItems[i].id },
+                    data: { orderIndex: i + 1 },
+                });
+            }
+        });
+
+        return { message: 'تم نقل العنصر بنجاح' };
     }
 }
