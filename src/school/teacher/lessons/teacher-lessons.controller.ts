@@ -13,9 +13,6 @@ import {
 import { TeacherLessonsService } from './teacher-lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { CreateContentDto } from './dto/create-content.dto';
-import { UpdateContentDto } from './dto/update-content.dto';
-import { ReorderContentsDto } from './dto/reorder-contents.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { UpdateBlockDto } from './dto/update-block.dto';
@@ -116,87 +113,8 @@ export class TeacherLessonsController {
         );
     }
 
-    // ══════════════════════════════════════════
-    //  المحتوى (Contents)
-    // ══════════════════════════════════════════
-
-    /** GET — جلب محتوى الدرس (SRS-LSN-05) */
-    @Get('lessons/:lessonUuid/contents')
-    getContents(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-    ) {
-        return this.service.getContents(
-            req.schoolContext.id,
-            req.user.sub,
-            lessonUuid,
-        );
-    }
-
-    /** POST — إضافة كتلة محتوى (SRS-LSN-05) */
-    @Post('lessons/:lessonUuid/contents')
-    createContent(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Body() dto: CreateContentDto,
-    ) {
-        return this.service.createContent(
-            req.schoolContext.id,
-            req.user.sub,
-            lessonUuid,
-            dto,
-        );
-    }
-
-    /** PATCH — إعادة ترتيب كتل المحتوى (SRS-LSN-05) — يجب أن يكون قبل :contentUuid */
-    @Patch('lessons/:lessonUuid/contents/reorder')
-    reorderContents(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Body() dto: ReorderContentsDto,
-    ) {
-        return this.service.reorderContents(
-            req.schoolContext.id,
-            req.user.sub,
-            lessonUuid,
-            dto,
-        );
-    }
-
-    /** PATCH — تعديل كتلة محتوى (SRS-LSN-05) */
-    @Patch('lessons/:lessonUuid/contents/:contentUuid')
-    updateContent(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Param('contentUuid') contentUuid: string,
-        @Body() dto: UpdateContentDto,
-    ) {
-        return this.service.updateContent(
-            req.schoolContext.id,
-            req.user.sub,
-            lessonUuid,
-            contentUuid,
-            dto,
-        );
-    }
-
-    /** DELETE — حذف كتلة محتوى (SRS-LSN-05) */
-    @Delete('lessons/:lessonUuid/contents/:contentUuid')
-    deleteContent(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Param('contentUuid') contentUuid: string,
-    ) {
-        return this.service.deleteContent(
-            req.schoolContext.id,
-            req.user.sub,
-            lessonUuid,
-            contentUuid,
-        );
-    }
-
     // ══════════════════════════════════════════════════
-    //  الفقرات (Blocks) — النظام الجديد
+    //  الفقرات (Blocks)
     // ══════════════════════════════════════════════════
 
     /** GET — جلب الفقرات مع عناصرها */

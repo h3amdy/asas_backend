@@ -13,9 +13,6 @@ import {
 import { PlatformLessonsService } from './platform-lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
-import { CreateContentDto } from './dto/create-content.dto';
-import { UpdateContentDto } from './dto/update-content.dto';
-import { ReorderContentsDto } from './dto/reorder-contents.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { UpdateBlockDto } from './dto/update-block.dto';
@@ -85,60 +82,6 @@ export class PlatformLessonsController {
         @Body() dto: UpdateStatusDto,
     ) {
         return this.service.updateStatus(req.user.sub, lessonUuid, dto);
-    }
-
-    // ══════════════════════════════════════════
-    //  المحتوى (Contents)
-    // ══════════════════════════════════════════
-
-    /** GET — جلب محتوى الدرس */
-    @Get('lessons/:lessonUuid/contents')
-    getContents(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-    ) {
-        return this.service.getContents(req.user.sub, lessonUuid);
-    }
-
-    /** POST — إضافة كتلة محتوى */
-    @Post('lessons/:lessonUuid/contents')
-    createContent(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Body() dto: CreateContentDto,
-    ) {
-        return this.service.createContent(req.user.sub, lessonUuid, dto);
-    }
-
-    /** PATCH — إعادة ترتيب كتل المحتوى */
-    @Patch('lessons/:lessonUuid/contents/reorder')
-    reorderContents(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Body() dto: ReorderContentsDto,
-    ) {
-        return this.service.reorderContents(req.user.sub, lessonUuid, dto);
-    }
-
-    /** PATCH — تعديل كتلة محتوى */
-    @Patch('lessons/:lessonUuid/contents/:contentUuid')
-    updateContent(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Param('contentUuid') contentUuid: string,
-        @Body() dto: UpdateContentDto,
-    ) {
-        return this.service.updateContent(req.user.sub, lessonUuid, contentUuid, dto);
-    }
-
-    /** DELETE — حذف كتلة محتوى */
-    @Delete('lessons/:lessonUuid/contents/:contentUuid')
-    deleteContent(
-        @Req() req: any,
-        @Param('lessonUuid') lessonUuid: string,
-        @Param('contentUuid') contentUuid: string,
-    ) {
-        return this.service.deleteContent(req.user.sub, lessonUuid, contentUuid);
     }
 
     // ══════════════════════════════════════════════════
