@@ -138,8 +138,18 @@ export class TeacherLessonsService {
                     include: {
                         _count: {
                             select: {
-                                contents: { where: { isDeleted: false } },
+                                contentBlocks: { where: { isDeleted: false } },
                                 questions: { where: { isDeleted: false } },
+                            },
+                        },
+                        contentBlocks: {
+                            where: { isDeleted: false },
+                            select: {
+                                _count: {
+                                    select: {
+                                        items: { where: { isDeleted: false } },
+                                    },
+                                },
                             },
                         },
                     },
@@ -154,16 +164,22 @@ export class TeacherLessonsService {
                 title: u.title,
                 orderIndex: u.orderIndex,
                 description: u.description,
-                lessons: u.lessonTemplates.map((lt) => ({
-                    id: lt.id,
-                    uuid: lt.uuid,
-                    title: lt.title,
-                    orderIndex: lt.orderIndex,
-                    status: lt.status,
-                    coverMediaAssetId: lt.coverMediaAssetId,
-                    contentsCount: lt._count.contents,
-                    questionsCount: lt._count.questions,
-                })),
+                lessons: u.lessonTemplates.map((lt) => {
+                    const itemsCount = lt.contentBlocks.reduce(
+                        (sum, b) => sum + b._count.items, 0,
+                    );
+                    return {
+                        id: lt.id,
+                        uuid: lt.uuid,
+                        title: lt.title,
+                        orderIndex: lt.orderIndex,
+                        status: lt.status,
+                        coverMediaAssetId: lt.coverMediaAssetId,
+                        blocksCount: lt._count.contentBlocks,
+                        itemsCount,
+                        questionsCount: lt._count.questions,
+                    };
+                }),
             })),
         };
     }
@@ -228,7 +244,8 @@ export class TeacherLessonsService {
             orderIndex: lesson.orderIndex,
             status: lesson.status,
             coverMediaAssetId: lesson.coverMediaAssetId,
-            contentsCount: 0,
+            blocksCount: 0,
+            itemsCount: 0,
             questionsCount: 0,
             createdAt: lesson.createdAt,
         };
@@ -332,7 +349,22 @@ export class TeacherLessonsService {
         const now = new Date();
 
         await this.prisma.$transaction([
-            // Soft-delete المحتوى
+            // Soft-delete عناصر الفقرات
+            this.prisma.lessonBlockItem.updateMany({
+                where: {
+                    block: { templateId: lesson.id },
+                    isDeleted: false,
+                },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+
+            // Soft-delete الفقرات
+            this.prisma.lessonContentBlock.updateMany({
+                where: { templateId: lesson.id, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+
+            // Soft-delete المحتوى القديم
             this.prisma.lessonContent.updateMany({
                 where: { templateId: lesson.id, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
@@ -363,15 +395,15 @@ export class TeacherLessonsService {
             lessonUuid,
         );
 
-        // DRAFT → READY: تحقق من الشروط
+        // DRAFT → READY: تحقق من الشروط (النظام الجديد: فقرات)
         if (dto.status === 'READY' && lesson.status === 'DRAFT') {
-            const contentsCount = await this.prisma.lessonContent.count({
+            const blocksCount = await this.prisma.lessonContentBlock.count({
                 where: { templateId: lesson.id, isDeleted: false },
             });
 
-            if (contentsCount === 0) {
+            if (blocksCount === 0) {
                 throw new BadRequestException(
-                    'أضف محتوى واحد على الأقل قبل تجهيز الدرس.',
+                    'أضف فقرة واحدة على الأقل قبل تجهيز الدرس.',
                 );
             }
 
