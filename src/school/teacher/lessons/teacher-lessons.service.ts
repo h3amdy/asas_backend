@@ -347,7 +347,35 @@ export class TeacherLessonsService {
         const now = new Date();
 
         await this.prisma.$transaction([
-            // Soft-delete عناصر الفقرات
+            // 1. Soft-delete أبناء الأسئلة
+            this.prisma.questionOption.updateMany({
+                where: { question: { templateId: lesson.id }, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+            this.prisma.questionMatchingPair.updateMany({
+                where: { question: { templateId: lesson.id }, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+            this.prisma.questionOrderingItem.updateMany({
+                where: { question: { templateId: lesson.id }, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+            this.prisma.questionFillBlank.updateMany({
+                where: { question: { templateId: lesson.id }, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+            this.prisma.questionFillAnswer.updateMany({
+                where: { question: { templateId: lesson.id }, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+
+            // 2. Soft-delete الأسئلة
+            this.prisma.question.updateMany({
+                where: { templateId: lesson.id, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+
+            // 3. Soft-delete عناصر الفقرات
             this.prisma.lessonBlockItem.updateMany({
                 where: {
                     block: { templateId: lesson.id },
@@ -356,13 +384,19 @@ export class TeacherLessonsService {
                 data: { isDeleted: true, deletedAt: now },
             }),
 
-            // Soft-delete الفقرات
+            // 4. Soft-delete الفقرات
             this.prisma.lessonContentBlock.updateMany({
                 where: { templateId: lesson.id, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
             }),
 
-            // Soft-delete القالب
+            // 5. Soft-delete الدرس المنشور (لمنع ظهوره للطلاب)
+            this.prisma.lesson.updateMany({
+                where: { templateId: lesson.id, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+
+            // 6. Soft-delete القالب
             this.prisma.lessonTemplate.update({
                 where: { id: lesson.id },
                 data: { isDeleted: true, deletedAt: now },
@@ -605,14 +639,18 @@ export class TeacherLessonsService {
             lessonUuid,
         );
 
-        const blocks = await this.prisma.lessonContentBlock.findMany({
-            where: {
-                templateId: lesson.id,
-                isDeleted: false,
-                uuid: { in: dto.orderedUuids },
-            },
+        // جلب كل الفقرات للتحقق من شمولية القائمة
+        const allBlocks = await this.prisma.lessonContentBlock.findMany({
+            where: { templateId: lesson.id, isDeleted: false },
         });
 
+        if (dto.orderedUuids.length !== allBlocks.length) {
+            throw new BadRequestException(
+                `يجب إرسال جميع الفقرات (${allBlocks.length}) في قائمة الترتيب، تم إرسال ${dto.orderedUuids.length} فقط`,
+            );
+        }
+
+        const blocks = allBlocks.filter((b) => dto.orderedUuids.includes(b.uuid));
         if (blocks.length !== dto.orderedUuids.length) {
             throw new NotFoundException('بعض الفقرات غير موجودة أو لا تنتمي لهذا الدرس');
         }
@@ -828,14 +866,18 @@ export class TeacherLessonsService {
             throw new NotFoundException('الفقرة غير موجودة');
         }
 
-        const items = await this.prisma.lessonBlockItem.findMany({
-            where: {
-                blockId: block.id,
-                isDeleted: false,
-                uuid: { in: dto.orderedUuids },
-            },
+        // جلب كل العناصر للتحقق من شمولية القائمة
+        const allItems = await this.prisma.lessonBlockItem.findMany({
+            where: { blockId: block.id, isDeleted: false },
         });
 
+        if (dto.orderedUuids.length !== allItems.length) {
+            throw new BadRequestException(
+                `يجب إرسال جميع العناصر (${allItems.length}) في قائمة الترتيب، تم إرسال ${dto.orderedUuids.length} فقط`,
+            );
+        }
+
+        const items = allItems.filter((it) => dto.orderedUuids.includes(it.uuid));
         if (items.length !== dto.orderedUuids.length) {
             throw new NotFoundException('بعض العناصر غير موجودة أو لا تنتمي لهذه الفقرة');
         }

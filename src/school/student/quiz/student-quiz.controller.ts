@@ -98,4 +98,19 @@ export class StudentQuizController {
             lessonUuid,
         );
     }
+
+    /**
+     * تأكيد قراءة درس بدون أسئلة — يسمح للطالب بالتقدم
+     */
+    @Post('lesson/:lessonUuid/mark-read')
+    markLessonRead(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        return this.service.markLessonRead(
+            req.schoolContext.id,
+            req.user.sub,
+            lessonUuid,
+        );
+    }
 }

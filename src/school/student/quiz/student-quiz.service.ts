@@ -588,6 +588,78 @@ export class StudentQuizService {
         };
     }
 
+    // ─────── Mark lesson as read (no quiz) ─────────────────────────────────────
+
+    /**
+     * تأكيد قراءة درس بدون أسئلة — يسمح للطالب بالتقدم
+     */
+    async markLessonRead(
+        schoolId: number,
+        userUuid: string,
+        lessonUuid: string,
+    ) {
+        const { studentId, lesson } = await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
+
+        // التحقق أن الدرس ليس فيه أسئلة
+        const questionCount = await this.prisma.question.count({
+            where: { templateId: lesson.templateId, isDeleted: false },
+        });
+
+        if (questionCount > 0) {
+            throw new BadRequestException('هذا الدرس يحتوي على أسئلة — استخدم submit-quiz');
+        }
+
+        // التحقق أنه لم يُكمل من قبل
+        const existing = await this.prisma.studentLessonResult.findFirst({
+            where: { studentId, lessonId: lesson.id, isDeleted: false },
+        });
+
+        if (existing) {
+            return { message: 'تم إنجاز الدرس مسبقاً', alreadyCompleted: true };
+        }
+
+        // إنشاء نتيجة 100% (درس قرائي)
+        const result = await this.prisma.studentLessonResult.create({
+            data: {
+                studentId,
+                lessonId: lesson.id,
+                totalQuestions: 0,
+                correctQuestions: 0,
+                totalPoints: 0,
+                earnedPoints: 0,
+                percent: 100,
+                gradeLabel: 'تمت القراءة',
+                calculatedAt: new Date(),
+                version: 1,
+            },
+        });
+
+        // تحديث progress
+        await this.prisma.studentLessonProgress.upsert({
+            where: {
+                id: (await this.prisma.studentLessonProgress.findFirst({
+                    where: { studentId, lessonId: lesson.id },
+                }))?.id ?? 0,
+            },
+            update: {
+                status: 'COMPLETED',
+                updatedAt: new Date(),
+            },
+            create: {
+                studentId,
+                lessonId: lesson.id,
+                status: 'COMPLETED',
+                lastPosition: JSON.stringify({ type: 'mark_read' }),
+            },
+        });
+
+        return {
+            message: 'تم إنجاز الدرس بنجاح',
+            resultUuid: result.uuid,
+            alreadyCompleted: false,
+        };
+    }
+
     // ─────── Evaluation Logic ────────────────────────────────────────────────
 
     private evaluateAnswer(question: any, answerValue: any): boolean {
