@@ -20,6 +20,7 @@ import { CreateBlockItemDto } from './dto/create-block-item.dto';
 import { UpdateBlockItemDto } from './dto/update-block-item.dto';
 import { ReorderBlocksDto } from './dto/reorder-blocks.dto';
 import { ReorderBlockItemsDto } from './dto/reorder-block-items.dto';
+import { MoveBlockItemDto } from './dto/move-block-item.dto';
 import { PlatformJwtAuthGuard } from '../auth/guards/platform-jwt-auth.guard';
 
 /**
@@ -134,5 +135,22 @@ export class PlatformLessonsController {
     deleteBlockItem(@Req() req: any, @Param('lessonUuid') lessonUuid: string, @Param('blockUuid') blockUuid: string, @Param('itemUuid') itemUuid: string) {
         return this.service.deleteBlockItem(req.user.sub, lessonUuid, blockUuid, itemUuid);
     }
-}
 
+    /** PATCH — نقل عنصر من فقرة لأخرى */
+    @Patch('lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid/move')
+    moveItemToBlock(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+        @Param('blockUuid') blockUuid: string,
+        @Param('itemUuid') itemUuid: string,
+        @Body() dto: MoveBlockItemDto,
+    ) {
+        return this.service.moveItemToBlock(
+            req.user.sub,
+            lessonUuid,
+            blockUuid,
+            itemUuid,
+            dto,
+        );
+    }
+}

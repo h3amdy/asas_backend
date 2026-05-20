@@ -16,6 +16,7 @@ import { CreateBlockItemDto } from './dto/create-block-item.dto';
 import { UpdateBlockItemDto } from './dto/update-block-item.dto';
 import { ReorderBlocksDto } from './dto/reorder-blocks.dto';
 import { ReorderBlockItemsDto } from './dto/reorder-block-items.dto';
+import { MoveBlockItemDto } from './dto/move-block-item.dto';
 
 @Injectable()
 export class PlatformLessonsService {
@@ -568,5 +569,56 @@ export class PlatformLessonsService {
             }),
         );
         return { message: 'تم إعادة ترتيب العناصر بنجاح' };
+    }
+
+    // ─────── نقل عنصر من فقرة لأخرى ─────────────────────────────────
+    async moveItemToBlock(
+        platformUserUuid: string,
+        lessonUuid: string,
+        sourceBlockUuid: string,
+        itemUuid: string,
+        dto: MoveBlockItemDto,
+    ) {
+        const { lesson } = await this.assertOwnsLesson(platformUserUuid, lessonUuid);
+
+        const sourceBlock = await this.prisma.lessonContentBlock.findFirst({
+            where: { uuid: sourceBlockUuid, templateId: lesson.id, isDeleted: false },
+        });
+        if (!sourceBlock) throw new NotFoundException('الفقرة المصدر غير موجودة');
+
+        const targetBlock = await this.prisma.lessonContentBlock.findFirst({
+            where: { uuid: dto.targetBlockUuid, templateId: lesson.id, isDeleted: false },
+        });
+        if (!targetBlock) throw new NotFoundException('الفقرة الهدف غير موجودة');
+
+        const item = await this.prisma.lessonBlockItem.findFirst({
+            where: { uuid: itemUuid, blockId: sourceBlock.id, isDeleted: false },
+        });
+        if (!item) throw new NotFoundException('العنصر غير موجود');
+
+        if (sourceBlock.id === targetBlock.id) {
+            await this.prisma.lessonBlockItem.update({ where: { id: item.id }, data: { orderIndex: dto.targetOrderIndex } });
+            const items = await this.prisma.lessonBlockItem.findMany({ where: { blockId: sourceBlock.id, isDeleted: false }, orderBy: { orderIndex: 'asc' } });
+            await this.prisma.$transaction(
+                items.map((it, i) => this.prisma.lessonBlockItem.update({ where: { id: it.id }, data: { orderIndex: i + 1 } })),
+            );
+            return { message: 'تم نقل العنصر بنجاح' };
+        }
+
+        await this.prisma.$transaction(async (tx) => {
+            await tx.lessonBlockItem.update({ where: { id: item.id }, data: { blockId: targetBlock.id, orderIndex: dto.targetOrderIndex } });
+
+            const sourceItems = await tx.lessonBlockItem.findMany({ where: { blockId: sourceBlock.id, isDeleted: false }, orderBy: { orderIndex: 'asc' } });
+            for (let i = 0; i < sourceItems.length; i++) {
+                await tx.lessonBlockItem.update({ where: { id: sourceItems[i].id }, data: { orderIndex: i + 1 } });
+            }
+
+            const targetItems = await tx.lessonBlockItem.findMany({ where: { blockId: targetBlock.id, isDeleted: false }, orderBy: { orderIndex: 'asc' } });
+            for (let i = 0; i < targetItems.length; i++) {
+                await tx.lessonBlockItem.update({ where: { id: targetItems[i].id }, data: { orderIndex: i + 1 } });
+            }
+        });
+
+        return { message: 'تم نقل العنصر بنجاح' };
     }
 }
