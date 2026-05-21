@@ -526,6 +526,7 @@ model Subject {
 
   displayName       String      @map("display_name")
   shortName         String?     @map("short_name")
+  code              String?     @map("code")
   coverMediaAssetId Int?        @map("cover_media_asset_id")
   coverMediaAsset   MediaAsset? @relation("SubjectCover", fields: [coverMediaAssetId], references: [id])
 

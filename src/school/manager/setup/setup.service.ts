@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { PrismaService } from '../../../prisma/prisma.service';
 import type { SetupStatusDto } from './dto/setup-status.dto';
 import type { AcademicInitializationDto } from './dto/academic-initialization.dto';
+import { autoImportSubjectsForGrade } from '../../common/helpers/subject-import.helper';
 
 @Injectable()
 export class SetupService {
@@ -144,6 +145,11 @@ export class SetupService {
                 await tx.section.create({
                     data: { gradeId: grade.id, name: 'أ', orderIndex: 1 },
                 });
+
+                // ← استيراد تلقائي للمواد الرسمية عند التهيئة الأولية
+                if (gradeDto.dictionaryId) {
+                    await autoImportSubjectsForGrade(tx, schoolId, grade.id, gradeDto.dictionaryId);
+                }
             }
 
             // 6. إنشاء السنة (بدون تواريخ)

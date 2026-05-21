@@ -2,6 +2,7 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { SubjectsService } from './subjects.service';
 import { CreateSubjectDto, UpdateSubjectDto, AssignSubjectSectionsDto, AssignTeacherToSectionDto } from './dto/subjects.dto';
+import { ImportSubjectsDto } from './dto/import-subjects.dto';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
@@ -21,6 +22,23 @@ export class SubjectsController {
     create(@Req() req: any, @Body() dto: CreateSubjectDto) {
         return this.service.createSubject(req.schoolContext.id, dto);
     }
+
+    // ═══════ قاموس المواد الرسمية + الاستيراد ═══════
+
+    @Get('dictionary')
+    listDictionary(@Req() req: any, @Query('gradeDictionaryId') gradeDictionaryId?: string) {
+        return this.service.listSubjectDictionary(
+            req.schoolContext.id,
+            gradeDictionaryId ? +gradeDictionaryId : undefined,
+        );
+    }
+
+    @Post('import-from-dictionary')
+    importFromDictionary(@Req() req: any, @Body() dto: ImportSubjectsDto) {
+        return this.service.importFromDictionary(req.schoolContext.id, dto);
+    }
+
+    // ═══════ CRUD بالـ ID ═══════
 
     @Get(':subjectId')
     getOne(@Req() req: any, @Param('subjectId', ParseIntPipe) id: number) {

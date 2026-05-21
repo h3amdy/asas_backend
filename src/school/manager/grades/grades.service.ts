@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateGradeDto, UpdateGradeDto, CreateSectionDto, UpdateSectionDto } from './dto/grades.dto';
+import { autoImportSubjectsForGrade } from '../../common/helpers/subject-import.helper';
 
 @Injectable()
 export class GradesService {
@@ -71,6 +72,11 @@ export class GradesService {
                     data: { gradeId: grade.id, name: 'أ', orderIndex: 1 },
                 });
 
+                // ← استيراد تلقائي للمواد الرسمية
+                if (dto.dictionaryId) {
+                    await autoImportSubjectsForGrade(tx, schoolId, grade.id, dto.dictionaryId);
+                }
+
                 return grade.id;
             });
 
@@ -128,6 +134,11 @@ export class GradesService {
                     await tx.section.create({
                         data: { gradeId: grade.id, name: 'أ', orderIndex: 1 },
                     });
+
+                    // ← استيراد تلقائي للمواد الرسمية
+                    if (dto.dictionaryId) {
+                        await autoImportSubjectsForGrade(tx, schoolId, grade.id, dto.dictionaryId);
+                    }
 
                     ids.push(grade.id);
                 }

@@ -2,6 +2,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateSubjectDto, UpdateSubjectDto, AssignSubjectSectionsDto, AssignTeacherToSectionDto } from './dto/subjects.dto';
+import { ImportSubjectsDto } from './dto/import-subjects.dto';
 
 @Injectable()
 export class SubjectsService {
@@ -84,12 +85,23 @@ export class SubjectsService {
         }
 
         // 4. إنشاء المادة
+        // ← جلب الكود من القاموس إن وُجد
+        let code: string | null = null;
+        if (dto.dictionaryId) {
+            const dict = await this.prisma.subjectDictionary.findFirst({
+                where: { id: dto.dictionaryId, isDeleted: false },
+                select: { code: true },
+            });
+            code = dict?.code ?? null;
+        }
+
         const subject = await this.prisma.subject.create({
             data: {
                 schoolId,
                 gradeId: dto.gradeId,
                 displayName: dto.displayName,
                 shortName: dto.shortName ?? null,
+                code,
                 dictionaryId: dto.dictionaryId ?? null,
                 coverMediaAssetId,
             },
@@ -377,5 +389,133 @@ export class SubjectsService {
         if (result.count === 0) throw new NotFoundException('ASSIGNMENT_NOT_FOUND');
 
         return { success: true };
+    }
+
+    // ═══════ قاموس المواد الرسمية + الاستيراد ═══════
+
+    /**
+     * قائمة مواد القاموس الرسمي مع حالة الاستيراد
+     * GET /school/manager/subjects/dictionary?gradeId=
+     */
+    async listSubjectDictionary(schoolId: number, gradeId?: number) {
+        // 1. جلب المواد الرسمية المفعلة
+        const dictSubjects = await this.prisma.subjectDictionary.findMany({
+            where: {
+                isDeleted: false,
+                isActive: true,
+                ...(gradeId ? {
+                    gradeDictionary: {
+                        // ربط بصف المدرسة (عبر dictionaryId)
+                        id: gradeId,
+                    },
+                } : {}),
+            },
+            include: {
+                gradeDictionary: { select: { id: true, defaultName: true } },
+            },
+            orderBy: [
+                { gradeDictionary: { sortOrder: 'asc' } },
+                { sortOrder: 'asc' },
+            ],
+        });
+
+        // 2. جلب المواد المستوردة فعلاً في هذه المدرسة
+        const importedSubjects = await this.prisma.subject.findMany({
+            where: {
+                schoolId,
+                isDeleted: false,
+                dictionaryId: { not: null },
+            },
+            select: { dictionaryId: true },
+        });
+        const importedIds = new Set(importedSubjects.map((s) => s.dictionaryId!));
+
+        // 3. إرجاع القائمة مع حالة الاستيراد
+        return dictSubjects.map((d) => ({
+            id: d.id,
+            defaultName: d.defaultName,
+            shortName: d.shortName,
+            code: d.code,
+            sortOrder: d.sortOrder,
+            gradeDictionaryId: d.gradeDictionaryId,
+            gradeName: d.gradeDictionary.defaultName,
+            isImported: importedIds.has(d.id),
+        }));
+    }
+
+    /**
+     * استيراد مواد مختارة من القاموس
+     * POST /school/manager/subjects/import-from-dictionary
+     */
+    async importFromDictionary(schoolId: number, dto: ImportSubjectsDto) {
+        return this.prisma.$transaction(async (tx) => {
+            const created: number[] = [];
+
+            for (const dictId of dto.dictionaryIds) {
+                // 1. تحقق من وجود المادة في القاموس
+                const dictSubject = await tx.subjectDictionary.findFirst({
+                    where: { id: dictId, isDeleted: false, isActive: true },
+                    include: { gradeDictionary: { select: { id: true } } },
+                });
+                if (!dictSubject) {
+                    throw new BadRequestException(`INVALID_DICTIONARY_SUBJECT_${dictId}`);
+                }
+
+                // 2. منع التكرار
+                const exists = await tx.subject.findFirst({
+                    where: { schoolId, dictionaryId: dictId, isDeleted: false },
+                });
+                if (exists) {
+                    throw new ConflictException(`SUBJECT_DICTIONARY_ALREADY_IMPORTED_${dictId}`);
+                }
+
+                // 3. إيجاد الصف المناسب في المدرسة (عبر dictionaryId للصف)
+                const schoolGrade = await tx.schoolGrade.findFirst({
+                    where: {
+                        schoolId,
+                        dictionaryId: dictSubject.gradeDictionaryId,
+                        isDeleted: false,
+                    },
+                });
+                if (!schoolGrade) {
+                    throw new BadRequestException(
+                        `GRADE_NOT_FOUND_FOR_DICTIONARY_${dictSubject.gradeDictionaryId}`,
+                    );
+                }
+
+                // 4. إنشاء المادة
+                const subject = await tx.subject.create({
+                    data: {
+                        schoolId,
+                        gradeId: schoolGrade.id,
+                        dictionaryId: dictId,
+                        displayName: dictSubject.defaultName,
+                        shortName: dictSubject.shortName,
+                        code: dictSubject.code,
+                    },
+                });
+
+                // 5. ربط بشعب الصف
+                const sections = await tx.section.findMany({
+                    where: { gradeId: schoolGrade.id, isDeleted: false },
+                });
+                for (const section of sections) {
+                    await tx.subjectSection.create({
+                        data: { subjectId: subject.id, sectionId: section.id },
+                    });
+                }
+
+                created.push(subject.id);
+            }
+
+            // إرجاع المواد المُنشأة
+            return this.prisma.subject.findMany({
+                where: { id: { in: created } },
+                include: {
+                    grade: { select: { id: true, displayName: true } },
+                    coverMediaAsset: { select: { uuid: true } },
+                },
+            });
+        });
     }
 }
