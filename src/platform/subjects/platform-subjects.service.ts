@@ -165,6 +165,73 @@ export class PlatformSubjectsService {
   }
 
   // ═══════════════════════════════════════════════════
+  //  خريطة تحويل أسماء المواد إلى أكواد مختصرة
+  // ═══════════════════════════════════════════════════
+
+  private static readonly SUBJECT_CODE_MAP: Record<string, string> = {
+    // القرآن
+    'قرآن': 'QR', 'قران': 'QR',
+    // الإسلامية
+    'إسلام': 'IS', 'اسلام': 'IS', 'دين': 'IS', 'تربية إسلامية': 'IS',
+    // العربية
+    'عربي': 'AR', 'عربية': 'AR', 'لغة عربية': 'AR',
+    // الإنجليزية
+    'إنجليز': 'EN', 'انجليز': 'EN', 'english': 'EN',
+    // الرياضيات
+    'رياض': 'MA', 'حساب': 'MA', 'math': 'MA',
+    // الفيزياء
+    'فيز': 'PH', 'physics': 'PH',
+    // الكيمياء
+    'كيم': 'CH', 'chemistry': 'CH',
+    // الأحياء
+    'أحي': 'BI', 'احي': 'BI', 'biology': 'BI',
+    // العلوم
+    'علوم': 'SC', 'science': 'SC',
+    // الاجتماعيات
+    'اجتماع': 'SO', 'جغراف': 'SO', 'تاريخ': 'SO',
+    // التربية الوطنية
+    'وطن': 'NA', 'مواطنة': 'NA',
+  };
+
+  /**
+   * توليد كود مادة تلقائياً من اسم المادة وكود الصف.
+   * النمط: GRADECODE-SUBJECTABBR (مثلاً: B01-MA, S03-PH)
+   * إذا لم يُعرف الاسم → يستخدم رقم تسلسلي (مثلاً: B01-S01)
+   */
+  private generateSubjectCode(subjectName: string, gradeCode: string): string {
+    const nameLower = subjectName.toLowerCase().trim();
+
+    // البحث في خريطة التحويل
+    for (const [keyword, abbr] of Object.entries(
+      PlatformSubjectsService.SUBJECT_CODE_MAP,
+    )) {
+      if (nameLower.includes(keyword)) {
+        return `${gradeCode}-${abbr}`;
+      }
+    }
+
+    // fallback: لم نجد تطابق → لا نرجع شيء، سيُعالج بالتسلسل
+    return '';
+  }
+
+  /**
+   * ضمان فرادة الكود — إذا كان موجوداً يضيف suffix رقمي
+   */
+  private async ensureUniqueCode(baseCode: string): Promise<string> {
+    let code = baseCode;
+    let suffix = 2;
+
+    while (true) {
+      const existing = await this.prisma.subjectDictionary.findFirst({
+        where: { code, isDeleted: false },
+      });
+      if (!existing) return code;
+      code = `${baseCode}-${suffix}`;
+      suffix++;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════
   //  إنشاء مادة جديدة
   // ═══════════════════════════════════════════════════
 
@@ -177,20 +244,29 @@ export class PlatformSubjectsService {
       throw new NotFoundException('الصف الدراسي غير موجود');
     }
 
-    // 2. تحديد الكود (تلقائي أو يدوي)
-    const code = dto.code || null;
+    // 2. تحديد الكود (يدوي أو تلقائي — لكنه إجباري دائماً)
+    let code: string;
 
-    // 3. التحقق من عدم تكرار الكود (إذا تم تحديده)
-    if (code) {
-      const existingByCode = await this.prisma.subjectDictionary.findFirst({
-        where: { code, isDeleted: false },
-      });
-      if (existingByCode) {
-        throw new ConflictException(
-          `الكود "${code}" مستخدم بالفعل في مادة "${existingByCode.defaultName}"`,
-        );
+    if (dto.code && dto.code.trim()) {
+      // المستخدم أدخل كود → نستخدمه بعد التنظيف
+      code = dto.code.trim().toUpperCase();
+    } else {
+      // المستخدم لم يدخل كود → نولّده تلقائياً
+      const autoCode = this.generateSubjectCode(dto.defaultName, grade.code);
+
+      if (autoCode) {
+        code = autoCode;
+      } else {
+        // fallback: كود تسلسلي (GRADECODE-S01, S02, ...)
+        const countInGrade = await this.prisma.subjectDictionary.count({
+          where: { gradeDictionaryId: grade.id, isDeleted: false },
+        });
+        code = `${grade.code}-S${String(countInGrade + 1).padStart(2, '0')}`;
       }
     }
+
+    // 3. ضمان فرادة الكود (حتى لو تكرر بسبب auto-generation)
+    code = await this.ensureUniqueCode(code);
 
     // 4. التحقق من عدم تكرار الاسم في نفس الصف
     const existingByName = await this.prisma.subjectDictionary.findFirst({
@@ -213,7 +289,7 @@ export class PlatformSubjectsService {
     });
     const nextSortOrder = (maxSort._max.sortOrder ?? 0) + 1;
 
-    // 6. إنشاء المادة
+    // 6. إنشاء المادة (code دائماً NOT NULL)
     const created = await this.prisma.subjectDictionary.create({
       data: {
         gradeDictionaryId: grade.id,
