@@ -6,12 +6,14 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformJwtStrategy } from './platform-jwt.strategy';
+import { PlatformSessionsModule } from '../sessions/platform-sessions.module';
 import { PLATFORM_AUTH_JWT } from './constants';
 
 @Module({
   imports: [
     PrismaModule,
     PassportModule,
+    PlatformSessionsModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'SUPER_SECRET_ASAS',
       signOptions: {

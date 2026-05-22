@@ -6,12 +6,16 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PlatformSessionsService } from '../sessions/platform-sessions.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/update-profile.dto';
 import { PLATFORM_AUTH_ERRORS } from '../auth/constants';
 
 @Injectable()
 export class PlatformProfileService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sessions: PlatformSessionsService,
+  ) {}
 
   /**
    * جلب الملف الشخصي (PLT-002)
@@ -112,6 +116,12 @@ export class PlatformProfileService {
       data: { passwordHash: newHash },
     });
 
-    return { message: 'تم تحديث كلمة المرور بنجاح' };
+    // إبطال جميع الجلسات بعد تغيير كلمة المرور
+    await this.sessions.revokeAllUserSessions({
+      platformUserId: user.id,
+      reason: 'PASSWORD_CHANGED',
+    });
+
+    return { message: 'تم تحديث كلمة المرور بنجاح — يرجى تسجيل الدخول مرة أخرى' };
   }
 }

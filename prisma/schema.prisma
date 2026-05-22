@@ -1463,10 +1463,6 @@ model PlatformUser {
   role     PlatformRole @default(PLATFORM_TEACHER)
   isActive Boolean      @default(true) @map("is_active")
 
-  // Refresh Token Support
-  refreshTokenHash String?   @unique @map("refresh_token_hash")
-  refreshExpiresAt DateTime? @map("refresh_expires_at")
-
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   isDeleted Boolean   @default(false) @map("is_deleted")
@@ -1475,8 +1471,30 @@ model PlatformUser {
   assignedSubjects       PlatformUserSubject[]
   createdLessonTemplates LessonTemplate[]      @relation("PlatformLessonCreator")
   uploadSessions         MediaUploadSession[]
+  authSessions           PlatformAuthSession[]
 
   @@map("platform_users")
+}
+
+// جلسات مصادقة منصة المحتوى
+model PlatformAuthSession {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  platformUserId Int          @map("platform_user_id")
+  platformUser   PlatformUser @relation(fields: [platformUserId], references: [id])
+
+  refreshTokenHash String @unique @map("refresh_token_hash")
+
+  createdAt    DateTime      @default(now()) @map("created_at")
+  lastSeenAt   DateTime?     @map("last_seen_at")
+  expiresAt    DateTime      @map("expires_at")
+  revokedAt    DateTime?     @map("revoked_at")
+  revokeReason RevokeReason? @map("revoke_reason")
+
+  @@index([platformUserId], map: "platform_auth_sessions_user_id_idx")
+  @@index([revokedAt], map: "platform_auth_sessions_revoked_at_idx")
+  @@map("platform_auth_sessions")
 }
 
 // إسناد المواد الرسمية لمعلمي المنصة

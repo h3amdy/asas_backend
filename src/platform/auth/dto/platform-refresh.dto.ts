@@ -4,5 +4,9 @@ import { IsNotEmpty, IsString } from 'class-validator';
 export class PlatformRefreshDto {
   @IsString()
   @IsNotEmpty()
+  sessionId: string;
+
+  @IsString()
+  @IsNotEmpty()
   refreshToken: string;
 }

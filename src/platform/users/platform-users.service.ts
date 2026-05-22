@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PlatformSessionsService } from '../sessions/platform-sessions.service';
 import { CreatePlatformUserDto } from './dto/create-platform-user.dto';
 import { UpdatePlatformUserDto } from './dto/update-platform-user.dto';
 
@@ -25,7 +26,10 @@ const USER_SELECT = {
 
 @Injectable()
 export class PlatformUsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sessions: PlatformSessionsService,
+  ) {}
 
   /**
    * قائمة معلمي المنصة (PLT-010)
@@ -213,6 +217,12 @@ export class PlatformUsersService {
     await this.prisma.platformUser.update({
       where: { id: user.id },
       data: { passwordHash },
+    });
+
+    // إبطال جميع جلسات المستخدم بعد إعادة تعيين كلمة المرور
+    await this.sessions.revokeAllUserSessions({
+      platformUserId: user.id,
+      reason: 'PASSWORD_CHANGED',
     });
 
     return {

@@ -21,7 +21,7 @@ export class PlatformAuthController {
 
   /**
    * POST /auth/platform/refresh
-   * تجديد التوكن باستخدام refresh token
+   * تجديد التوكن باستخدام sessionId + refresh token
    */
   @Post('refresh')
   async refresh(@Body() dto: PlatformRefreshDto) {
@@ -30,12 +30,13 @@ export class PlatformAuthController {
 
   /**
    * POST /auth/platform/logout
-   * تسجيل الخروج — إبطال الـ refresh token
+   * تسجيل الخروج — إبطال الجلسة الحالية
    */
   @UseGuards(PlatformJwtAuthGuard)
   @Post('logout')
   async logout(@Req() req: any) {
     const userUuid = req.user?.sub;
-    return this.authService.logout(userUuid);
+    const sessionUuid = req.user?.sid;
+    return this.authService.logout(sessionUuid, userUuid);
   }
 }

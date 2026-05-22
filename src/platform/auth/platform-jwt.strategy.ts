@@ -7,6 +7,7 @@ import { PLATFORM_AUTH_JWT } from './constants';
 type PlatformJwtPayload = {
   sub: string;  // platform user uuid
   role: 'PLATFORM_ADMIN' | 'PLATFORM_TEACHER';
+  sid?: string; // session uuid
   iat?: number;
   exp?: number;
 };
@@ -31,6 +32,6 @@ export class PlatformJwtStrategy extends PassportStrategy(Strategy, 'platform-jw
     if (!['PLATFORM_ADMIN', 'PLATFORM_TEACHER'].includes(payload.role)) {
       throw new UnauthorizedException('Not a platform token');
     }
-    return { sub: payload.sub, role: payload.role };
+    return { sub: payload.sub, role: payload.role, sid: payload.sid };
   }
 }

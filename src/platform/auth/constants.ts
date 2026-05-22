@@ -22,4 +22,8 @@ export const PLATFORM_AUTH_ERRORS = {
   ADMIN_ONLY: 'هذا الإجراء متاح لمدير المنصة فقط',
   WRONG_PASSWORD: 'كلمة المرور الحالية غير صحيحة',
   INVALID_REFRESH_TOKEN: 'رمز التجديد غير صالح أو منتهي الصلاحية',
+  SESSION_NOT_FOUND: 'الجلسة غير موجودة',
+  SESSION_EXPIRED: 'الجلسة منتهية الصلاحية',
+  SESSION_REVOKED: 'الجلسة ملغاة — يرجى تسجيل الدخول مرة أخرى',
+  NOT_YOUR_SESSION: 'لا تملك صلاحية على هذه الجلسة',
 };
