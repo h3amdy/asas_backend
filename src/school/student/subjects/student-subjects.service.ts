@@ -1,10 +1,14 @@
 // src/school/student/subjects/student-subjects.service.ts
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { StudentBooksService } from '../books/student-books.service';
 
 @Injectable()
 export class StudentSubjectsService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly booksService: StudentBooksService,
+    ) { }
 
     /**
      * GET /school/student/my-subjects
@@ -57,6 +61,7 @@ export class StudentSubjectsService {
                 subject: {
                     include: {
                         coverMediaAsset: { select: { uuid: true } },
+                        grade: { select: { dictionaryId: true } },
                     },
                 },
             },
@@ -107,7 +112,10 @@ export class StudentSubjectsService {
             }
         }
 
-        // 5. تجميع الرد بدون تكرار للمواد
+        // 5. حساب hasBooks لكل مادة
+        const allowedSemesters = await this.booksService._getAllowedSemesters(schoolId);
+
+        // 6. تجميع الرد بدون تكرار للمواد
         const seen = new Set<string>();
         const result: {
             uuid: string;
@@ -117,6 +125,7 @@ export class StudentSubjectsService {
             totalLessons: number;
             completedLessons: number;
             hasNewLessons: boolean;
+            hasBooks: boolean;
         }[] = [];
 
         for (const ss of subjectSections) {
@@ -125,6 +134,12 @@ export class StudentSubjectsService {
                 seen.add(subject.uuid);
                 
                 const stats = statsMap.get(subject.id) || { total: 0, completed: 0, hasNew: false };
+
+                const bookCount = await this.booksService.countBooksForSubject(
+                    subject.dictionaryId,
+                    (subject as any).grade?.dictionaryId ?? null,
+                    allowedSemesters,
+                );
                 
                 result.push({
                     uuid: subject.uuid,
@@ -134,11 +149,12 @@ export class StudentSubjectsService {
                     totalLessons: stats.total,
                     completedLessons: stats.completed,
                     hasNewLessons: stats.hasNew,
+                    hasBooks: bookCount > 0,
                 });
             }
         }
 
-        // 6. ترتيب حسب اسم المادة
+        // 7. ترتيب حسب اسم المادة
         return result.sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
 }
