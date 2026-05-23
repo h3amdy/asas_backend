@@ -195,6 +195,7 @@ model GradeDictionary {
 
   schoolGrades      SchoolGrade[]
   subjectDictionary SubjectDictionary[]
+  schoolBooks       SchoolBook[]
 }
 
 // =========================
@@ -505,6 +506,7 @@ model SubjectDictionary {
   platformUserSubjects PlatformUserSubject[]
   units                Unit[]
   lessonTemplates      LessonTemplate[]
+  schoolBooks          SchoolBook[]
 
   @@index([gradeDictionaryId, sortOrder], map: "subject_dictionary_grade_sort_idx")
   @@map("subject_dictionary")
@@ -724,6 +726,7 @@ model AuthSession {
 enum MediaKind {
   IMAGE
   AUDIO
+  DOCUMENT
 }
 
 enum MediaUploadStatus {
@@ -800,6 +803,8 @@ model MediaAsset {
   matchingPairsAsRightAudio   QuestionMatchingPair[] @relation("MatchingPairRightAudio")
   orderingItemsAsImage        QuestionOrderingItem[] @relation("OrderingItemImage")
   orderingItemsAsAudio        QuestionOrderingItem[] @relation("OrderingItemAudio")
+  booksAsCover                SchoolBook[]           @relation("BookCover")
+  booksAsPdf                  SchoolBook[]           @relation("BookPdf")
 
   @@index([schoolId], map: "media_assets_school_id_idx")
   @@index([kind], map: "media_assets_kind_idx")
@@ -1543,4 +1548,53 @@ model AuditLog {
   @@index([schoolId], map: "audit_logs_school_idx")
   @@index([createdAt], map: "audit_logs_created_at_idx")
   @@map("audit_logs")
+}
+
+// =========================
+// SCHOOL BOOKS
+// =========================
+
+// كتب مدرسية رسمية (مكتبة المنصة)
+model SchoolBook {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  // ربط بالمادة والصف الرسمي
+  subjectDictionaryId Int               @map("subject_dictionary_id")
+  subjectDictionary   SubjectDictionary @relation(fields: [subjectDictionaryId], references: [id])
+
+  gradeDictionaryId Int             @map("grade_dictionary_id")
+  gradeDictionary   GradeDictionary @relation(fields: [gradeDictionaryId], references: [id])
+
+  // بيانات الكتاب
+  title       String
+  description String?
+  semester    SchoolBookSemester
+
+  // الملفات
+  coverMediaAssetId Int?        @map("cover_media_asset_id")
+  coverMediaAsset   MediaAsset? @relation("BookCover", fields: [coverMediaAssetId], references: [id])
+
+  pdfMediaAssetId Int?        @map("pdf_media_asset_id")
+  pdfMediaAsset   MediaAsset? @relation("BookPdf", fields: [pdfMediaAssetId], references: [id])
+
+  // حالة
+  isActive  Boolean   @default(true) @map("is_active")
+  sortOrder Int       @default(0) @map("sort_order")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([subjectDictionaryId, gradeDictionaryId, semester, title], map: "school_books_subject_grade_semester_title_key")
+  @@index([subjectDictionaryId], map: "school_books_subject_dict_idx")
+  @@index([gradeDictionaryId], map: "school_books_grade_dict_idx")
+  @@map("school_books")
+}
+
+enum SchoolBookSemester {
+  FIRST
+  SECOND
+  FULL
 }

@@ -20,6 +20,7 @@ export class PlatformSubjectsService {
   // ═══════════════════════════════════════════════════
 
   private readonly subjectSelect = {
+    id: true,
     uuid: true,
     code: true,
     defaultName: true,
@@ -32,6 +33,7 @@ export class PlatformSubjectsService {
     },
     gradeDictionary: {
       select: {
+        id: true,
         uuid: true,
         code: true,
         defaultName: true,
@@ -84,6 +86,7 @@ export class PlatformSubjectsService {
     });
 
     return subjects.map((s) => ({
+      id: s.id,
       uuid: s.uuid,
       code: s.code,
       defaultName: s.defaultName,
@@ -511,6 +514,7 @@ export class PlatformSubjectsService {
     return this.prisma.gradeDictionary.findMany({
       where: { isDeleted: false, isActive: true },
       select: {
+        id: true,
         uuid: true,
         code: true,
         defaultName: true,

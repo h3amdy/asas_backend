@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../shared/media/storage.service';
 import { MediaProcessingService } from '../../shared/media/media-processing.service';
 
-enum MediaKind { IMAGE = 'IMAGE', AUDIO = 'AUDIO' }
+enum MediaKind { IMAGE = 'IMAGE', AUDIO = 'AUDIO', DOCUMENT = 'DOCUMENT' }
 enum MediaUploadStatus { INITIATED = 'INITIATED', UPLOADING = 'UPLOADING', COMPLETED = 'COMPLETED', CANCELED = 'CANCELED' }
 enum ProcessingStatus { PENDING = 'PENDING', PROCESSING = 'PROCESSING', DONE = 'DONE', ERROR = 'ERROR' }
 
@@ -210,7 +210,23 @@ export class PlatformMediaUploadService {
             },
         });
 
-        // Trigger processing pipeline (async)
+        // DOCUMENT (PDF) — لا يحتاج processing، يكتمل فوراً
+        if (session.kind === MediaKind.DOCUMENT) {
+            await this.prisma.mediaUploadSession.update({
+                where: { id: session.id },
+                data: { processingStatus: ProcessingStatus.DONE },
+            });
+            await this.prisma.mediaAsset.update({
+                where: { id: session.mediaAssetId },
+                data: { processingStatus: 'DONE' },
+            });
+            return {
+                media_asset_uuid: session.mediaAsset.uuid,
+                processing_status: 'DONE',
+            };
+        }
+
+        // Trigger processing pipeline (async) — IMAGE/AUDIO فقط
         this.processing.processAsset(
             session.mediaAssetId,
             'platform',  // pseudo schoolUuid for storage path
@@ -272,6 +288,7 @@ export class PlatformMediaUploadService {
             'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
             'audio/mpeg': 'mp3', 'audio/aac': 'aac', 'audio/ogg': 'ogg', 'audio/opus': 'opus',
             'audio/wav': 'wav', 'audio/mp4': 'm4a',
+            'application/pdf': 'pdf',
         };
         return map[contentType] || 'bin';
     }
@@ -280,8 +297,13 @@ export class PlatformMediaUploadService {
         const allowedPrefixes: Record<string, string> = {
             IMAGE: 'image/',
             AUDIO: 'audio/',
+            DOCUMENT: 'application/pdf',
         };
         const prefix = allowedPrefixes[kind];
-        return prefix ? contentType.startsWith(prefix) : false;
+        if (!prefix) return false;
+        // DOCUMENT: exact match (application/pdf), IMAGE/AUDIO: prefix match
+        return kind === MediaKind.DOCUMENT
+            ? contentType === prefix
+            : contentType.startsWith(prefix);
     }
 }
