@@ -49,6 +49,8 @@ export class MediaProcessingService {
                 variants = await this.processImage(schoolUuid, assetUuid, originalStorageKey, contentType);
             } else if (kind === MediaKind.AUDIO) {
                 variants = await this.processAudio(schoolUuid, assetUuid, originalStorageKey, contentType);
+            } else if (kind === MediaKind.DOCUMENT) {
+                variants = await this.processDocument(schoolUuid, assetUuid, originalStorageKey, contentType);
             }
 
             // Get processed original variant info
@@ -201,6 +203,40 @@ export class MediaProcessingService {
         return variants;
     }
 
+    // ── Document Processing ──
+
+    private async processDocument(
+        schoolUuid: string,
+        assetUuid: string,
+        originalStorageKey: string,
+        contentType: string,
+    ): Promise<Record<string, any>> {
+        const variants: Record<string, any> = {};
+
+        // Documents (PDFs) are kept as-is — no conversion needed
+        const ext = this.getExtFromContentType(contentType);
+        const originalKey = this.storage.buildStorageKey(schoolUuid, assetUuid, 'original', ext);
+
+        const originalPath = this.storage.resolvePath(originalStorageKey);
+        const originalBuffer = await fs.promises.readFile(originalPath);
+
+        // Move original to final location if not already there
+        if (originalStorageKey !== originalKey) {
+            await this.storage.saveBuffer(originalKey, originalBuffer);
+        }
+
+        const originalEtag = this.generateEtag(originalBuffer);
+
+        variants['original'] = {
+            storage_key: originalKey,
+            etag: originalEtag,
+            size_bytes: originalBuffer.length,
+            content_type: contentType,
+        };
+
+        return variants;
+    }
+
     // ── Helpers ──
 
     /** Generate deterministic ETag from file content (sha256) */
@@ -221,6 +257,7 @@ export class MediaProcessingService {
             'audio/opus': 'opus',
             'audio/wav': 'wav',
             'audio/mp4': 'm4a',
+            'application/pdf': 'pdf',
         };
         return map[contentType] || 'bin';
     }

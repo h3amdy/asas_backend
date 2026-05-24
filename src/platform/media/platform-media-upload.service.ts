@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../shared/media/storage.service';
 import { MediaProcessingService } from '../../shared/media/media-processing.service';
+import * as fs from 'fs';
 
 enum MediaKind { IMAGE = 'IMAGE', AUDIO = 'AUDIO', DOCUMENT = 'DOCUMENT' }
 enum MediaUploadStatus { INITIATED = 'INITIATED', UPLOADING = 'UPLOADING', COMPLETED = 'COMPLETED', CANCELED = 'CANCELED' }
@@ -212,13 +213,32 @@ export class PlatformMediaUploadService {
 
         // DOCUMENT (PDF) — لا يحتاج processing، يكتمل فوراً
         if (session.kind === MediaKind.DOCUMENT) {
+            // Build variantsJson for 'original' variant
+            const filePath = this.storage.resolvePath(originalStorageKey);
+            const fileBuffer = await fs.promises.readFile(filePath);
+            const etag = `"${require('crypto').createHash('sha256').update(fileBuffer).digest('hex').substring(0, 32)}"`;
+
+            const variantsJson = JSON.stringify({
+                original: {
+                    storage_key: originalStorageKey,
+                    etag: etag,
+                    size_bytes: fileBuffer.length,
+                    content_type: session.contentType,
+                },
+            });
+
             await this.prisma.mediaUploadSession.update({
                 where: { id: session.id },
                 data: { processingStatus: ProcessingStatus.DONE },
             });
             await this.prisma.mediaAsset.update({
                 where: { id: session.mediaAssetId },
-                data: { processingStatus: 'DONE' },
+                data: {
+                    processingStatus: 'DONE',
+                    variantsJson: variantsJson,
+                    sizeBytes: BigInt(fileBuffer.length),
+                    etag: etag,
+                },
             });
             return {
                 media_asset_uuid: session.mediaAsset.uuid,
