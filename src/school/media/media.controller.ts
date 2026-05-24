@@ -50,6 +50,8 @@ export class MediaController {
         // Resolve variant storage key
         const resolved = await this.mediaService.resolveVariantStorageKey(uuid, schoolId, selectedVariant);
 
+        console.log(`[DEBUG] Controller: selectedVariant='${selectedVariant}', storageKey='${resolved.storageKey}'`);
+
         // Check If-None-Match
         if (ifNoneMatch && ifNoneMatch === resolved.etag) {
             res.status(304).end();
@@ -58,6 +60,7 @@ export class MediaController {
 
         // Check file exists
         const exists = await this.storage.fileExists(resolved.storageKey);
+        console.log(`[DEBUG] Controller: fileExists=${exists} for key='${resolved.storageKey}'`);
         if (!exists) {
             throw new NotFoundException('FILE_NOT_FOUND');
         }

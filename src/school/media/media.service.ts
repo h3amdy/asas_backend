@@ -90,20 +90,26 @@ export class MediaService {
     }> {
         const asset = await this.getAsset(assetUuid, schoolId);
 
+        this.logger.log(`[DEBUG] resolveVariant: variant=${variant}, variantsJson=${asset.variantsJson ? 'exists' : 'NULL'}`);
+
         if (!asset.variantsJson) {
+            this.logger.warn(`[DEBUG] VARIANTS_NOT_READY for asset ${assetUuid}`);
             throw new NotFoundException('VARIANTS_NOT_READY');
         }
 
         const variants = JSON.parse(asset.variantsJson);
+        this.logger.log(`[DEBUG] Available variants: ${Object.keys(variants).join(', ')}, requested: '${variant}'`);
         const variantData = variants[variant];
 
         if (!variantData) {
+            this.logger.log(`[DEBUG] Variant '${variant}' not found, trying fallback...`);
             // Fallback: try default variant based on kind
             const defaultVariant = asset.kind === 'IMAGE' ? 'medium'
                 : asset.kind === 'DOCUMENT' ? 'original'
                 : 'low';
             const fallback = variants[defaultVariant] || variants['original'];
             if (!fallback) {
+                this.logger.warn(`[DEBUG] No fallback found! defaultVariant=${defaultVariant}`);
                 throw new NotFoundException(`VARIANT_NOT_FOUND: ${variant}`);
             }
             return {
