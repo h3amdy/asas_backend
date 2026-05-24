@@ -21,6 +21,8 @@ export class MediaService {
      * Get asset by UUID (scoped to school)
      */
     async getAsset(assetUuid: string, schoolId: number) {
+        this.logger.log(`[DEBUG] getAsset called: uuid=${assetUuid}, schoolId=${schoolId}`);
+        
         const asset = await this.prisma.mediaAsset.findFirst({
             where: {
                 uuid: assetUuid,
@@ -33,9 +35,16 @@ export class MediaService {
         });
 
         if (!asset) {
+            // Debug: check if asset exists at all (ignoring filters)
+            const anyAsset = await this.prisma.mediaAsset.findFirst({
+                where: { uuid: assetUuid },
+                select: { id: true, uuid: true, ownerType: true, schoolId: true, isDeleted: true, kind: true },
+            });
+            this.logger.warn(`[DEBUG] ASSET_NOT_FOUND. Raw lookup: ${JSON.stringify(anyAsset)}`);
             throw new NotFoundException('ASSET_NOT_FOUND');
         }
 
+        this.logger.log(`[DEBUG] Asset found: id=${asset.id}, ownerType=${asset.ownerType}, kind=${asset.kind}`);
         return asset;
     }
 
