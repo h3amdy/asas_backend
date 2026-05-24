@@ -8,9 +8,8 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  // ✅ زيادة حد حجم الـ body لدعم رفع chunks كبيرة والكتب المدرسية الضخمة (حتى 100MB)
-  app.useBodyParser('json', { limit: '10mb' });
-  app.useBodyParser('raw', { limit: '100mb' });
+  app.useBodyParser('json', { limit: '5mb' });
+  app.useBodyParser('raw', { limit: '10mb' });
 
   // ✅ تفعيل CORS عشان Flutter (وحتى لو صار عندك Web)
   app.enableCors({

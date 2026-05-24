@@ -22,7 +22,14 @@ export class MediaService {
      */
     async getAsset(assetUuid: string, schoolId: number) {
         const asset = await this.prisma.mediaAsset.findFirst({
-            where: { uuid: assetUuid, schoolId, ownerType: 'SCHOOL', isDeleted: false },
+            where: {
+                uuid: assetUuid,
+                isDeleted: false,
+                OR: [
+                    { schoolId, ownerType: 'SCHOOL' },
+                    { ownerType: 'PLATFORM' },
+                ],
+            },
         });
 
         if (!asset) {
