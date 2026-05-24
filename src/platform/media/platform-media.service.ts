@@ -79,7 +79,9 @@ export class PlatformMediaService {
         const variantData = variants[variant];
 
         if (!variantData) {
-            const defaultVariant = asset.kind === 'IMAGE' ? 'medium' : 'low';
+            const defaultVariant = asset.kind === 'IMAGE' ? 'medium'
+                : asset.kind === 'DOCUMENT' ? 'original'
+                : 'low';
             const fallback = variants[defaultVariant] || variants['original'];
             if (!fallback) {
                 throw new NotFoundException(`VARIANT_NOT_FOUND: ${variant}`);

@@ -98,8 +98,10 @@ export class MediaService {
         const variantData = variants[variant];
 
         if (!variantData) {
-            // Fallback: try default variant
-            const defaultVariant = asset.kind === 'IMAGE' ? 'medium' : 'low';
+            // Fallback: try default variant based on kind
+            const defaultVariant = asset.kind === 'IMAGE' ? 'medium'
+                : asset.kind === 'DOCUMENT' ? 'original'
+                : 'low';
             const fallback = variants[defaultVariant] || variants['original'];
             if (!fallback) {
                 throw new NotFoundException(`VARIANT_NOT_FOUND: ${variant}`);

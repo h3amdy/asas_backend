@@ -42,7 +42,9 @@ export class MediaController {
 
         // Determine default variant from asset kind
         const asset = await this.mediaService.getAsset(uuid, schoolId);
-        const defaultVariant = asset.kind === 'IMAGE' ? 'medium' : 'low';
+        const defaultVariant = asset.kind === 'IMAGE' ? 'medium'
+            : asset.kind === 'DOCUMENT' ? 'original'
+            : 'low';
         const selectedVariant = variant || defaultVariant;
 
         // Resolve variant storage key

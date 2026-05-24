@@ -34,7 +34,9 @@ export class PlatformMediaController {
         @Res() res: Response,
     ) {
         const asset = await this.mediaService.getAsset(uuid);
-        const defaultVariant = asset.kind === 'IMAGE' ? 'medium' : 'low';
+        const defaultVariant = asset.kind === 'IMAGE' ? 'medium'
+            : asset.kind === 'DOCUMENT' ? 'original'
+            : 'low';
         const selectedVariant = variant || defaultVariant;
 
         const resolved = await this.mediaService.resolveVariantStorageKey(uuid, selectedVariant);
