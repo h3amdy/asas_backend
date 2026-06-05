@@ -312,7 +312,8 @@ export class TeacherQuestionsService {
         // BR-04: قواعد اكتمال النوع
         this.validateTypeRules(dto);
 
-        // BR-02: فرادة الترتيب
+        // BR-02: فرادة الترتيب (auto-resolve إذا كان الترتيب مستخدماً)
+        let finalOrderIndex = dto.orderIndex;
         const existingOrder = await this.prisma.question.findFirst({
             where: {
                 templateId: lesson.id,
@@ -322,7 +323,11 @@ export class TeacherQuestionsService {
         });
 
         if (existingOrder) {
-            throw new ConflictException('هذا الترتيب مستخدم. اختر ترتيباً آخر.');
+            const maxOrder = await this.prisma.question.aggregate({
+                where: { templateId: lesson.id, isDeleted: false },
+                _max: { orderIndex: true },
+            });
+            finalOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
         }
 
         // Transaction: إنشاء السؤال + بياناته الفرعية
@@ -336,7 +341,7 @@ export class TeacherQuestionsService {
                 data: {
                     templateId: lesson.id,
                     type: dto.type,
-                    orderIndex: dto.orderIndex,
+                    orderIndex: finalOrderIndex,
                     instructionText: dto.instructionText ?? null,
                     questionText: dto.questionText ?? null,
                     questionImageAssetId,
