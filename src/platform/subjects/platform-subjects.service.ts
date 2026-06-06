@@ -54,6 +54,9 @@ export class PlatformSubjectsService {
    * Teacher يرى النشطة فقط
    */
   async findAllSubjects(includeInactive = false) {
+    console.time('findAllSubjects');
+
+    // 1. جلب المواد مع _count فقط (بدون تحميل علاقة lessonTemplates)
     const subjects = await this.prisma.subjectDictionary.findMany({
       where: {
         isDeleted: false,
@@ -68,22 +71,49 @@ export class PlatformSubjectsService {
             platformUserSubjects: { where: { isDeleted: false } },
           },
         },
-        lessonTemplates: {
-          where: { isDeleted: false },
-          select: {
-            _count: {
-              select: {
-                questions: { where: { isDeleted: false } },
-              },
-            },
-          },
-        },
       },
       orderBy: [
         { gradeDictionary: { sortOrder: 'asc' } },
         { sortOrder: 'asc' },
       ],
     });
+
+    // 2. حساب عدد الأسئلة لكل مادة عبر groupBy (استعلام واحد في قاعدة البيانات)
+    const questionCounts = await this.prisma.question.groupBy({
+      by: ['templateId'],
+      where: {
+        isDeleted: false,
+        template: { isDeleted: false },
+      },
+      _count: { id: true },
+    });
+
+    // 3. ربط الأسئلة بالمواد عبر lessonTemplate.subjectDictionaryId
+    const templateIds = questionCounts.map((qc) => qc.templateId);
+    const templates =
+      templateIds.length > 0
+        ? await this.prisma.lessonTemplate.findMany({
+            where: { id: { in: templateIds }, isDeleted: false },
+            select: { id: true, subjectDictionaryId: true },
+          })
+        : [];
+
+    // بناء Map: subjectDictionaryId → مجموع الأسئلة
+    const templateToSubject = new Map<number, number | null>(
+      templates.map((t) => [t.id, t.subjectDictionaryId]),
+    );
+    const subjectQuestionsMap = new Map<number, number>();
+    for (const qc of questionCounts) {
+      const subjectDictId = templateToSubject.get(qc.templateId);
+      if (subjectDictId != null) {
+        subjectQuestionsMap.set(
+          subjectDictId,
+          (subjectQuestionsMap.get(subjectDictId) ?? 0) + qc._count.id,
+        );
+      }
+    }
+
+    console.timeEnd('findAllSubjects');
 
     return subjects.map((s) => ({
       id: s.id,
@@ -99,10 +129,7 @@ export class PlatformSubjectsService {
       gradeDictionary: s.gradeDictionary,
       lessonsCount: s._count.lessonTemplates,
       unitsCount: s._count.units,
-      questionsCount: s.lessonTemplates.reduce(
-        (sum, lt) => sum + lt._count.questions,
-        0,
-      ),
+      questionsCount: subjectQuestionsMap.get(s.id) ?? 0,
       assignedTeachersCount: s._count.platformUserSubjects,
     }));
   }
