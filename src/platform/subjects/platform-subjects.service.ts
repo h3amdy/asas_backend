@@ -53,8 +53,13 @@ export class PlatformSubjectsService {
    * Admin يرى الكل (بما في ذلك المعطّلة)
    * Teacher يرى النشطة فقط
    */
-  async findAllSubjects(includeInactive = false) {
+  async findAllSubjects(includeInactive = false, readyOnly = false) {
     console.time('findAllSubjects');
+
+    // شرط حالة الدروس الجاهزة
+    const lessonStatusFilter = readyOnly
+      ? { isDeleted: false, status: { in: ['READY', 'PUBLISHED'] } }
+      : { isDeleted: false };
 
     // 1. جلب المواد مع _count فقط (بدون تحميل علاقة lessonTemplates)
     const subjects = await this.prisma.subjectDictionary.findMany({
@@ -66,7 +71,7 @@ export class PlatformSubjectsService {
         ...this.subjectSelect,
         _count: {
           select: {
-            lessonTemplates: { where: { isDeleted: false } },
+            lessonTemplates: { where: lessonStatusFilter },
             units: { where: { isDeleted: false } },
             platformUserSubjects: { where: { isDeleted: false } },
           },
@@ -115,7 +120,7 @@ export class PlatformSubjectsService {
 
     console.timeEnd('findAllSubjects');
 
-    return subjects.map((s) => ({
+    const mapped = subjects.map((s) => ({
       id: s.id,
       uuid: s.uuid,
       code: s.code,
@@ -132,6 +137,13 @@ export class PlatformSubjectsService {
       questionsCount: subjectQuestionsMap.get(s.id) ?? 0,
       assignedTeachersCount: s._count.platformUserSubjects,
     }));
+
+    // إذا readyOnly → حذف المواد التي ليس فيها دروس جاهزة
+    if (readyOnly) {
+      return mapped.filter((s) => s.lessonsCount > 0);
+    }
+
+    return mapped;
   }
 
   // ═══════════════════════════════════════════════════

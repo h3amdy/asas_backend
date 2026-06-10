@@ -35,9 +35,12 @@ export class PlatformSubjectsController {
    * Teacher: النشطة فقط
    */
   @Get('subjects')
-  async findAllSubjects(@Query('includeInactive') includeInactive?: string) {
+  async findAllSubjects(
+    @Query('includeInactive') includeInactive?: string,
+    @Query('readyOnly') readyOnly?: string,
+  ) {
     const include = includeInactive === 'true';
-    return this.subjectsService.findAllSubjects(include);
+    return this.subjectsService.findAllSubjects(include, readyOnly === 'true');
   }
 
   /**

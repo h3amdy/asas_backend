@@ -7,6 +7,7 @@ import {
     Param,
     Patch,
     Post,
+    Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
@@ -41,8 +42,13 @@ export class PlatformLessonsController {
     getLessonsByUnits(
         @Req() req: any,
         @Param('subjectDictUuid') subjectDictUuid: string,
+        @Query('readyOnly') readyOnly?: string,
     ) {
-        return this.service.getLessonsByUnits(req.user.sub, subjectDictUuid);
+        return this.service.getLessonsByUnits(
+            req.user.sub,
+            subjectDictUuid,
+            readyOnly === 'true',
+        );
     }
 
     /** POST — إنشاء درس جديد */

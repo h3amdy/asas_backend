@@ -122,11 +122,17 @@ export class PlatformLessonsService {
     async getLessonsByUnits(
         platformUserUuid: string,
         subjectDictUuid: string,
+        readyOnly = false,
     ) {
         const { subjectDictionaryId } = await this.assertOwnsSubject(
             platformUserUuid,
             subjectDictUuid,
         );
+
+        // شرط الحالة: إذا readyOnly → فقط READY/PUBLISHED
+        const statusFilter = readyOnly
+            ? { status: { in: ['READY', 'PUBLISHED'] as const } }
+            : {};
 
         const units = await this.prisma.unit.findMany({
             where: {
@@ -137,7 +143,11 @@ export class PlatformLessonsService {
             orderBy: { orderIndex: 'asc' },
             include: {
                 lessonTemplates: {
-                    where: { isDeleted: false, ownerType: 'PLATFORM' },
+                    where: {
+                        isDeleted: false,
+                        ownerType: 'PLATFORM',
+                        ...statusFilter,
+                    },
                     orderBy: { orderIndex: 'asc' },
                     include: {
                         _count: {
@@ -161,8 +171,13 @@ export class PlatformLessonsService {
             },
         });
 
+        // حذف الوحدات الفارغة (التي ليس فيها أي درس بعد الفلترة)
+        const filtered = readyOnly
+            ? units.filter((u) => u.lessonTemplates.length > 0)
+            : units;
+
         return {
-            units: units.map((u) => ({
+            units: filtered.map((u) => ({
                 uuid: u.uuid,
                 title: u.title,
                 orderIndex: u.orderIndex,
