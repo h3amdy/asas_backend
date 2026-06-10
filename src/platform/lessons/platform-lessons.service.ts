@@ -129,11 +129,6 @@ export class PlatformLessonsService {
             subjectDictUuid,
         );
 
-        // شرط الحالة: إذا readyOnly → فقط READY/PUBLISHED
-        const statusFilter = readyOnly
-            ? { status: { in: ['READY', 'PUBLISHED'] as const } }
-            : {};
-
         const units = await this.prisma.unit.findMany({
             where: {
                 subjectDictionaryId,
@@ -146,7 +141,9 @@ export class PlatformLessonsService {
                     where: {
                         isDeleted: false,
                         ownerType: 'PLATFORM',
-                        ...statusFilter,
+                        ...(readyOnly
+                            ? { status: { in: ['READY', 'PUBLISHED'] } }
+                            : {}),
                     },
                     orderBy: { orderIndex: 'asc' },
                     include: {
@@ -171,13 +168,10 @@ export class PlatformLessonsService {
             },
         });
 
-        // حذف الوحدات الفارغة (التي ليس فيها أي درس بعد الفلترة)
-        const filtered = readyOnly
-            ? units.filter((u) => u.lessonTemplates.length > 0)
-            : units;
-
-        return {
-            units: filtered.map((u) => ({
+        // حذف الوحدات الفارغة ثم تحويل البيانات
+        const result = units
+            .filter((u) => !readyOnly || u.lessonTemplates.length > 0)
+            .map((u) => ({
                 uuid: u.uuid,
                 title: u.title,
                 orderIndex: u.orderIndex,
@@ -197,8 +191,9 @@ export class PlatformLessonsService {
                         questionsCount: lt._count.questions,
                     };
                 }),
-            })),
-        };
+            }));
+
+        return { units: result };
     }
 
     // ═════════════════════════════════════════════════════════
