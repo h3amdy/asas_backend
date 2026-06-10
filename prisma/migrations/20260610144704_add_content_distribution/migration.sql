@@ -1,15 +1,4 @@
-/*
-  Warnings:
 
-  - A unique constraint covering the columns `[template_id,order_index]` on the table `lesson_contents` will be added. If there are existing duplicate values, this will fail.
-  - A unique constraint covering the columns `[unit_id,order_index]` on the table `lesson_templates` will be added. If there are existing duplicate values, this will fail.
-  - A unique constraint covering the columns `[question_id,order_index]` on the table `question_fill_blanks` will be added. If there are existing duplicate values, this will fail.
-  - A unique constraint covering the columns `[question_id,order_index]` on the table `question_ordering_items` will be added. If there are existing duplicate values, this will fail.
-  - A unique constraint covering the columns `[template_id,order_index]` on the table `questions` will be added. If there are existing duplicate values, this will fail.
-  - A unique constraint covering the columns `[subject_id,order_index]` on the table `units` will be added. If there are existing duplicate values, this will fail.
-  - A unique constraint covering the columns `[subject_dictionary_id,order_index]` on the table `units` will be added. If there are existing duplicate values, this will fail.
-
-*/
 -- CreateEnum
 CREATE TYPE "DistributionStatus" AS ENUM ('ACTIVE', 'REVOKED');
 
