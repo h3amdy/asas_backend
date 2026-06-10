@@ -71,6 +71,11 @@ enum PlatformRole {
   PLATFORM_TEACHER
 }
 
+enum DistributionStatus {
+  ACTIVE
+  REVOKED
+}
+
 // =========================
 // MODELS
 // =========================
@@ -163,16 +168,17 @@ model School {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users           User[]
-  authSessions    AuthSession[]
-  years           Year[]
-  schoolGrades    SchoolGrade[]
-  subjects        Subject[]
-  mediaAssets     MediaAsset[]         @relation("SchoolMediaAssets")
-  uploadSessions  MediaUploadSession[] @relation("SchoolUploadSessions")
-  units           Unit[]
-  lessonTemplates LessonTemplate[]
-  lessons         Lesson[]
+  users                 User[]
+  authSessions          AuthSession[]
+  years                 Year[]
+  schoolGrades          SchoolGrade[]
+  subjects              Subject[]
+  mediaAssets           MediaAsset[]             @relation("SchoolMediaAssets")
+  uploadSessions        MediaUploadSession[]     @relation("SchoolUploadSessions")
+  units                 Unit[]
+  lessonTemplates       LessonTemplate[]
+  lessons               Lesson[]
+  contentDistributions  ContentDistribution[]
 }
 
 // قاموس الصفوف العام
@@ -927,6 +933,7 @@ model LessonTemplate {
   sourceTemplateId Int?             @map("source_template_id")
   sourceTemplate   LessonTemplate?  @relation("LessonTemplateClone", fields: [sourceTemplateId], references: [id])
   clonedTemplates  LessonTemplate[] @relation("LessonTemplateClone")
+  sourceVersion    Int?             @map("source_version") // إصدار المنصة وقت الـ Fork
 
   // من أنشأ القالب (حسب owner_type)
   createdByUserId         Int?          @map("created_by_user_id")
@@ -940,10 +947,12 @@ model LessonTemplate {
   isDeleted Boolean   @default(false) @map("is_deleted")
   deletedAt DateTime? @map("deleted_at")
 
-  contents      LessonContent[]
-  contentBlocks LessonContentBlock[]
-  questions     Question[]
-  lessons       Lesson[]
+  contents              LessonContent[]
+  contentBlocks         LessonContentBlock[]
+  questions             Question[]
+  lessons               Lesson[]
+  distributionsAsSource ContentDistribution[] @relation("DistributionSource")
+  distributionsAsTarget ContentDistribution[] @relation("DistributionTarget")
 
   @@unique([unitId, orderIndex], map: "lesson_templates_unit_order_idx")
   @@index([schoolId], map: "lesson_templates_school_id_idx")
@@ -1477,6 +1486,8 @@ model PlatformUser {
   createdLessonTemplates LessonTemplate[]      @relation("PlatformLessonCreator")
   uploadSessions         MediaUploadSession[]
   authSessions           PlatformAuthSession[]
+  distributions          ContentDistribution[]
+  distributionBatches    DistributionBatch[]    @relation("DistributionBatches")
 
   @@map("platform_users")
 }
@@ -1597,4 +1608,73 @@ enum SchoolBookSemester {
   FIRST
   SECOND
   FULL
+}
+
+// =========================
+// CONTENT DISTRIBUTION
+// =========================
+
+// سجل توزيع: درس واحد ← مدرسة واحدة
+model ContentDistribution {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  // المدرسة المستهدفة
+  schoolId Int    @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+
+  // الدرس المصدر (قالب المنصة)
+  sourceLessonTemplateId Int            @map("source_lesson_template_id")
+  sourceLessonTemplate   LessonTemplate @relation("DistributionSource", fields: [sourceLessonTemplateId], references: [id])
+
+  // النسخة المدرسية (القالب المنسوخ — يُملأ بعد Fork)
+  schoolLessonTemplateId Int?            @map("school_lesson_template_id")
+  schoolLessonTemplate   LessonTemplate? @relation("DistributionTarget", fields: [schoolLessonTemplateId], references: [id])
+
+  // الحالة
+  status DistributionStatus @default(ACTIVE)
+
+  // من قام بالتوزيع
+  distributedByPlatformUserId Int          @map("distributed_by_platform_user_id")
+  distributedByPlatformUser   PlatformUser @relation(fields: [distributedByPlatformUserId], references: [id])
+
+  distributedAt DateTime @default(now()) @map("distributed_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([schoolId, sourceLessonTemplateId], map: "content_distributions_school_source_key")
+  @@index([schoolId, status], map: "content_distributions_school_status_idx")
+  @@index([sourceLessonTemplateId], map: "content_distributions_source_idx")
+  @@index([schoolLessonTemplateId], map: "content_distributions_target_idx")
+  @@index([updatedAt], map: "content_distributions_updated_at_idx")
+  @@map("content_distributions")
+}
+
+// أرشيف عمليات التوزيع (batch)
+model DistributionBatch {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  // من قام بالعملية
+  platformUserId Int          @map("platform_user_id")
+  platformUser   PlatformUser @relation("DistributionBatches", fields: [platformUserId], references: [id])
+
+  // إحصائيات
+  totalSchools Int @map("total_schools")
+  totalLessons Int @map("total_lessons")
+  distributed  Int // عدد التوزيعات الجديدة الناجحة
+  skipped      Int // عدد المتجاهلة (موزعة مسبقاً)
+  failed       Int // عدد الفاشلة
+
+  // وصف (اختياري)
+  description String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([platformUserId], map: "distribution_batches_user_idx")
+  @@index([createdAt], map: "distribution_batches_created_idx")
+  @@map("distribution_batches")
 }

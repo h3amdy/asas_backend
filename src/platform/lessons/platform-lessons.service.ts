@@ -23,6 +23,18 @@ export class PlatformLessonsService {
     constructor(private readonly prisma: PrismaService) {}
 
     // ─────────────────────────────────────────────────────────
+    // Helper: زيادة إصدار القالب عند أي تعديل على المحتوى
+    // ─────────────────────────────────────────────────────────
+    private async bumpVersion(lessonTemplateId: number): Promise<number> {
+        const updated = await this.prisma.lessonTemplate.update({
+            where: { id: lessonTemplateId },
+            data: { templateVersion: { increment: 1 } },
+        });
+        return updated.templateVersion;
+    }
+
+
+    // ─────────────────────────────────────────────────────────
     // Helper: التحقق أن المستخدم يملك هذه المادة
     // ─────────────────────────────────────────────────────────
     private async assertOwnsSubject(
@@ -295,6 +307,8 @@ export class PlatformLessonsService {
             },
         });
 
+        await this.bumpVersion(lesson.id);
+
         return {
             uuid: updated.uuid,
             title: updated.title,
@@ -461,6 +475,7 @@ export class PlatformLessonsService {
             data: { templateId: lesson.id, title: dto.title ?? null, orderIndex: finalOrderIndex },
         });
 
+        await this.bumpVersion(lesson.id);
         return { uuid: block.uuid, title: block.title, orderIndex: block.orderIndex, items: [] };
     }
 
@@ -475,6 +490,7 @@ export class PlatformLessonsService {
             where: { id: block.id },
             data: { ...(dto.title !== undefined && { title: dto.title }) },
         });
+        await this.bumpVersion(lesson.id);
         return { uuid: updated.uuid, title: updated.title, orderIndex: updated.orderIndex };
     }
 
@@ -490,6 +506,7 @@ export class PlatformLessonsService {
             this.prisma.lessonBlockItem.updateMany({ where: { blockId: block.id, isDeleted: false }, data: { isDeleted: true, deletedAt: now } }),
             this.prisma.lessonContentBlock.update({ where: { id: block.id }, data: { isDeleted: true, deletedAt: now } }),
         ]);
+        await this.bumpVersion(lesson.id);
         return { message: 'تم حذف الفقرة بنجاح' };
     }
 
@@ -514,6 +531,7 @@ export class PlatformLessonsService {
                 return this.prisma.lessonContentBlock.update({ where: { id: block.id }, data: { orderIndex: i + 1 } });
             }),
         );
+        await this.bumpVersion(lesson.id);
         return { message: 'تم إعادة ترتيب الفقرات بنجاح' };
     }
 
@@ -549,6 +567,8 @@ export class PlatformLessonsService {
             include: { mediaAsset: { select: { uuid: true, kind: true } } },
         });
 
+        await this.bumpVersion(lesson.id);
+
         return {
             uuid: item.uuid, itemType: item.itemType, orderIndex: item.orderIndex,
             textContent: item.textContent, mediaAssetUuid: item.mediaAsset?.uuid ?? null,
@@ -580,6 +600,8 @@ export class PlatformLessonsService {
             include: { mediaAsset: { select: { uuid: true, kind: true } } },
         });
 
+        await this.bumpVersion(lesson.id);
+
         return {
             uuid: updated.uuid, itemType: updated.itemType, orderIndex: updated.orderIndex,
             textContent: updated.textContent, mediaAssetUuid: updated.mediaAsset?.uuid ?? null,
@@ -595,6 +617,7 @@ export class PlatformLessonsService {
         if (!item) throw new NotFoundException('العنصر غير موجود');
 
         await this.prisma.lessonBlockItem.update({ where: { id: item.id }, data: { isDeleted: true, deletedAt: new Date() } });
+        await this.bumpVersion(lesson.id);
         return { message: 'تم حذف العنصر بنجاح' };
     }
 
@@ -619,6 +642,7 @@ export class PlatformLessonsService {
                 return this.prisma.lessonBlockItem.update({ where: { id: item.id }, data: { orderIndex: i + 1 } });
             }),
         );
+        await this.bumpVersion(lesson.id);
         return { message: 'تم إعادة ترتيب العناصر بنجاح' };
     }
 
@@ -653,7 +677,8 @@ export class PlatformLessonsService {
             await this.prisma.$transaction(
                 items.map((it, i) => this.prisma.lessonBlockItem.update({ where: { id: it.id }, data: { orderIndex: i + 1 } })),
             );
-            return { message: 'تم نقل العنصر بنجاح' };
+            await this.bumpVersion(lesson.id);
+        return { message: 'تم نقل العنصر بنجاح' };
         }
 
         await this.prisma.$transaction(async (tx) => {
@@ -670,6 +695,7 @@ export class PlatformLessonsService {
             }
         });
 
+        await this.bumpVersion(lesson.id);
         return { message: 'تم نقل العنصر بنجاح' };
     }
 }

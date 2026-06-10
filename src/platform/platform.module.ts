@@ -9,6 +9,7 @@ import { PlatformLessonsModule } from './lessons/platform-lessons.module';
 import { PlatformQuestionsModule } from './questions/platform-questions.module';
 import { PlatformMediaModule } from './media/platform-media.module';
 import { PlatformBooksModule } from './books/platform-books.module';
+import { DistributionModule } from './distribution/distribution.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { PlatformBooksModule } from './books/platform-books.module';
     PlatformQuestionsModule,
     PlatformMediaModule,
     PlatformBooksModule,
+    DistributionModule,
   ],
 })
 export class PlatformModule {}
