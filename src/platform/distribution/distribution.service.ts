@@ -269,16 +269,12 @@ export class DistributionService {
             };
         }
 
-        // 5. إنشاء التوزيعات الجديدة (bulk)
-        await this.prisma.contentDistribution.createMany({
-            data: newDistributions,
-        });
-
-        // 6. إنشاء سجل الأرشيف
+        // 5. حساب الإحصائيات
         const distributed = details.filter((d) => d.result === 'distributed').length;
         const skipped = details.filter((d) => d.result === 'skipped').length;
         const failed = details.filter((d) => d.result === 'failed').length;
 
+        // 6. إنشاء سجل الأرشيف أولاً للحصول على batchId
         const batch = await this.prisma.distributionBatch.create({
             data: {
                 platformUserId: platformUser.id,
@@ -288,6 +284,11 @@ export class DistributionService {
                 skipped,
                 failed,
             },
+        });
+
+        // 7. إنشاء التوزيعات الجديدة مع ربطها بالـ batch
+        await this.prisma.contentDistribution.createMany({
+            data: newDistributions.map((d) => ({ ...d, batchId: batch.id })),
         });
 
         return {
@@ -315,6 +316,14 @@ export class DistributionService {
         await this.assertPlatformAdmin(platformUserUuid);
 
         const where: any = { isDeleted: false };
+
+        if (query.batchUuid) {
+            const batch = await this.prisma.distributionBatch.findFirst({
+                where: { uuid: query.batchUuid },
+            });
+            if (batch) where.batchId = batch.id;
+            else return { distributions: [] };
+        }
 
         if (query.schoolUuid) {
             const school = await this.prisma.school.findFirst({

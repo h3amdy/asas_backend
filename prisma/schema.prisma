@@ -1640,6 +1640,10 @@ model ContentDistribution {
 
   distributedAt DateTime @default(now()) @map("distributed_at")
 
+  // ربط بالتوزيع الجماعي (Batch)
+  batchId                     Int?              @map("batch_id")
+  batch                       DistributionBatch? @relation(fields: [batchId], references: [id])
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   isDeleted Boolean   @default(false) @map("is_deleted")
@@ -1649,6 +1653,7 @@ model ContentDistribution {
   @@index([schoolId, status], map: "content_distributions_school_status_idx")
   @@index([sourceLessonTemplateId], map: "content_distributions_source_idx")
   @@index([schoolLessonTemplateId], map: "content_distributions_target_idx")
+  @@index([batchId], map: "content_distributions_batch_idx")
   @@index([updatedAt], map: "content_distributions_updated_at_idx")
   @@map("content_distributions")
 }
@@ -1673,6 +1678,9 @@ model DistributionBatch {
   description String?
 
   createdAt DateTime @default(now()) @map("created_at")
+
+  // التوزيعات المرتبطة بهذه العملية
+  distributions ContentDistribution[]
 
   @@index([platformUserId], map: "distribution_batches_user_idx")
   @@index([createdAt], map: "distribution_batches_created_idx")

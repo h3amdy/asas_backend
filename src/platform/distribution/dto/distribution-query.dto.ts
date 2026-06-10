@@ -16,4 +16,8 @@ export class DistributionQueryDto {
     @IsOptional()
     @IsString()
     status?: string; // ACTIVE | REVOKED
+
+    @IsOptional()
+    @IsUUID('4')
+    batchUuid?: string;
 }
