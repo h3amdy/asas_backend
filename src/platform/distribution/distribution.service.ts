@@ -235,14 +235,46 @@ export class DistributionService {
             }
         }
 
-        // 4. إنشاء التوزيعات الجديدة (bulk)
-        if (newDistributions.length > 0) {
-            await this.prisma.contentDistribution.createMany({
-                data: newDistributions,
-            });
+        // 4. جلب بيانات العرض (نحتاجها في كلا الحالتين)
+        const lessonTemplates = await this.prisma.lessonTemplate.findMany({
+            where: { id: { in: lessonTemplateIds } },
+            select: { id: true, uuid: true, title: true },
+        });
+
+        const schools = await this.prisma.school.findMany({
+            where: { id: { in: schoolIds } },
+            select: { id: true, uuid: true, name: true },
+        });
+
+        const lessonMap = new Map(lessonTemplates.map((l) => [l.id, l]));
+        const schoolMap = new Map(schools.map((s) => [s.id, s]));
+
+        // 5. إذا لم يكن هناك أي توزيعة جديدة (كلها مكررة) → لا ننشئ batch
+        if (newDistributions.length === 0) {
+            return {
+                batchUuid: null,
+                totalSchools: schoolIds.length,
+                totalLessons: lessonTemplateIds.length,
+                distributed: 0,
+                skipped: details.length,
+                failed: 0,
+                message: 'جميع الدروس المحددة تم توزيعها مسبقاً على المدارس المختارة',
+                details: details.map((d) => ({
+                    lessonUuid: lessonMap.get(d.lessonTemplateId)?.uuid,
+                    lessonTitle: lessonMap.get(d.lessonTemplateId)?.title,
+                    schoolUuid: schoolMap.get(d.schoolId)?.uuid,
+                    schoolName: schoolMap.get(d.schoolId)?.name,
+                    result: d.result,
+                })),
+            };
         }
 
-        // 5. إنشاء سجل الأرشيف
+        // 5. إنشاء التوزيعات الجديدة (bulk)
+        await this.prisma.contentDistribution.createMany({
+            data: newDistributions,
+        });
+
+        // 6. إنشاء سجل الأرشيف
         const distributed = details.filter((d) => d.result === 'distributed').length;
         const skipped = details.filter((d) => d.result === 'skipped').length;
         const failed = details.filter((d) => d.result === 'failed').length;
@@ -258,20 +290,6 @@ export class DistributionService {
             },
         });
 
-        // 6. جلب بيانات العرض
-        const lessonTemplates = await this.prisma.lessonTemplate.findMany({
-            where: { id: { in: lessonTemplateIds } },
-            select: { id: true, uuid: true, title: true },
-        });
-
-        const schools = await this.prisma.school.findMany({
-            where: { id: { in: schoolIds } },
-            select: { id: true, uuid: true, name: true },
-        });
-
-        const lessonMap = new Map(lessonTemplates.map((l) => [l.id, l]));
-        const schoolMap = new Map(schools.map((s) => [s.id, s]));
-
         return {
             batchUuid: batch.uuid,
             totalSchools: schoolIds.length,
@@ -279,6 +297,7 @@ export class DistributionService {
             distributed,
             skipped,
             failed,
+            message: null,
             details: details.map((d) => ({
                 lessonUuid: lessonMap.get(d.lessonTemplateId)?.uuid,
                 lessonTitle: lessonMap.get(d.lessonTemplateId)?.title,
