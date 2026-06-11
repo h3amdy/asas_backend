@@ -398,12 +398,28 @@ export class SubjectsService {
      * GET /school/manager/subjects/dictionary?gradeId=
      */
     async listSubjectDictionary(schoolId: number, gradeId?: number) {
-        // 1. جلب المواد الرسمية المفعلة
+        // 1. جلب صفوف المدرسة المرتبطة بالقاموس الرسمي فقط
+        const schoolGrades = await this.prisma.schoolGrade.findMany({
+            where: {
+                schoolId,
+                isDeleted: false,
+                dictionaryId: { not: null },
+            },
+            select: { dictionaryId: true },
+        });
+        const linkedGradeDictIds = schoolGrades.map((g) => g.dictionaryId!);
+
+        // إذا لم تكن هناك صفوف مرتبطة بالقاموس، لا توجد مواد للعرض
+        if (linkedGradeDictIds.length === 0) return [];
+
+        // 2. جلب المواد الرسمية المفعلة فقط للصفوف المرتبطة بالمدرسة
         const dictSubjects = await this.prisma.subjectDictionary.findMany({
             where: {
                 isDeleted: false,
                 isActive: true,
-                ...(gradeId ? { gradeDictionaryId: gradeId } : {}),
+                gradeDictionaryId: gradeId
+                    ? (linkedGradeDictIds.includes(gradeId) ? { equals: gradeId } : { equals: -1 })
+                    : { in: linkedGradeDictIds },
             },
             include: {
                 gradeDictionary: { select: { id: true, defaultName: true } },
@@ -414,7 +430,7 @@ export class SubjectsService {
             ],
         });
 
-        // 2. جلب المواد المستوردة فعلاً في هذه المدرسة
+        // 3. جلب المواد المستوردة فعلاً في هذه المدرسة
         const importedSubjects = await this.prisma.subject.findMany({
             where: {
                 schoolId,
@@ -425,7 +441,7 @@ export class SubjectsService {
         });
         const importedIds = new Set(importedSubjects.map((s) => s.dictionaryId!));
 
-        // 3. إرجاع القائمة مع حالة الاستيراد
+        // 4. إرجاع القائمة مع حالة الاستيراد
         return dictSubjects.map((d) => ({
             id: d.id,
             defaultName: d.defaultName,
