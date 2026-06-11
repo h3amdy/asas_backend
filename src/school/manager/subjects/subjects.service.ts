@@ -403,12 +403,7 @@ export class SubjectsService {
             where: {
                 isDeleted: false,
                 isActive: true,
-                ...(gradeId ? {
-                    gradeDictionary: {
-                        // ربط بصف المدرسة (عبر dictionaryId)
-                        id: gradeId,
-                    },
-                } : {}),
+                ...(gradeId ? { gradeDictionaryId: gradeId } : {}),
             },
             include: {
                 gradeDictionary: { select: { id: true, defaultName: true } },
