@@ -45,6 +45,7 @@ export class TeacherSubjectsService {
                             include: {
                                 grade: { select: { id: true, displayName: true } },
                                 coverMediaAsset: { select: { uuid: true } },
+                                dictionary: { select: { uuid: true } },
                             },
                         },
                         section: { select: { id: true, name: true, orderIndex: true } },
@@ -59,6 +60,7 @@ export class TeacherSubjectsService {
             displayName: string;
             shortName: string | null;
             coverMediaAssetUuid: string | null;
+            dictionaryUuid: string | null;
             grade: { id: number; displayName: string };
             sections: { id: number; name: string; orderIndex: number | null }[];
         }>();
@@ -73,6 +75,7 @@ export class TeacherSubjectsService {
                     displayName: subject.displayName,
                     shortName: subject.shortName,
                     coverMediaAssetUuid: subject.coverMediaAsset?.uuid ?? null,
+                    dictionaryUuid: subject.dictionary?.uuid ?? null,
                     grade: subject.grade,
                     sections: [],
                 });

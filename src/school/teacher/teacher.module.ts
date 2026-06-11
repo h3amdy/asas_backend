@@ -16,13 +16,14 @@ import { TeacherReportController } from './reports/teacher-report.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
 import { ReportsModule } from '../reports/reports.module';
+import { PlatformContentModule } from '../shared/platform-content/platform-content.module';
 
 /**
  * 🧑‍🏫 وحدة المعلم
  * تجمع كل الـ endpoints الخاصة بصلاحيات المعلم
  */
 @Module({
-    imports: [PrismaModule, SchoolCommonModule, ReportsModule],
+    imports: [PrismaModule, SchoolCommonModule, ReportsModule, PlatformContentModule],
     controllers: [TeacherSubjectsController, TeacherUnitsController, TeacherLessonsController, TeacherQuestionsController, TeacherLessonTargetingController, TeacherTimetableController, TeacherReportController],
     providers: [TeacherSubjectsService, TeacherUnitsService, TeacherLessonsService, TeacherQuestionsService, TeacherLessonTargetingService, TeacherTimetableService],
 })
