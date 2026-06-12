@@ -134,6 +134,10 @@ export class TeacherLessonsService {
                     where: { isDeleted: false },
                     orderBy: { orderIndex: 'asc' },
                     include: {
+                        lessons: {
+                            where: { isDeleted: false },
+                            select: { status: true },
+                        },
                         _count: {
                             select: {
                                 contentBlocks: { where: { isDeleted: false } },
@@ -166,12 +170,15 @@ export class TeacherLessonsService {
                     const itemsCount = lt.contentBlocks.reduce(
                         (sum, b) => sum + b._count.items, 0,
                     );
+                    const hasPublishedLesson = lt.lessons.some(
+                        (l) => l.status === 'PUBLISHED',
+                    );
                     return {
                         id: lt.id,
                         uuid: lt.uuid,
                         title: lt.title,
                         orderIndex: lt.orderIndex,
-                        status: lt.status,
+                        status: hasPublishedLesson ? 'PUBLISHED' : lt.status,
                         coverMediaAssetId: lt.coverMediaAssetId,
                         blocksCount: lt._count.contentBlocks,
                         itemsCount,
@@ -446,17 +453,27 @@ export class TeacherLessonsService {
             // if (publishedCount > 0) throw ...
         }
 
-        const updated = await this.prisma.lessonTemplate.update({
-            where: { id: lesson.id },
-            data: { status: dto.status },
-        });
+        const now = new Date();
+        return await this.prisma.$transaction(async (tx) => {
+            if (dto.status === 'DRAFT') {
+                await tx.lesson.updateMany({
+                    where: { templateId: lesson.id, isDeleted: false },
+                    data: { isDeleted: true, deletedAt: now },
+                });
+            }
 
-        return {
-            id: updated.id,
-            uuid: updated.uuid,
-            status: updated.status,
-            updatedAt: updated.updatedAt,
-        };
+            const updated = await tx.lessonTemplate.update({
+                where: { id: lesson.id },
+                data: { status: dto.status },
+            });
+
+            return {
+                id: updated.id,
+                uuid: updated.uuid,
+                status: updated.status,
+                updatedAt: updated.updatedAt,
+            };
+        });
     }
 
     // ══════════════════════════════════════════════════════════════
