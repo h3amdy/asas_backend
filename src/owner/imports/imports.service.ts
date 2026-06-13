@@ -644,7 +644,7 @@ export class ImportsService {
                     } else {
                         credentials.push({
                             name: parentName,
-                            schoolNumber: existingParent.code,
+                            schoolNumber: existingParent.code ?? 0,
                             password: '*****',
                             role: 'PARENT',
                             phone: studentData.parent.phone,
