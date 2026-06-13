@@ -22,6 +22,40 @@ export interface CredentialEntry {
     password: string;
 }
 
+// ─── Normalizer — يقبل كلا الصيغتين ─────────────────────────
+
+/** يجمع الأسماء المجزأة في اسم واحد، أو يُرجع الاسم الكامل */
+function normalizeName(record: any, fullNameKey: string): string | null {
+    // صيغة 1: اسم واحد كامل
+    if (record[fullNameKey]) return record[fullNameKey].trim();
+
+    // صيغة 2: أسماء مجزأة
+    const parts = [
+        record.first_name,
+        record.second_name,
+        record.third_name,
+        record.last_name,
+    ].filter(Boolean).map((p: string) => p.trim());
+
+    return parts.length >= 2 ? parts.join(' ') : parts.length === 1 ? parts[0] : null;
+}
+
+/** يوحّد اسم الشعبة: يقبل section أو section_name */
+function normalizeSection(record: any): string | null {
+    return record.section_name?.trim() || record.section?.trim() || null;
+}
+
+/** يوحّد شعب الإسناد: يقبل sections[] أو section_name (string) */
+function normalizeAssignmentSections(assignment: any): string[] {
+    if (assignment.sections && assignment.sections.length > 0) {
+        return assignment.sections;
+    }
+    if (assignment.section_name) {
+        return [assignment.section_name];
+    }
+    return []; // فارغ = جميع الشعب (DEC-ADM-091-06)
+}
+
 @Injectable()
 export class ImportsService {
     constructor(private readonly prisma: PrismaService) {}
@@ -91,12 +125,54 @@ export class ImportsService {
             }
         }
 
+        // Track phones in file for in-file duplicate detection
+        const phonesInFile = new Map<string, number>();
+
         const records: RecordResult[] = [];
         let newCount = 0, dupCount = 0, errCount = 0;
 
         for (let i = 0; i < dto.students.length; i++) {
             const s = dto.students[i];
             const errors: string[] = [];
+            let isDuplicate = false;
+
+            // ─── Normalize: اسم الطالب ──────────────────────
+            const studentName = normalizeName(s, 'student_name');
+            if (!studentName || studentName.length < 2) {
+                errors.push('اسم الطالب مطلوب (student_name أو first_name + last_name)');
+            }
+
+            // ─── Normalize: الشعبة ──────────────────────────
+            const sectionName = normalizeSection(s);
+            if (!sectionName) {
+                errors.push('اسم الشعبة مطلوب (section أو section_name)');
+            }
+
+            // ─── كشف التكرار بالهاتف ────────────────────────
+            if (s.phone) {
+                // تكرار داخل الملف
+                if (phonesInFile.has(s.phone)) {
+                    errors.push(`الطالب مكرر في الملف (سطر ${phonesInFile.get(s.phone)! + 1})`);
+                    isDuplicate = true;
+                } else {
+                    phonesInFile.set(s.phone, i);
+                }
+
+                // تكرار في المدرسة
+                if (!isDuplicate) {
+                    const existingStudent = await this.prisma.user.findFirst({
+                        where: {
+                            phone: s.phone,
+                            userType: 'STUDENT',
+                            schoolId: school.id,
+                            isDeleted: false,
+                        },
+                    });
+                    if (existingStudent) {
+                        isDuplicate = true;
+                    }
+                }
+            }
 
             // Validate grade
             const grade = gradeByCode.get(s.grade_code);
@@ -106,12 +182,12 @@ export class ImportsService {
 
             // Validate section
             let sectionId: number | null = null;
-            if (grade) {
+            if (grade && sectionName) {
                 const section = grade.sections.find(
-                    sec => sec.name === s.section,
+                    sec => sec.name === sectionName,
                 );
                 if (!section) {
-                    errors.push(`الشعبة "${s.section}" غير موجودة في الصف "${s.grade_code}"`);
+                    errors.push(`الشعبة "${sectionName}" غير موجودة في الصف "${s.grade_code}"`);
                 } else {
                     sectionId = section.id;
                 }
@@ -122,34 +198,34 @@ export class ImportsService {
                 errors.push(`تاريخ الميلاد "${s.birth_date}" غير صالح`);
             }
 
-            // Validate parent phone
-            if (s.parent?.phone) {
-                const existingParent = await this.prisma.user.findFirst({
-                    where: {
-                        phone: s.parent.phone,
-                        userType: 'PARENT',
-                        schoolId: school.id,
-                        isDeleted: false,
-                    },
-                });
-                // Parent duplicate is OK — we link to existing
+            // ─── Normalize: ولي الأمر ───────────────────────
+            let parentName: string | null = null;
+            if (s.parent) {
+                parentName = normalizeName(s.parent, 'name');
+                if (!parentName || parentName.length < 2) {
+                    errors.push('اسم ولي الأمر مطلوب (name أو first_name + last_name)');
+                }
             }
 
-            const status = errors.length > 0 ? 'ERROR' : 'NEW';
+            const hasErrors = errors.length > 0;
+            const status = hasErrors ? 'ERROR' : isDuplicate ? 'DUPLICATE' : 'NEW';
+
             if (status === 'NEW') newCount++;
+            else if (status === 'DUPLICATE') dupCount++;
             else errCount++;
 
             records.push({
                 index: i,
-                name: s.student_name,
+                name: studentName || `طالب #${i + 1}`,
                 status,
                 errors,
                 details: {
                     grade_code: s.grade_code,
-                    section: s.section,
+                    section: sectionName,
                     gradeId: grade?.id,
                     sectionId,
-                    parent: s.parent ? { name: s.parent.name, phone: s.parent.phone } : null,
+                    isDuplicate,
+                    parent: s.parent ? { name: parentName, phone: s.parent.phone } : null,
                 },
             });
         }
@@ -244,6 +320,12 @@ export class ImportsService {
             const errors: string[] = [];
             let isDuplicate = false;
 
+            // ─── Normalize: اسم المعلم ──────────────────────
+            const teacherName = normalizeName(t, 'teacher_name');
+            if (!teacherName || teacherName.length < 2) {
+                errors.push('اسم المعلم مطلوب (teacher_name أو first_name + last_name)');
+            }
+
             // Check in-file duplicate by phone
             if (t.phone) {
                 if (phonesInFile.has(t.phone)) {
@@ -283,8 +365,9 @@ export class ImportsService {
                         continue;
                     }
 
-                    const targetSections = assignment.sections && assignment.sections.length > 0
-                        ? assignment.sections
+                    const normalizedSections = normalizeAssignmentSections(assignment);
+                    const targetSections = normalizedSections.length > 0
+                        ? normalizedSections
                         : grade.sections.map(s => s.name); // DEC-ADM-091-06: all sections
 
                     for (const secName of targetSections) {
@@ -300,10 +383,11 @@ export class ImportsService {
                         const subjectSection = subject.subjectSections.find(
                             ss => ss.sectionId === section.id,
                         );
+                        const assignmentRole = assignment.role || 'PRIMARY';
                         if (subjectSection) {
-                            const existingPrimary = subjectSection.teachers.find(t => t.role === 'PRIMARY');
-                            if (existingPrimary) {
-                                errors.push(`المادة "${subject.displayName}" في الشعبة "${secName}" مسندة لمعلم آخر`);
+                            const existingTeacher = subjectSection.teachers.find(t => t.role === assignmentRole);
+                            if (existingTeacher) {
+                                errors.push(`المادة "${subject.displayName}" في الشعبة "${secName}" مسندة لمعلم آخر (${assignmentRole})`);
                                 continue;
                             }
                         }
@@ -312,6 +396,7 @@ export class ImportsService {
                             subject_code: assignment.subject_code,
                             subject_name: subject.displayName,
                             section: secName,
+                            role: assignmentRole,
                             subjectId: subject.id,
                             sectionId: section.id,
                             gradeId: grade.id,
@@ -329,7 +414,7 @@ export class ImportsService {
 
             records.push({
                 index: i,
-                name: t.teacher_name,
+                name: teacherName || `معلم #${i + 1}`,
                 status,
                 errors,
                 details: {
@@ -471,12 +556,14 @@ export class ImportsService {
         };
     }
 
-    // ─── Create Student in Transaction ──────────────────────────
-
     private async createStudentInTransaction(
         school: any, studentData: any, details: any, yearId: number,
         credentials: CredentialEntry[],
     ) {
+        // ─ Normalize: استخدم الاسم الموحّد من preview details
+        const studentName = normalizeName(studentData, 'student_name') || details.name;
+        const parentName = details.parent?.name || normalizeName(studentData.parent, 'name');
+
         await this.prisma.$transaction(async (tx) => {
             // Increment school code
             const updatedSchool = await tx.school.update({
@@ -493,9 +580,10 @@ export class ImportsService {
                     schoolId: school.id,
                     userType: 'STUDENT',
                     code,
-                    name: studentData.student_name,
-                    displayName: studentData.student_name,
+                    name: studentName,
+                    displayName: studentName,
                     gender: studentData.gender,
+                    phone: studentData.phone || null,
                     passwordHash,
                     isActive: true,
                 },
@@ -525,7 +613,7 @@ export class ImportsService {
             });
 
             // Create parent if provided
-            if (studentData.parent) {
+            if (studentData.parent && parentName) {
                 let parentUserId: number;
 
                 // Check if parent already exists by phone
@@ -555,8 +643,8 @@ export class ImportsService {
                             schoolId: school.id,
                             userType: 'PARENT',
                             code: parentCode,
-                            name: studentData.parent.name,
-                            displayName: studentData.parent.name,
+                            name: parentName,
+                            displayName: parentName,
                             gender: studentData.parent.gender || null,
                             phone: studentData.parent.phone,
                             passwordHash: parentHash,
@@ -571,7 +659,7 @@ export class ImportsService {
                     parentUserId = parentUser.id;
 
                     credentials.push({
-                        name: studentData.parent.name,
+                        name: parentName,
                         schoolNumber: parentCode,
                         password: parentPassword,
                     });
@@ -584,19 +672,20 @@ export class ImportsService {
             }
 
             credentials.push({
-                name: studentData.student_name,
+                name: studentName,
                 schoolNumber: code,
                 password,
             });
         });
     }
 
-    // ─── Create Teacher in Transaction ──────────────────────────
-
     private async createTeacherInTransaction(
         school: any, teacherData: any, record: RecordResult,
         credentials: CredentialEntry[],
     ) {
+        // ─ Normalize: استخدم الاسم الموحّد من record
+        const teacherName = record.name;
+
         await this.prisma.$transaction(async (tx) => {
             let teacherUserId: number;
 
@@ -627,8 +716,8 @@ export class ImportsService {
                         schoolId: school.id,
                         userType: 'TEACHER',
                         code,
-                        name: teacherData.teacher_name,
-                        displayName: teacherData.teacher_name,
+                        name: teacherName,
+                        displayName: teacherName,
                         gender: teacherData.gender,
                         phone: teacherData.phone || null,
                         passwordHash,
@@ -651,13 +740,13 @@ export class ImportsService {
                 teacherUserId = user.id;
 
                 credentials.push({
-                    name: teacherData.teacher_name,
+                    name: teacherName,
                     schoolNumber: code,
                     password,
                 });
             }
 
-            // Create assignments
+            // Create assignments (using role from preview)
             if (record.details.assignments) {
                 for (const assignment of record.details.assignments) {
                     // Find or create SubjectSection
@@ -690,7 +779,7 @@ export class ImportsService {
                             data: {
                                 subjectSectionId: subjectSection.id,
                                 teacherId: teacherUserId,
-                                role: 'PRIMARY',
+                                role: assignment.role || 'PRIMARY',
                             },
                         });
                     }
