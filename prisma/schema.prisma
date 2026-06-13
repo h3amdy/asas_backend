@@ -179,6 +179,7 @@ model School {
   lessonTemplates       LessonTemplate[]
   lessons               Lesson[]
   contentDistributions  ContentDistribution[]
+  importSessions        ImportSession[]
 }
 
 // قاموس الصفوف العام
@@ -1488,6 +1489,7 @@ model PlatformUser {
   authSessions           PlatformAuthSession[]
   distributions          ContentDistribution[]
   distributionBatches    DistributionBatch[]    @relation("DistributionBatches")
+  importSessions         ImportSession[]
 
   @@map("platform_users")
 }
@@ -1685,4 +1687,54 @@ model DistributionBatch {
   @@index([platformUserId], map: "distribution_batches_user_idx")
   @@index([createdAt], map: "distribution_batches_created_idx")
   @@map("distribution_batches")
+}
+
+// ─── Bulk Data Import ─────────────────────────────────────────
+
+enum ImportType {
+  STUDENTS
+  TEACHERS
+}
+
+enum ImportStatus {
+  PREVIEW
+  EXECUTING
+  COMPLETED
+  FAILED
+}
+
+model ImportSession {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  schoolId Int    @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+
+  platformUserId Int          @map("platform_user_id")
+  platformUser   PlatformUser @relation(fields: [platformUserId], references: [id])
+
+  importType ImportType  @map("import_type")
+  status     ImportStatus @default(PREVIEW)
+
+  originalJson  String? @map("original_json") @db.Text
+  previewResult String? @map("preview_result") @db.Text
+
+  totalRecords     Int @default(0) @map("total_records")
+  newRecords       Int @default(0) @map("new_records")
+  duplicateRecords Int @default(0) @map("duplicate_records")
+  errorRecords     Int @default(0) @map("error_records")
+  createdRecords   Int @default(0) @map("created_records")
+  failedRecords    Int @default(0) @map("failed_records")
+
+  credentialsJson String? @map("credentials_json") @db.Text
+
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([schoolId], map: "import_sessions_school_idx")
+  @@index([platformUserId], map: "import_sessions_user_idx")
+  @@map("import_sessions")
 }

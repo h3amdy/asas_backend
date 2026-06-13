@@ -8,6 +8,7 @@ import { StatusModule } from './status/status.module';
 import { PublicModule } from './public/public.module';
 import { SchoolModule } from './school/school.module';
 import { PlatformModule } from './platform/platform.module';
+import { ImportsModule } from './owner/imports/imports.module';
 
 
 @Module({
@@ -20,6 +21,7 @@ import { PlatformModule } from './platform/platform.module';
     PublicModule,
     SchoolModule,
     PlatformModule,
+    ImportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
