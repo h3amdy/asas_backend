@@ -20,6 +20,8 @@ export interface CredentialEntry {
     name: string;
     schoolNumber: number;
     password: string;
+    role: 'STUDENT' | 'PARENT' | 'TEACHER';
+    phone?: string;
 }
 
 // ─── Normalizer — يقبل كلا الصيغتين ─────────────────────────
@@ -662,6 +664,8 @@ export class ImportsService {
                         name: parentName,
                         schoolNumber: parentCode,
                         password: parentPassword,
+                        role: 'PARENT',
+                        phone: studentData.parent.phone,
                     });
                 }
 
@@ -675,6 +679,8 @@ export class ImportsService {
                 name: studentName,
                 schoolNumber: code,
                 password,
+                role: 'STUDENT',
+                phone: studentData.phone || null,
             });
         });
     }
@@ -743,6 +749,8 @@ export class ImportsService {
                     name: teacherName,
                     schoolNumber: code,
                     password,
+                    role: 'TEACHER',
+                    phone: teacherData.phone || null,
                 });
             }
 
