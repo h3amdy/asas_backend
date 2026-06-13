@@ -22,6 +22,7 @@ export interface CredentialEntry {
     password: string;
     role: 'STUDENT' | 'PARENT' | 'TEACHER';
     phone?: string;
+    studentNames?: string[];
 }
 
 // ─── Normalizer — يقبل كلا الصيغتين ─────────────────────────
@@ -630,6 +631,26 @@ export class ImportsService {
 
                 if (existingParent) {
                     parentUserId = existingParent.id;
+                    const existingCred = credentials.find(
+                        (c) => c.role === 'PARENT' && c.phone === studentData.parent.phone
+                    );
+                    if (existingCred) {
+                        if (!existingCred.studentNames) {
+                            existingCred.studentNames = [];
+                        }
+                        if (!existingCred.studentNames.includes(studentName)) {
+                            existingCred.studentNames.push(studentName);
+                        }
+                    } else {
+                        credentials.push({
+                            name: parentName,
+                            schoolNumber: existingParent.code,
+                            password: '*****',
+                            role: 'PARENT',
+                            phone: studentData.parent.phone,
+                            studentNames: [studentName],
+                        });
+                    }
                 } else {
                     // Create parent
                     const parentSchool = await tx.school.update({
@@ -666,6 +687,7 @@ export class ImportsService {
                         password: parentPassword,
                         role: 'PARENT',
                         phone: studentData.parent.phone,
+                        studentNames: [studentName],
                     });
                 }
 
