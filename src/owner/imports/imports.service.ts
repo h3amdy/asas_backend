@@ -23,6 +23,7 @@ export interface CredentialEntry {
     role: 'STUDENT' | 'PARENT' | 'TEACHER';
     phone?: string;
     studentNames?: string[];
+    subjects?: string[];
 }
 
 // ─── Normalizer — يقبل كلا الصيغتين ─────────────────────────
@@ -767,12 +768,22 @@ export class ImportsService {
 
                 teacherUserId = user.id;
 
+                const subjectsList: string[] = [];
+                if (record.details.assignments) {
+                    for (const a of record.details.assignments) {
+                        if (a.subject_name && !subjectsList.includes(a.subject_name)) {
+                            subjectsList.push(a.subject_name);
+                        }
+                    }
+                }
+
                 credentials.push({
                     name: teacherName,
                     schoolNumber: code,
                     password,
                     role: 'TEACHER',
                     phone: teacherData.phone || null,
+                    subjects: subjectsList,
                 });
             }
 
