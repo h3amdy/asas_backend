@@ -206,12 +206,9 @@ export class ImportsService {
         if (!hasSections) studentsMissing.push('لا توجد شعب دراسية');
         if (!hasOfficialGrades) studentsMissing.push('لا توجد صفوف مرتبطة بالقاموس الرسمي (grade_code)');
 
-        // Teachers readiness = students requirements + subjects
-        const teachersMissing: string[] = [...studentsMissing];
-        if (!hasSubjects) teachersMissing.push('لا توجد مواد دراسية');
-        if (hasSubjects && !hasOfficialSubjects) {
-            teachersMissing.push('لا توجد مواد رسمية مرتبطة بالقاموس (subject_code)');
-        }
+        // Teachers readiness = only requires a current year
+        const teachersMissing: string[] = [];
+        if (!hasCurrentYear) teachersMissing.push('لا توجد سنة دراسية حالية');
 
         // ─── Recent imports ─────────────────────────────────────
         const recentImports = await this.prisma.importSession.findMany({
