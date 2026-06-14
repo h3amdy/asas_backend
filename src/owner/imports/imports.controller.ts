@@ -12,6 +12,12 @@ import { PlatformAdminGuard } from '../../platform/auth/guards/platform-admin.gu
 export class ImportsController {
     constructor(private readonly importsService: ImportsService) {}
 
+    // ─── Import Readiness (ADM-089) ─────────────────────────────
+    @Get('readiness')
+    getImportReadiness(@Param('schoolUuid') schoolUuid: string) {
+        return this.importsService.getImportReadiness(schoolUuid);
+    }
+
     // ─── Preview Students Import ────────────────────────────────
     @Post('students/preview')
     previewStudents(

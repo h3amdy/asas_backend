@@ -5,6 +5,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PreviewStudentsImportDto, PreviewTeachersImportDto } from './dto/import.dto';
+import { UserType } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -99,6 +100,183 @@ export class ImportsService {
         });
         if (!user) throw new NotFoundException('PLATFORM_USER_NOT_FOUND');
         return user;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Import Readiness — ADM-089
+    // ═══════════════════════════════════════════════════════════════
+
+    async getImportReadiness(schoolUuid: string) {
+        const school = await this.prisma.school.findUnique({
+            where: { uuid: schoolUuid },
+        });
+        if (!school) throw new NotFoundException('SCHOOL_NOT_FOUND');
+
+        // ─── Setup: Year & Term ─────────────────────────────────
+        const currentYear = await this.prisma.year.findFirst({
+            where: { schoolId: school.id, isCurrent: true, isDeleted: false },
+            include: {
+                terms: {
+                    where: { isCurrent: true, isDeleted: false },
+                    take: 1,
+                },
+            },
+        });
+
+        const hasCurrentYear = !!currentYear;
+        const currentTerm = currentYear?.terms?.[0] ?? null;
+        const hasCurrentTerm = !!currentTerm;
+
+        // ─── Structure: Grades + Sections ───────────────────────
+        const schoolGrades = await this.prisma.schoolGrade.findMany({
+            where: { schoolId: school.id, isActive: true, isDeleted: false },
+            include: {
+                dictionary: true,
+                sections: {
+                    where: { isActive: true, isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                },
+            },
+            orderBy: { sortOrder: 'asc' },
+        });
+
+        const grades = schoolGrades.map(g => ({
+            code: g.dictionary?.code ?? null,
+            name: g.displayName,
+            sectionsCount: g.sections.length,
+            sections: g.sections.map(s => s.name),
+        }));
+
+        const totalSections = schoolGrades.reduce(
+            (sum, g) => sum + g.sections.length, 0,
+        );
+
+        // ─── Structure: Subjects ────────────────────────────────
+        const subjects = await this.prisma.subject.findMany({
+            where: { schoolId: school.id, isActive: true, isDeleted: false },
+            include: {
+                dictionary: true,
+                grade: { include: { dictionary: true } },
+            },
+            orderBy: { displayName: 'asc' },
+        });
+
+        const officialSubjects = subjects.filter(s => s.dictionaryId !== null);
+        const localSubjects = subjects.filter(s => s.dictionaryId === null);
+
+        const subjectList = officialSubjects.map(s => ({
+            code: s.dictionary?.code ?? s.code ?? '',
+            name: s.displayName,
+            gradeName: s.grade.displayName,
+            gradeCode: s.grade.dictionary?.code ?? null,
+        }));
+
+        // ─── Users count ────────────────────────────────────────
+        const userCounts = await this.prisma.user.groupBy({
+            by: ['userType'],
+            where: { schoolId: school.id, isDeleted: false, isActive: true },
+            _count: true,
+        });
+
+        const getUserCount = (type: UserType) =>
+            userCounts.find(u => u.userType === type)?._count ?? 0;
+
+        // ─── Manager ────────────────────────────────────────────
+        const manager = await this.prisma.user.findFirst({
+            where: {
+                schoolId: school.id,
+                userType: UserType.ADMIN,
+                isDeleted: false,
+                isActive: true,
+            },
+            select: { name: true },
+        });
+
+        // ─── Readiness checks ───────────────────────────────────
+        const hasGrades = schoolGrades.length > 0;
+        const hasSections = totalSections > 0;
+        const hasOfficialGrades = schoolGrades.some(g => g.dictionaryId !== null);
+        const hasSubjects = subjects.length > 0;
+        const hasOfficialSubjects = officialSubjects.length > 0;
+
+        // Students readiness
+        const studentsMissing: string[] = [];
+        if (!hasCurrentYear) studentsMissing.push('لا توجد سنة دراسية حالية');
+        if (!hasGrades) studentsMissing.push('لا توجد صفوف دراسية');
+        if (!hasSections) studentsMissing.push('لا توجد شعب دراسية');
+        if (!hasOfficialGrades) studentsMissing.push('لا توجد صفوف مرتبطة بالقاموس الرسمي (grade_code)');
+
+        // Teachers readiness = students requirements + subjects
+        const teachersMissing: string[] = [...studentsMissing];
+        if (!hasSubjects) teachersMissing.push('لا توجد مواد دراسية');
+        if (hasSubjects && !hasOfficialSubjects) {
+            teachersMissing.push('لا توجد مواد رسمية مرتبطة بالقاموس (subject_code)');
+        }
+
+        // ─── Recent imports ─────────────────────────────────────
+        const recentImports = await this.prisma.importSession.findMany({
+            where: { schoolId: school.id },
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+            select: {
+                importType: true,
+                createdAt: true,
+                totalRecords: true,
+                createdRecords: true,
+                status: true,
+            },
+        });
+
+        return {
+            school: {
+                name: school.name,
+                schoolCode: school.schoolCode,
+                appType: school.appType,
+                isActive: school.isActive,
+                createdAt: school.createdAt,
+                managerName: manager?.name ?? null,
+            },
+            setup: {
+                hasCurrentYear,
+                hasCurrentTerm,
+                currentYearName: currentYear?.name ?? null,
+                currentTermName: currentTerm?.name ?? null,
+            },
+            structure: {
+                grades,
+                totalGrades: schoolGrades.length,
+                totalSections,
+                subjects: {
+                    total: subjects.length,
+                    official: officialSubjects.length,
+                    local: localSubjects.length,
+                    list: subjectList,
+                },
+            },
+            users: {
+                managers: getUserCount(UserType.ADMIN),
+                teachers: getUserCount(UserType.TEACHER),
+                students: getUserCount(UserType.STUDENT),
+                parents: getUserCount(UserType.PARENT),
+            },
+            readiness: {
+                students: {
+                    ready: studentsMissing.length === 0,
+                    missing: studentsMissing,
+                },
+                teachers: {
+                    ready: teachersMissing.length === 0,
+                    missing: teachersMissing,
+                },
+            },
+            recentImports: recentImports.map(i => ({
+                type: i.importType,
+                date: i.createdAt,
+                totalRecords: i.totalRecords,
+                createdRecords: i.createdRecords,
+                status: i.status,
+            })),
+        };
     }
 
     // ─── Preview Students ───────────────────────────────────────
