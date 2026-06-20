@@ -552,6 +552,7 @@ model Subject {
 
   @@index([schoolId, gradeId], map: "subjects_school_grade_idx")
   @@index([dictionaryId], map: "subjects_dictionary_id_idx")
+  @@index([updatedAt, uuid], map: "subjects_sync_cursor_idx")
   @@map("subjects")
 }
 
@@ -1017,6 +1018,7 @@ model LessonContentBlock {
   @@index([templateId, isDeleted, orderIndex], map: "lesson_content_blocks_template_order_idx")
   @@index([templateId], map: "lesson_content_blocks_template_id_idx")
   @@index([updatedAt], map: "lesson_content_blocks_updated_at_idx")
+  @@index([updatedAt, uuid], map: "lesson_content_blocks_sync_cursor_idx")
   @@map("lesson_content_blocks")
 }
 
@@ -1100,6 +1102,7 @@ model Question {
   @@index([questionAudioAssetId], map: "questions_question_audio_idx")
   @@index([explanationImageAssetId], map: "questions_explanation_image_idx")
   @@index([explanationAudioAssetId], map: "questions_explanation_audio_idx")
+  @@index([updatedAt, uuid], map: "questions_sync_cursor_idx")
   @@map("questions")
 }
 
@@ -1302,6 +1305,7 @@ model Lesson {
   @@index([yearId, termId], map: "lessons_year_term_idx")
   @@index([status], map: "lessons_status_idx")
   @@index([updatedAt], map: "lessons_updated_at_idx")
+  @@index([updatedAt, uuid], map: "lessons_sync_cursor_idx")
   @@map("lessons")
 }
 
@@ -1394,6 +1398,7 @@ model StudentLessonProgress {
   @@unique([studentId, lessonId], map: "student_lesson_progress_unique")
   @@index([studentId], map: "student_lesson_progress_student_idx")
   @@index([lessonId], map: "student_lesson_progress_lesson_idx")
+  @@index([studentId, updatedAt, uuid], map: "student_progress_sync_cursor_idx")
   @@map("student_lesson_progress")
 }
 
@@ -1456,6 +1461,7 @@ model StudentAnswer {
   @@unique([studentId, questionId], map: "student_answers_student_question_unique")
   @@index([resultId], map: "student_answers_result_idx")
   @@index([updatedAt], map: "student_answers_updated_idx")
+  @@index([studentId, updatedAt, uuid], map: "student_answers_sync_cursor_idx")
   @@map("student_answers")
 }
 
@@ -1737,4 +1743,26 @@ model ImportSession {
   @@index([schoolId], map: "import_sessions_school_idx")
   @@index([platformUserId], map: "import_sessions_user_idx")
   @@map("import_sessions")
+}
+
+// =========================
+// SYNC SYSTEM (Offline-First)
+// =========================
+
+// سجل التغييرات المعالجة — Idempotency لمنع تكرار Push
+model ProcessedClientChange {
+  id Int @id @default(autoincrement())
+
+  clientChangeUuid String @unique @map("client_change_uuid")
+
+  entityType String @map("entity_type") // "student_answer" / "lesson_progress"
+  entityUuid String @map("entity_uuid")
+
+  studentId Int @map("student_id")
+
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@index([processedAt], map: "processed_client_changes_date_idx")
+  @@index([studentId], map: "processed_client_changes_student_idx")
+  @@map("processed_client_changes")
 }
