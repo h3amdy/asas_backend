@@ -1,5 +1,5 @@
 // src/school/student/sync/dto/sync-push.dto.ts
-import { IsArray, IsString, IsOptional, ValidateNested, IsObject } from 'class-validator';
+import { IsArray, IsString, IsOptional, ValidateNested, IsObject, ArrayMaxSize } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -46,9 +46,11 @@ export class ClientChange {
 
 /**
  * DTO لطلب دفع التغييرات (Push)
+ * H3: حد أقصى 100 تغيير لكل طلب لتجنب الحمل الزائد
  */
 export class SyncPushDto {
     @IsArray()
+    @ArrayMaxSize(100)
     @ValidateNested({ each: true })
     @Type(() => ClientChange)
     changes: ClientChange[];
