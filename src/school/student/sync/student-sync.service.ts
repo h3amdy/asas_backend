@@ -199,6 +199,7 @@ export class StudentSyncService {
     ) {
         const where: any = {
             schoolId,
+            // Include both active and deleted lessons; client will handle isDeleted flag
             status: { in: ['PUBLISHED', 'DELIVERED'] },
             targets: { some: { sectionId: ctx.sectionId } },
         };
@@ -317,13 +318,13 @@ export class StudentSyncService {
     ) {
         // نجلب أسئلة الدروس المستهدفة لشعبة الطالب فقط
         const where: any = {
-            isDeleted: false,
+            // Include deleted questions as well; client will process isDeleted flag
             template: {
                 lessons: {
                     some: {
                         schoolId,
                         status: { in: ['PUBLISHED', 'DELIVERED'] },
-                        isDeleted: false,
+                        // Do not filter out deleted lessons; keep isDeleted flag
                         isActive: true,
                         targets: { some: { sectionId: ctx.sectionId } },
                     },
