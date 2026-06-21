@@ -2,7 +2,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
-import { StudentProgressSummaryService } from '../common/services/student-progress-summary.service';
 import { ReportsController } from './reports.controller';
 import { GradesReportController } from './grades-report.controller';
 import { ComprehensiveReportController } from './comprehensive-report.controller';
@@ -21,7 +20,7 @@ import { ReportsService } from './reports.service';
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
     controllers: [ReportsController, GradesReportController, ComprehensiveReportController],
-    providers: [ReportsService, StudentProgressSummaryService],
+    providers: [ReportsService],
     exports: [ReportsService],
 })
 export class ReportsModule { }

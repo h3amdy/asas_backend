@@ -1,10 +1,14 @@
 // src/school/student/lessons/student-lessons.service.ts
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { StudentProgressSummaryService } from '../../common/services/student-progress-summary.service';
 
 @Injectable()
 export class StudentLessonsService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly progressSummary: StudentProgressSummaryService,
+    ) { }
 
     /**
      * 📚 جلب Student + Enrollment helper
@@ -302,44 +306,19 @@ export class StudentLessonsService {
             throw new NotFoundException('ENROLLMENT_NOT_FOUND');
         }
 
-        const sectionId = enrollment.sectionId;
-        const studentId = user.student.userId;
-
-        // 2. عدد الدروس الكلي المتاحة للطالب (عبر كل المواد)
-        const totalLessons = await this.prisma.lessonTarget.count({
-            where: {
-                sectionId,
-                lesson: {
-                    schoolId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
-                    isDeleted: false,
-                    isActive: true,
-                },
-            },
-        });
-
-        // 3. عدد الدروس المنجزة (التي لها نتيجة واحدة على الأقل)
-        const completedLessons = await this.prisma.studentLessonResult.groupBy({
-            by: ['lessonId'],
-            where: {
-                studentId,
-                isDeleted: false,
-                lesson: {
-                    schoolId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
-                    isDeleted: false,
-                    isActive: true,
-                    targets: { some: { sectionId } },
-                },
-            },
-        });
+        // 2. حساب الإنجاز عبر الخدمة المشتركة (تُصفّي بالسنة/الفصل الحالي)
+        const progress = await this.progressSummary.getStudentProgressSummary(
+            schoolId,
+            user.student.userId,
+            enrollment.sectionId,
+        );
 
         return {
             displayName: user.displayName,
             gradeName: enrollment.section.grade.displayName,
             sectionName: enrollment.section.name,
-            totalLessons,
-            completedLessons: completedLessons.length,
+            totalLessons: progress.totalLessons,
+            completedLessons: progress.completedLessons,
         };
     }
 }

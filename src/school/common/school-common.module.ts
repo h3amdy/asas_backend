@@ -4,6 +4,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolContextGuard } from './guards/school-context.guard';
 import { AcademicContextService } from './academic-context/academic-context.service';
 import { AcademicContextController } from './academic-context/academic-context.controller';
+import { StudentProgressSummaryService } from './services/student-progress-summary.service';
 
 /**
  * 🔧 وحدة المكونات المشتركة للمدرسة
@@ -12,7 +13,7 @@ import { AcademicContextController } from './academic-context/academic-context.c
 @Module({
     imports: [PrismaModule],
     controllers: [AcademicContextController],
-    providers: [SchoolContextGuard, AcademicContextService],
-    exports: [SchoolContextGuard, AcademicContextService],
+    providers: [SchoolContextGuard, AcademicContextService, StudentProgressSummaryService],
+    exports: [SchoolContextGuard, AcademicContextService, StudentProgressSummaryService],
 })
 export class SchoolCommonModule { }

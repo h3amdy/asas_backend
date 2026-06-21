@@ -2,7 +2,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
-import { StudentProgressSummaryService } from '../common/services/student-progress-summary.service';
 import { StudentResultsAggregationService } from '../common/services/student-results-aggregation.service';
 import { ParentChildrenController } from './children/parent-children.controller';
 import { ParentChildrenService } from './children/parent-children.service';
@@ -16,6 +15,6 @@ import { ParentChildrenService } from './children/parent-children.service';
 @Module({
     imports: [PrismaModule, SchoolCommonModule],
     controllers: [ParentChildrenController],
-    providers: [ParentChildrenService, StudentProgressSummaryService, StudentResultsAggregationService],
+    providers: [ParentChildrenService, StudentResultsAggregationService],
 })
 export class ParentModule { }
