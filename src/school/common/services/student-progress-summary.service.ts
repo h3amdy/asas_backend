@@ -92,19 +92,20 @@ export class StudentProgressSummaryService {
         const totalLessons = targets.length;
         if (totalLessons === 0) return { ...EMPTY, termName: context.termName, isFallbackTerm: context.isFallback };
 
-        // ── الدروس المنجزة (distinct lessonId من StudentLessonResult) ──
+        // ── الدروس المنجزة (من StudentLessonProgress بوضع COMPLETED) ──
         const lessonIds = targets.map(t => t.lessonId);
-        const completedResults = await this.prisma.studentLessonResult.groupBy({
-            by: ['lessonId'],
+        const completedProgress = await this.prisma.studentLessonProgress.findMany({
             where: {
                 studentId,
                 lessonId: { in: lessonIds },
+                status: 'COMPLETED',
                 isDeleted: false,
             },
+            select: { lessonId: true },
         });
 
         // ── حماية: لا تتجاوز النسبة 100% (DEC-PAR-010-11) ──
-        const completedLessons = Math.min(completedResults.length, totalLessons);
+        const completedLessons = Math.min(completedProgress.length, totalLessons);
         const progressPercent = Math.round((completedLessons / totalLessons) * 1000) / 10;
 
         return {

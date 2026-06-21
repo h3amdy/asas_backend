@@ -391,17 +391,18 @@ export class ReportsService {
             orderBy: { lesson: { publishedAt: 'desc' } },
         });
 
-        // ── حالة الإنجاز لكل درس ──
+        // ── حالة الإنجاز لكل درس (من StudentLessonProgress بوضع COMPLETED) ──
         const lessonIds = targets.map(t => t.lessonId);
-        const completedResults = await this.prisma.studentLessonResult.findMany({
+        const completedProgress = await this.prisma.studentLessonProgress.findMany({
             where: {
                 studentId: studentUser.student!.userId,
                 lessonId: { in: lessonIds },
+                status: 'COMPLETED',
                 isDeleted: false,
             },
             select: { lessonId: true },
         });
-        const completedSet = new Set(completedResults.map(r => r.lessonId));
+        const completedSet = new Set(completedProgress.map(p => p.lessonId));
 
         const lessons = targets.map(t => ({
             uuid: t.lesson.uuid,
@@ -671,16 +672,17 @@ export class ReportsService {
         if (totalLessons === 0) return { totalLessons: 0, completedLessons: 0, progressPercent: 0 };
 
         const lessonIds = targets.map(t => t.lessonId);
-        const completedResults = await this.prisma.studentLessonResult.groupBy({
-            by: ['lessonId'],
+        const completedProgress = await this.prisma.studentLessonProgress.findMany({
             where: {
                 studentId,
                 lessonId: { in: lessonIds },
+                status: 'COMPLETED',
                 isDeleted: false,
             },
+            select: { lessonId: true },
         });
 
-        const completedLessons = Math.min(completedResults.length, totalLessons);
+        const completedLessons = Math.min(completedProgress.length, totalLessons);
         const progressPercent = Math.round((completedLessons / totalLessons) * 1000) / 10;
 
         return { totalLessons, completedLessons, progressPercent };

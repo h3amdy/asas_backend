@@ -693,6 +693,98 @@ export class StudentSyncService {
                 lastPosition: lastPosition ? JSON.stringify(lastPosition) : null,
             },
         });
+
+        // ── اشتقاق النتيجة تلقائياً إذا تم إنجاز الدرس ولم تكن هناك نتيجة مسبقاً ──
+        if (status === 'COMPLETED') {
+            const existingResult = await this.prisma.studentLessonResult.findFirst({
+                where: { studentId, lessonId: lesson.id, isDeleted: false },
+            });
+
+            if (!existingResult) {
+                // جلب الأسئلة المرتبطة بالدرس
+                const questions = await this.prisma.question.findMany({
+                    where: { templateId: lesson.templateId, isDeleted: false },
+                    select: { id: true, score: true },
+                });
+
+                if (questions.length > 0) {
+                    // درس يحتوي على أسئلة (اختبار)
+                    const questionIds = questions.map(q => q.id);
+                    const answers = await this.prisma.studentAnswer.findMany({
+                        where: {
+                            studentId,
+                            questionId: { in: questionIds },
+                            isDeleted: false,
+                        },
+                    });
+
+                    // حساب النتيجة
+                    const totalQuestions = questions.length;
+                    const correctCount = answers.filter(a => a.isCorrect).length;
+                    const totalPoints = questions.reduce((sum, q) => sum + q.score, 0);
+                    const earnedPoints = answers
+                        .filter(a => a.isCorrect)
+                        .reduce((sum, a) => {
+                            const q = questions.find(q => q.id === a.questionId);
+                            return sum + (q ? q.score : 0);
+                        }, 0);
+
+                    const percent = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
+                    const gradeLabel = this.getGradeLabel(percent);
+
+                    const result = await this.prisma.studentLessonResult.create({
+                        data: {
+                            studentId,
+                            lessonId: lesson.id,
+                            totalQuestions,
+                            correctQuestions: correctCount,
+                            totalPoints,
+                            earnedPoints,
+                            percent,
+                            gradeLabel,
+                            calculatedAt: new Date(),
+                            version: 1,
+                        },
+                    });
+
+                    // ربط الإجابات بالنتيجة المنشأة حديثاً
+                    await this.prisma.studentAnswer.updateMany({
+                        where: {
+                            studentId,
+                            questionId: { in: questionIds },
+                            isDeleted: false,
+                        },
+                        data: {
+                            resultId: result.id,
+                        },
+                    });
+                } else {
+                    // درس قرائي (بدون أسئلة)
+                    await this.prisma.studentLessonResult.create({
+                        data: {
+                            studentId,
+                            lessonId: lesson.id,
+                            totalQuestions: 0,
+                            correctQuestions: 0,
+                            totalPoints: 0,
+                            earnedPoints: 0,
+                            percent: 100,
+                            gradeLabel: 'تمت القراءة',
+                            calculatedAt: new Date(),
+                            version: 1,
+                        },
+                    });
+                }
+            }
+        }
+    }
+
+    private getGradeLabel(percent: number): string {
+        if (percent >= 90) return 'ممتاز';
+        if (percent >= 80) return 'جيد جداً';
+        if (percent >= 70) return 'جيد';
+        if (percent >= 60) return 'مقبول';
+        return 'ضعيف';
     }
 
     private async processAnswerChange(studentId: number, change: ClientChange) {

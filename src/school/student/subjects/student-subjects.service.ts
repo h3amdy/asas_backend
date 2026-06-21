@@ -85,11 +85,11 @@ export class StudentSubjectsService {
             },
         });
 
-        const completedResults = await this.prisma.studentLessonResult.findMany({
-            where: { studentId, isDeleted: false },
+        const completedProgress = await this.prisma.studentLessonProgress.findMany({
+            where: { studentId, status: 'COMPLETED', isDeleted: false },
             select: { lessonId: true },
         });
-        const completedLessonIds = new Set(completedResults.map(r => r.lessonId));
+        const completedLessonIds = new Set(completedProgress.map(p => p.lessonId));
 
         // تجميع الإحصائيات حسب subjectId
         const statsMap = new Map<number, { total: number, completed: number, hasNew: boolean }>();

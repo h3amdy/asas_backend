@@ -205,11 +205,12 @@ export class ParentChildrenService {
         });
 
         // 5. جلب الدروس المنجزة للطالب
-        const completedResults = await this.prisma.studentLessonResult.findMany({
-            where: { studentId: childStudentId, isDeleted: false },
+        // 5. جلب الدروس المنجزة للطالب (من StudentLessonProgress بوضع COMPLETED)
+        const completedProgress = await this.prisma.studentLessonProgress.findMany({
+            where: { studentId: childStudentId, status: 'COMPLETED', isDeleted: false },
             select: { lessonId: true },
         });
-        const completedLessonIds = new Set(completedResults.map(r => r.lessonId));
+        const completedLessonIds = new Set(completedProgress.map(p => p.lessonId));
 
         // 6. تجميع الإحصائيات حسب subjectId
         const statsMap = new Map<number, { total: number; completed: number; hasNew: boolean }>();
