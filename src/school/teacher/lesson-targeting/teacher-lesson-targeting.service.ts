@@ -2,10 +2,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SaveTargetingDto } from '../lessons/dto/save-targeting.dto';
+import { LessonDeliveryService } from './lesson-delivery.service';
 
 @Injectable()
 export class TeacherLessonTargetingService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly deliveryService: LessonDeliveryService,
+    ) {}
 
     private async getTeacherContext(schoolId: number, userUuid: string) {
         const user = await this.prisma.user.findFirst({
@@ -254,7 +258,7 @@ export class TeacherLessonTargetingService {
         };
     }
 
-    // SRS-P4-05: نشر الدرس
+    // SRS-P4-05: نشر الدرس — يتحقق من سياسة المدرسة
     async publishLesson(schoolId: number, userUuid: string, lessonTemplateUuid: string) {
         const { userId } = await this.getTeacherContext(schoolId, userUuid);
 
@@ -270,33 +274,22 @@ export class TeacherLessonTargetingService {
         if (!lesson) throw new BadRequestException('يجب استهداف الدرس أولاً');
         if (lesson.targets.length === 0) throw new BadRequestException('يجب اختيار شعبة واحدة');
         if (lesson.status === 'PUBLISHED') throw new BadRequestException('الدرس منشور مسبقاً');
+        if (lesson.status === 'SCHEDULED') throw new BadRequestException('الدرس مجدول مسبقاً');
 
-        return await this.prisma.$transaction(async (tx) => {
-            const updated = await tx.lesson.update({
-                where: { id: lesson.id },
-                data: {
-                    status: 'PUBLISHED',
-                    deliveryMethod: 'OPEN',
-                    publishedAt: new Date(),
-                },
-            });
+        // جلب سياسة المدرسة
+        const school = await this.prisma.school.findUnique({
+            where: { id: schoolId },
+            select: { deliveryPolicy: true },
+        });
+        if (!school) throw new NotFoundException('المدرسة غير موجودة');
 
-            await tx.lessonDeliveryLog.create({
-                data: {
-                    lessonId: lesson.id,
-                    actorUserId: userId,
-                    action: 'PUBLISH',
-                    policyAtTime: 'OPEN',
-                    details: JSON.stringify({ targetCount: lesson.targets.length }),
-                },
-            });
-
-            return {
-                uuid: updated.uuid,
-                status: updated.status,
-                deliveryMethod: updated.deliveryMethod,
-                publishedAt: updated.publishedAt,
-            };
+        // تفويض القرار لخدمة النشر
+        return this.deliveryService.deliverLesson({
+            lessonId: lesson.id,
+            schoolId,
+            actorUserId: userId,
+            policy: school.deliveryPolicy,
         });
     }
 }
+

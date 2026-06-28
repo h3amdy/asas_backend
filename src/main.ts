@@ -9,7 +9,7 @@ async function bootstrap() {
   });
 
   app.useBodyParser('json', { limit: '5mb' });
-  app.useBodyParser('raw', { limit: '10mb' });
+  app.useBodyParser('raw', { limit: '100mb' });
 
   // ✅ تفعيل CORS عشان Flutter (وحتى لو صار عندك Web)
   app.enableCors({

@@ -1286,6 +1286,12 @@ model Lesson {
   publishedAt DateTime? @map("published_at")
   deliveredAt DateTime? @map("delivered_at")
 
+  // ── تاريخ النشر المجدول (computed cache) ──
+  // يُحسب من أقرب تاريخ حصة في LessonTimetableSlot
+  // يُستخدم بواسطة Cron Job لسهولة الاستعلام
+  // null → الدرس ليس مجدولاً (OPEN أو لم يُحدد بعد)
+  scheduledAt DateTime? @map("scheduled_at")
+
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1304,6 +1310,7 @@ model Lesson {
   @@index([subjectId], map: "lessons_subject_id_idx")
   @@index([yearId, termId], map: "lessons_year_term_idx")
   @@index([status], map: "lessons_status_idx")
+  @@index([status, scheduledAt], map: "lessons_scheduled_lookup_idx")
   @@index([updatedAt], map: "lessons_updated_at_idx")
   @@index([updatedAt, uuid], map: "lessons_sync_cursor_idx")
   @@map("lessons")
