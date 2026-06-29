@@ -1274,22 +1274,20 @@ model Lesson {
   termId Int  @map("term_id")
   term   Term @relation(fields: [termId], references: [id])
 
-  // الحالة: READY → PUBLISHED → DELIVERED → ARCHIVED
+  // الحالة: READY → SCHEDULED → PUBLISHED → ARCHIVED
+  // ⚠️ Derived Aggregate — يُحسب من LessonTarget (DEC-020 v3.0)
   status String @default("READY")
 
-  // طريقة التمرير: OPEN / SCHEDULED / MANUAL_APPROVAL / MANUAL_OVERRIDE
+  // طريقة التمرير: OPEN / SCHEDULED — Immutable بعد النشر (DEC-020 §14.11)
   deliveryMethod String? @map("delivery_method")
 
-  // نوع الربط: SLOT_COVERAGE / ADDITIONAL
+  // نوع الربط: SLOT_COVERAGE / ADDITIONAL — Immutable بعد النشر (DEC-020 §14.11)
   linkType String @default("ADDITIONAL") @map("link_type")
 
+  // ⚠️ DEPRECATED (DEC-020 v3.0): Source of Truth moved to LessonTarget
+  // Kept temporarily for Reports + Student APIs compatibility
+  // Will be removed in a later migration after all consumers are updated
   publishedAt DateTime? @map("published_at")
-  deliveredAt DateTime? @map("delivered_at")
-
-  // ── تاريخ النشر المجدول (computed cache) ──
-  // يُحسب من أقرب تاريخ حصة في LessonTimetableSlot
-  // يُستخدم بواسطة Cron Job لسهولة الاستعلام
-  // null → الدرس ليس مجدولاً (OPEN أو لم يُحدد بعد)
   scheduledAt DateTime? @map("scheduled_at")
 
   isActive  Boolean   @default(true) @map("is_active")
@@ -1310,13 +1308,12 @@ model Lesson {
   @@index([subjectId], map: "lessons_subject_id_idx")
   @@index([yearId, termId], map: "lessons_year_term_idx")
   @@index([status], map: "lessons_status_idx")
-  @@index([status, scheduledAt], map: "lessons_scheduled_lookup_idx")
   @@index([updatedAt], map: "lessons_updated_at_idx")
   @@index([updatedAt, uuid], map: "lessons_sync_cursor_idx")
   @@map("lessons")
 }
 
-// ── استهداف الشُعب ──────────────────────────────────────────────────────
+// ── استهداف الشُعب (Per-Target Publishing — DEC-020 v3.0) ──────────────
 model LessonTarget {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
@@ -1327,10 +1324,19 @@ model LessonTarget {
   sectionId Int     @map("section_id")
   section   Section @relation(fields: [sectionId], references: [id])
 
+  // ── Per-Target Publishing timestamps ──
+  // مصدر الحقيقة للظهور (DEC-024 §2)
+  scheduledAt DateTime? @map("scheduled_at") // متى يجب أن يُنشر — يُعيّنه المحرك
+  publishedAt DateTime? @map("published_at") // متى نُشر فعلاً — Immutable بعد التعيين (INV-007)
+
   createdAt DateTime @default(now()) @map("created_at")
+
+  timetableSlots LessonTimetableSlot[]
+  deliveryLogs   LessonDeliveryLog[]
 
   @@unique([lessonId, sectionId], map: "lesson_targets_lesson_section_key")
   @@index([sectionId], map: "lesson_targets_section_id_idx")
+  @@index([scheduledAt, publishedAt], map: "lesson_targets_schedule_lookup_idx") // Cron query
   @@map("lesson_targets")
 }
 
@@ -1342,6 +1348,10 @@ model LessonTimetableSlot {
   lessonId Int    @map("lesson_id")
   lesson   Lesson @relation(fields: [lessonId], references: [id])
 
+  // ربط بالـ target المحدد (أي شعبة تنتمي لها هذه الحصة)
+  targetId Int?          @map("target_id")
+  target   LessonTarget? @relation(fields: [targetId], references: [id])
+
   timetableSlotId Int           @map("timetable_slot_id")
   timetableSlot   TimetableSlot @relation(fields: [timetableSlotId], references: [id])
 
@@ -1352,10 +1362,11 @@ model LessonTimetableSlot {
 
   @@unique([lessonId, timetableSlotId, weekDate], map: "lesson_timetable_slots_unique_key")
   @@index([timetableSlotId], map: "lesson_timetable_slots_slot_idx")
+  @@index([targetId], map: "lesson_timetable_slots_target_idx")
   @@map("lesson_timetable_slots")
 }
 
-// ── سجل التمرير ─────────────────────────────────────────────────────────
+// ── سجل النشر (DEC-023 v3.0) ────────────────────────────────────────────
 model LessonDeliveryLog {
   id   Int    @id @default(autoincrement())
   uuid String @unique @default(uuid())
@@ -1363,10 +1374,14 @@ model LessonDeliveryLog {
   lessonId Int    @map("lesson_id")
   lesson   Lesson @relation(fields: [lessonId], references: [id])
 
+  // target المرتبط (optional — بعض الإجراءات على مستوى الدرس)
+  targetId Int?          @map("target_id")
+  target   LessonTarget? @relation(fields: [targetId], references: [id])
+
   actorUserId Int  @map("actor_user_id")
   actorUser   User @relation("LessonDeliveryActor", fields: [actorUserId], references: [id])
 
-  // PUBLISH / DELIVER / OVERRIDE_DELIVER / ADD_TARGETS
+  // SCHEDULE_TARGETS / PUBLISH_TARGET / CANCEL_SCHEDULE / ARCHIVE / INVALIDATE_SCHEDULE / SAVE_TARGETING
   action       String
   policyAtTime String? @map("policy_at_time")
   details      String? @db.Text
@@ -1374,6 +1389,7 @@ model LessonDeliveryLog {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([lessonId], map: "lesson_delivery_logs_lesson_idx")
+  @@index([targetId], map: "lesson_delivery_logs_target_idx")
   @@index([actorUserId], map: "lesson_delivery_logs_actor_idx")
   @@map("lesson_delivery_logs")
 }

@@ -74,14 +74,16 @@ export class StudentProgressSummaryService {
         if (!context) return EMPTY;
 
         // ── الدروس المستهدفة لشعبة الطالب (ضمن السياق المحدد) ──
+        // DEC-020 v3.0: Per-Target visibility
         const targets = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId,
+                publishedAt: { not: null },
                 lesson: {
                     schoolId,
                     yearId: context.yearId,
                     termId: context.termId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    status: { not: 'ARCHIVED' },
                     isDeleted: false,
                     isActive: true,
                 },
@@ -119,7 +121,7 @@ export class StudentProgressSummaryService {
 
     // ═══════════════════════════════════════════════════════════════════════
     // Academic Context Resolution (DEC-ACADEMIC-CONTEXT-005)
-    // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════
 
     /**
      * حل السياق الأكاديمي تلقائياً:
@@ -152,26 +154,34 @@ export class StudentProgressSummaryService {
         }
 
         // 2️⃣ Fallback: آخر فصل يحتوي دروس منشورة في هذه المدرسة
-        const latestLesson = await this.prisma.lesson.findFirst({
+        // DEC-020 v3.0: check lessonTarget.publishedAt instead of lesson.status
+        const latestTarget = await this.prisma.lessonTarget.findFirst({
             where: {
-                schoolId,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
-                isDeleted: false,
-                isActive: true,
+                publishedAt: { not: null },
+                lesson: {
+                    schoolId,
+                    status: { not: 'ARCHIVED' },
+                    isDeleted: false,
+                    isActive: true,
+                },
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { publishedAt: 'desc' },
             select: {
-                yearId: true,
-                termId: true,
-                term: { select: { name: true } },
+                lesson: {
+                    select: {
+                        yearId: true,
+                        termId: true,
+                        term: { select: { name: true } },
+                    },
+                },
             },
         });
 
-        if (latestLesson) {
+        if (latestTarget?.lesson) {
             return {
-                yearId: latestLesson.yearId,
-                termId: latestLesson.termId,
-                termName: latestLesson.term.name,
+                yearId: latestTarget.lesson.yearId,
+                termId: latestTarget.lesson.termId,
+                termName: latestTarget.lesson.term.name,
                 isFallback: true,
             };
         }

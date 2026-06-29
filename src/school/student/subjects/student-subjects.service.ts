@@ -68,19 +68,21 @@ export class StudentSubjectsService {
         });
 
         // 4. جلب إحصائيات الدروس لكل مادة (المنشورة والمستهدفة لهذه الشعبة)
+        // DEC-020 v3.0: Per-Target visibility
         const targetedLessons = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId: enrollment.sectionId,
+                publishedAt: { not: null },
                 lesson: {
                     schoolId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    status: { not: 'ARCHIVED' },
                     isDeleted: false,
                     isActive: true,
                 },
             },
             include: {
                 lesson: {
-                    select: { id: true, subjectId: true, publishedAt: true },
+                    select: { id: true, subjectId: true },
                 },
             },
         });

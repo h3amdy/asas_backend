@@ -361,12 +361,13 @@ export class ReportsService {
         }
 
         // ── قائمة الدروس ──
+        // DEC-020 v3.0: publishedAt on target, not lesson
         const lessonTargetWhere: any = {
             sectionId: enrollment.sectionId,
+            publishedAt: { not: null },
             lesson: {
                 schoolId,
                 subjectId: subject.id,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
                 isDeleted: false,
                 isActive: true,
             },
@@ -374,21 +375,21 @@ export class ReportsService {
 
         if (yearId) lessonTargetWhere.lesson.yearId = yearId;
         if (termId) lessonTargetWhere.lesson.termId = termId;
-        if (dateFilter) lessonTargetWhere.lesson.publishedAt = dateFilter;
+        if (dateFilter) lessonTargetWhere.publishedAt = dateFilter;
 
         const targets = await this.prisma.lessonTarget.findMany({
             where: lessonTargetWhere,
             select: {
                 lessonId: true,
+                publishedAt: true,
                 lesson: {
                     select: {
                         uuid: true,
                         template: { select: { title: true } },
-                        publishedAt: true,
                     },
                 },
             },
-            orderBy: { lesson: { publishedAt: 'desc' } },
+            orderBy: { publishedAt: 'desc' },
         });
 
         // ── حالة الإنجاز لكل درس (من StudentLessonProgress بوضع COMPLETED) ──
@@ -407,7 +408,7 @@ export class ReportsService {
         const lessons = targets.map(t => ({
             uuid: t.lesson.uuid,
             title: t.lesson.template.title,
-            publishedAt: t.lesson.publishedAt,
+            publishedAt: t.publishedAt,
             isCompleted: completedSet.has(t.lessonId),
             hasReview: completedSet.has(t.lessonId), // المراجعة متاحة للدروس المكتملة
         }));
@@ -647,20 +648,21 @@ export class ReportsService {
             );
         }
 
+        // DEC-020 v3.0: Per-Target visibility
         const targetWhere: any = {
             sectionId,
+            publishedAt: { not: null },
             lesson: {
                 schoolId,
                 yearId,
                 termId,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
                 isDeleted: false,
                 isActive: true,
             },
         };
 
         if (subjectId) targetWhere.lesson.subjectId = subjectId;
-        if (resolvedDateFilter) targetWhere.lesson.publishedAt = resolvedDateFilter;
+        if (resolvedDateFilter) targetWhere.publishedAt = resolvedDateFilter;
 
         // DEC-RPT-005: DISTINCT lessonId لتجنب حساب targets مكررة
         const targets = await this.prisma.lessonTarget.groupBy({
@@ -769,30 +771,29 @@ export class ReportsService {
         sectionId?: number,
         subjectId?: number,
     ): Promise<any> {
-        const where: any = {
-            schoolId,
-            yearId,
-            termId,
-            status: { in: ['PUBLISHED', 'DELIVERED'] },
-            isDeleted: false,
-            isActive: true,
+        // DEC-020 v3.0: Query target.publishedAt instead of lesson.publishedAt
+        const targetWhere: any = {
+            publishedAt: { not: null },
+            lesson: {
+                schoolId,
+                yearId,
+                termId,
+                isDeleted: false,
+                isActive: true,
+            },
         };
-        if (subjectId) where.subjectId = subjectId;
+        if (subjectId) targetWhere.lesson.subjectId = subjectId;
+        if (sectionId) targetWhere.sectionId = sectionId;
 
-        // إذا عندنا section نبحث فقط في الدروس المستهدفة لهذه الشعبة
-        if (sectionId) {
-            where.targets = { some: { sectionId } };
-        }
-
-        const lastLesson = await this.prisma.lesson.findFirst({
-            where,
+        const lastTarget = await this.prisma.lessonTarget.findFirst({
+            where: targetWhere,
             orderBy: { publishedAt: 'desc' },
             select: { publishedAt: true },
         });
 
-        if (!lastLesson?.publishedAt) return undefined;
+        if (!lastTarget?.publishedAt) return undefined;
 
-        const lastDate = new Date(lastLesson.publishedAt);
+        const lastDate = new Date(lastTarget.publishedAt);
         const startOfDay = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
         const nextDay = new Date(startOfDay);
         nextDay.setDate(nextDay.getDate() + 1);
@@ -1210,12 +1211,13 @@ export class ReportsService {
         }
 
         // ── قائمة الدروس ──
+        // DEC-020 v3.0: publishedAt on target
         const lessonTargetWhere: any = {
             sectionId: enrollment.sectionId,
+            publishedAt: { not: null },
             lesson: {
                 schoolId,
                 subjectId: subject.id,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
                 isDeleted: false,
                 isActive: true,
             },
@@ -1223,7 +1225,7 @@ export class ReportsService {
 
         if (yearId) lessonTargetWhere.lesson.yearId = yearId;
         if (termId) lessonTargetWhere.lesson.termId = termId;
-        if (resolvedDateFilter) lessonTargetWhere.lesson.publishedAt = resolvedDateFilter;
+        if (resolvedDateFilter) lessonTargetWhere.publishedAt = resolvedDateFilter;
 
         const targets = await this.prisma.lessonTarget.findMany({
             where: lessonTargetWhere,
@@ -1243,14 +1245,10 @@ export class ReportsService {
                     },
                 },
             },
+            orderBy: { publishedAt: 'asc' },
         });
 
-        // Sort by publishedAt + remove duplicates
-        targets.sort((a, b) => {
-            const dateA = a.lesson.publishedAt?.getTime() ?? 0;
-            const dateB = b.lesson.publishedAt?.getTime() ?? 0;
-            return dateA - dateB;
-        });
+        // Remove duplicates (keep first per lesson since already sorted by publishedAt asc)
 
         const seenLessonIds = new Set<number>();
         const lessons = targets
@@ -1271,7 +1269,7 @@ export class ReportsService {
                     title: t.lesson.template.title,
                     status: isCompleted ? 'completed' : 'pending',
                     scorePercent,
-                    publishedAt: t.lesson.publishedAt,
+                    publishedAt: t.publishedAt,
                 };
             });
 
@@ -1532,12 +1530,13 @@ export class ReportsService {
         }
 
         // ── قائمة الدروس المنجزة مع درجاتها ──
+        // DEC-020 v3.0: publishedAt on target
         const lessonTargetWhere: any = {
             sectionId: enrollment.sectionId,
+            publishedAt: { not: null },
             lesson: {
                 schoolId,
                 subjectId: subject.id,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
                 isDeleted: false,
                 isActive: true,
             },
@@ -1554,22 +1553,22 @@ export class ReportsService {
             );
         }
         if (resolvedDateFilter && resolvedDateFilter !== '__LAST_DAY__') {
-            lessonTargetWhere.lesson.publishedAt = resolvedDateFilter;
+            lessonTargetWhere.publishedAt = resolvedDateFilter;
         }
 
         const targets = await this.prisma.lessonTarget.findMany({
             where: lessonTargetWhere,
             select: {
                 lessonId: true,
+                publishedAt: true,
                 lesson: {
                     select: {
                         uuid: true,
                         template: { select: { title: true } },
-                        publishedAt: true,
                     },
                 },
             },
-            orderBy: { lesson: { publishedAt: 'desc' } },
+            orderBy: { publishedAt: 'desc' },
         });
 
         // ── Deduplicate by lessonId ──
@@ -1604,7 +1603,7 @@ export class ReportsService {
             return {
                 uuid: t.lesson.uuid,
                 title: t.lesson.template.title,
-                publishedAt: t.lesson.publishedAt,
+                publishedAt: t.publishedAt,
                 isCompleted: !!result,
                 completedAt: result?.calculatedAt ?? null,
                 totalQuestions: result?.totalQuestions ?? null,
@@ -1662,19 +1661,20 @@ export class ReportsService {
         }
 
         // ── الدروس المستهدفة ──
+        // DEC-020 v3.0: Per-Target visibility
         const targetWhere: any = {
             sectionId,
+            publishedAt: { not: null },
             lesson: {
                 schoolId,
                 yearId,
                 termId,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
                 isDeleted: false,
                 isActive: true,
             },
         };
         if (subjectId) targetWhere.lesson.subjectId = subjectId;
-        if (resolvedDateFilter) targetWhere.lesson.publishedAt = resolvedDateFilter;
+        if (resolvedDateFilter) targetWhere.publishedAt = resolvedDateFilter;
 
         const targets = await this.prisma.lessonTarget.groupBy({
             by: ['lessonId'],

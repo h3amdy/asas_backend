@@ -199,9 +199,9 @@ export class StudentSyncService {
     ) {
         const where: any = {
             schoolId,
-            // Include both active and deleted lessons; client will handle isDeleted flag
-            status: { in: ['PUBLISHED', 'DELIVERED'] },
-            targets: { some: { sectionId: ctx.sectionId } },
+            status: { not: 'ARCHIVED' },
+            // DEC-024 v3.0: Per-Target visibility
+            targets: { some: { sectionId: ctx.sectionId, publishedAt: { not: null } } },
         };
 
         if (cursor) {
@@ -247,6 +247,12 @@ export class StudentSyncService {
                     },
                 },
                 subject: { select: { uuid: true, displayName: true } },
+                // Per-Target: جلب target الطالب للحصول على publishedAt
+                targets: {
+                    where: { sectionId: ctx.sectionId, publishedAt: { not: null } },
+                    select: { publishedAt: true },
+                    take: 1,
+                },
             },
         });
 
@@ -263,7 +269,7 @@ export class StudentSyncService {
                 questionCount: lesson.template._count.questions,
                 coverMediaAssetUuid: lesson.template.coverMediaAsset?.uuid ?? null,
                 status: lesson.status,
-                publishedAt: lesson.publishedAt,
+                publishedAt: lesson.targets[0]?.publishedAt ?? null, // Per-Target
                 isActive: lesson.isActive,
                 isDeleted: lesson.isDeleted,
                 updatedAt: lesson.updatedAt,
@@ -323,10 +329,10 @@ export class StudentSyncService {
                 lessons: {
                     some: {
                         schoolId,
-                        status: { in: ['PUBLISHED', 'DELIVERED'] },
-                        // Do not filter out deleted lessons; keep isDeleted flag
                         isActive: true,
-                        targets: { some: { sectionId: ctx.sectionId } },
+                        status: { not: 'ARCHIVED' },
+                        // DEC-024 v3.0: Per-Target visibility
+                        targets: { some: { sectionId: ctx.sectionId, publishedAt: { not: null } } },
                     },
                 },
             },

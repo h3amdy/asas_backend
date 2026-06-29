@@ -31,14 +31,15 @@ export class StudentQuizService {
         if (!enrollment) throw new NotFoundException('ENROLLMENT_NOT_FOUND');
 
         // 3. جلب الدرس مع التحقق من الاستهداف
+        // DEC-020 v3.0: Per-Target visibility
         const lesson = await this.prisma.lesson.findFirst({
             where: {
                 uuid: lessonUuid,
                 schoolId,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
                 isDeleted: false,
                 isActive: true,
-                targets: { some: { sectionId: enrollment.sectionId } },
+                status: { not: 'ARCHIVED' },
+                targets: { some: { sectionId: enrollment.sectionId, publishedAt: { not: null } } },
             },
         });
         if (!lesson) throw new NotFoundException('LESSON_NOT_FOUND');

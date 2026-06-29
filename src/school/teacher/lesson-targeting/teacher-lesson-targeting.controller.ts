@@ -62,4 +62,22 @@ export class TeacherLessonTargetingController {
     ) {
         return this.service.publishLesson(req.schoolContext.id, req.user.sub, lessonUuid);
     }
+
+    /** POST — إلغاء الجدولة (SRS-P4-07) */
+    @Post('lessons/:lessonUuid/cancel-schedule')
+    cancelSchedule(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        return this.service.cancelSchedule(req.schoolContext.id, req.user.sub, lessonUuid);
+    }
+
+    /** GET — حالة النشر التفصيلية (SRS-P4-05) */
+    @Get('lessons/:lessonUuid/delivery-status')
+    getDeliveryStatus(
+        @Req() req: any,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        return this.service.getDeliveryStatus(req.schoolContext.id, req.user.sub, lessonUuid);
+    }
 }

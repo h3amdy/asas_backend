@@ -1,6 +1,6 @@
 // src/school/teacher/lesson-targeting/scheduled-lesson.cron.ts
-// ─── Cron Job — نشر الدروس المجدولة المستحقة ───────────────────────────
-// يعمل كل 5 دقائق — يبحث عن دروس SCHEDULED حان وقتها وينشرها
+// ─── Cron Job — نشر الـ targets المجدولة المستحقة (DEC-020 v3.0) ───────
+// يعمل كل 5 دقائق — يبحث عن targets حان وقتها وينشرها
 // ───────────────────────────────────────────────────────────────────────
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -14,15 +14,15 @@ export class ScheduledLessonCron {
     constructor(private readonly deliveryService: LessonDeliveryService) {}
 
     /**
-     * كل 5 دقائق — يفحص الدروس المجدولة المستحقة وينشرها
-     * قابل للتعديل حسب الحاجة (يمكن جعله يومياً أو كل دقيقة)
+     * كل 5 دقائق — يفحص targets المجدولة المستحقة وينشرها
+     * SRS-P4-06: publishDueTargets
      */
     @Cron('*/5 * * * *')
-    async handleScheduledLessons() {
+    async handleScheduledTargets() {
         try {
-            const count = await this.deliveryService.publishDueLessons();
+            const count = await this.deliveryService.publishDueTargets();
             if (count > 0) {
-                this.logger.log(`✅ Published ${count} scheduled lesson(s)`);
+                this.logger.log(`✅ Published ${count} scheduled target(s)`);
             }
         } catch (error) {
             this.logger.error(`❌ Cron job failed: ${error}`);

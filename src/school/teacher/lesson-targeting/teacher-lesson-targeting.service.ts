@@ -150,12 +150,18 @@ export class TeacherLessonTargetingService {
             where: { templateId: template.id, isDeleted: false },
         });
 
+        // DEC-020 §14.11: Immutability — لا يمكن تعديل الاستهداف بعد النشر
+        if (existing && ['PUBLISHED', 'SCHEDULED', 'ARCHIVED'].includes(existing.status)) {
+            throw new BadRequestException('لا يمكن تعديل الاستهداف بعد نشر الدرس');
+        }
+
         return await this.prisma.$transaction(async (tx) => {
             let lesson;
 
             if (existing) {
-                await tx.lessonTarget.deleteMany({ where: { lessonId: existing.id } });
+                // حذف slots أولاً (FK dependency على targets)
                 await tx.lessonTimetableSlot.deleteMany({ where: { lessonId: existing.id } });
+                await tx.lessonTarget.deleteMany({ where: { lessonId: existing.id } });
                 lesson = await tx.lesson.update({
                     where: { id: existing.id },
                     data: { linkType: dto.linkType },
@@ -175,20 +181,39 @@ export class TeacherLessonTargetingService {
                 });
             }
 
+            // إنشاء targets + بناء map للربط بالحصص
+            const sectionIdToTargetId = new Map<number, number>();
+
             for (const sec of sections) {
-                await tx.lessonTarget.create({
+                const target = await tx.lessonTarget.create({
                     data: { lessonId: lesson.id, sectionId: sec.id },
                 });
+                sectionIdToTargetId.set(sec.id, target.id);
             }
 
+            // ربط الحصص بالـ targets (DEC-020 v3.0)
             if (dto.linkType === 'SLOT_COVERAGE' && dto.slotAssignments) {
+                // بناء sectionUuid → sectionId map
+                const sectionUuidToId = new Map<string, number>();
+                for (const sec of sections) {
+                    sectionUuidToId.set(sec.uuid, sec.id);
+                }
+
                 for (const sa of dto.slotAssignments) {
                     const slot = await tx.timetableSlot.findFirst({
                         where: { uuid: sa.slotUuid, isDeleted: false },
                     });
                     if (slot) {
+                        // ربط الحصة بالـ target المناسب
+                        const sectionId = sectionUuidToId.get(sa.sectionUuid);
+                        const targetId = sectionId ? sectionIdToTargetId.get(sectionId) : undefined;
+
                         await tx.lessonTimetableSlot.create({
-                            data: { lessonId: lesson.id, timetableSlotId: slot.id },
+                            data: {
+                                lessonId: lesson.id,
+                                timetableSlotId: slot.id,
+                                targetId: targetId ?? null,
+                            },
                         });
                     }
                 }
@@ -244,10 +269,14 @@ export class TeacherLessonTargetingService {
 
         return {
             lessonUuid: lesson.uuid,
+            status: lesson.status,
+            deliveryMethod: lesson.deliveryMethod,
             linkType: lesson.linkType,
             targetedSections: lesson.targets.map((t) => ({
                 uuid: t.section.uuid,
                 name: t.section.name,
+                scheduledAt: t.scheduledAt,
+                publishedAt: t.publishedAt,
             })),
             assignedSlots: lesson.timetableSlots.map((l) => ({
                 slotUuid: l.timetableSlot.uuid,
@@ -275,6 +304,7 @@ export class TeacherLessonTargetingService {
         if (lesson.targets.length === 0) throw new BadRequestException('يجب اختيار شعبة واحدة');
         if (lesson.status === 'PUBLISHED') throw new BadRequestException('الدرس منشور مسبقاً');
         if (lesson.status === 'SCHEDULED') throw new BadRequestException('الدرس مجدول مسبقاً');
+        if (lesson.status === 'ARCHIVED') throw new BadRequestException('الدرس مؤرشف — لا يمكن نشره');
 
         // جلب سياسة المدرسة
         const school = await this.prisma.school.findUnique({
@@ -283,7 +313,7 @@ export class TeacherLessonTargetingService {
         });
         if (!school) throw new NotFoundException('المدرسة غير موجودة');
 
-        // تفويض القرار لخدمة النشر
+        // تفويض القرار لمحرك النشر
         return this.deliveryService.deliverLesson({
             lessonId: lesson.id,
             schoolId,
@@ -291,5 +321,67 @@ export class TeacherLessonTargetingService {
             policy: school.deliveryPolicy,
         });
     }
-}
 
+    // SRS-P4-07: إلغاء الجدولة
+    async cancelSchedule(schoolId: number, userUuid: string, lessonTemplateUuid: string) {
+        const { userId } = await this.getTeacherContext(schoolId, userUuid);
+
+        const template = await this.prisma.lessonTemplate.findFirst({
+            where: { uuid: lessonTemplateUuid, schoolId, isDeleted: false },
+        });
+        if (!template) throw new NotFoundException('الدرس غير موجود');
+
+        const lesson = await this.prisma.lesson.findFirst({
+            where: { templateId: template.id, isDeleted: false },
+        });
+        if (!lesson) throw new BadRequestException('الدرس غير مستهدف');
+
+        return this.deliveryService.cancelSchedule({
+            lessonId: lesson.id,
+            actorUserId: userId,
+        });
+    }
+
+    // حالة النشر التفصيلية — per-target status
+    async getDeliveryStatus(schoolId: number, userUuid: string, lessonTemplateUuid: string) {
+        await this.getTeacherContext(schoolId, userUuid);
+
+        const template = await this.prisma.lessonTemplate.findFirst({
+            where: { uuid: lessonTemplateUuid, schoolId, isDeleted: false },
+        });
+        if (!template) throw new NotFoundException('الدرس غير موجود');
+
+        const lesson = await this.prisma.lesson.findFirst({
+            where: { templateId: template.id, isDeleted: false },
+            include: {
+                targets: {
+                    include: {
+                        section: { select: { uuid: true, name: true } },
+                    },
+                },
+            },
+        });
+        if (!lesson) throw new NotFoundException('الدرس لم يُستهدف بعد');
+
+        return {
+            lessonUuid: lesson.uuid,
+            status: lesson.status,
+            deliveryMethod: lesson.deliveryMethod,
+            linkType: lesson.linkType,
+            targets: lesson.targets.map((t) => ({
+                sectionUuid: t.section.uuid,
+                sectionName: t.section.name,
+                scheduledAt: t.scheduledAt,
+                publishedAt: t.publishedAt,
+                isPublished: t.publishedAt !== null,
+                isScheduled: t.scheduledAt !== null && t.publishedAt === null,
+            })),
+            summary: {
+                totalTargets: lesson.targets.length,
+                publishedCount: lesson.targets.filter((t) => t.publishedAt !== null).length,
+                scheduledCount: lesson.targets.filter((t) => t.scheduledAt !== null && t.publishedAt === null).length,
+                pendingCount: lesson.targets.filter((t) => t.scheduledAt === null && t.publishedAt === null).length,
+            },
+        };
+    }
+}

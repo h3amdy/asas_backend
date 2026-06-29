@@ -104,14 +104,16 @@ export class StudentResultsAggregationService {
         if (!context) return EMPTY;
 
         // 2. جلب كل الدروس المستهدفة لشعبة الطالب
+        // DEC-020 v3.0: Per-Target visibility
         const targets = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId,
+                publishedAt: { not: null },
                 lesson: {
                     schoolId,
                     yearId: context.yearId,
                     termId: context.termId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    status: { not: 'ARCHIVED' },
                     isDeleted: false,
                     isActive: true,
                 },
@@ -275,15 +277,17 @@ export class StudentResultsAggregationService {
         if (!subject) return null;
 
         // 3. جلب دروس المادة المستهدفة
+        // DEC-020 v3.0: Per-Target visibility
         const targets = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId,
+                publishedAt: { not: null },
                 lesson: {
                     schoolId,
                     subjectId,
                     yearId: context.yearId,
                     termId: context.termId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    status: { not: 'ARCHIVED' },
                     isDeleted: false,
                     isActive: true,
                 },

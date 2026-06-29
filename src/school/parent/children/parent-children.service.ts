@@ -123,7 +123,7 @@ export class ParentChildrenService {
      * السلسلة:
      * Parent → ParentStudent(childUuid) → Student → Enrollment(isCurrent) → sectionId
      *   → SubjectSection → Subject (displayName, coverMediaAsset)
-     *   → LessonTarget → Lesson (PUBLISHED|DELIVERED, yearId, termId)
+     *   → LessonTarget (publishedAt != null) → Lesson (yearId, termId)
      *   → StudentLessonResult ← المنجزة
      */
     async getChildSubjects(
@@ -185,14 +185,16 @@ export class ParentChildrenService {
         });
 
         // 4. جلب الدروس المستهدفة للشعبة ضمن السياق الأكاديمي
+        // DEC-020 v3.0: Per-Target visibility
         const targets = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId: enrollment.sectionId,
+                publishedAt: { not: null },
                 lesson: {
                     schoolId,
                     yearId: context.yearId,
                     termId: context.termId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    status: { not: 'ARCHIVED' },
                     isDeleted: false,
                     isActive: true,
                 },
@@ -332,15 +334,17 @@ export class ParentChildrenService {
         }
 
         // 4. جلب الدروس المنشورة والمستهدفة للشعبة ضمن السياق
+        // DEC-020 v3.0: Per-Target visibility
         const publishedTargets = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId: enrollment.sectionId,
+                publishedAt: { not: null },
                 lesson: {
                     subjectId: subject.id,
                     schoolId,
                     yearId: context.yearId,
                     termId: context.termId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    status: { not: 'ARCHIVED' },
                     isDeleted: false,
                     isActive: true,
                 },
@@ -351,7 +355,6 @@ export class ParentChildrenService {
                         id: true,
                         uuid: true,
                         templateId: true,
-                        publishedAt: true,
                     },
                 },
             },
@@ -378,6 +381,7 @@ export class ParentChildrenService {
         ];
 
         // Map: templateId → lesson (published)
+        // DEC-020 v3.0: publishedAt from target, not lesson
         const publishedMap = new Map<number, { lessonId: number; lessonUuid: string; publishedAt: Date | null }>();
         
         // 🔴 التعديل 3: منع الـ Overwrite العشوائي والاحتفاظ بالنسخة الأحدث
@@ -388,14 +392,14 @@ export class ParentChildrenService {
                 
                 if (
                     !existing ||
-                    (target.lesson.publishedAt &&
+                    (target.publishedAt &&
                         existing.publishedAt &&
-                        target.lesson.publishedAt > existing.publishedAt)
+                        target.publishedAt > existing.publishedAt)
                 ) {
                     publishedMap.set(templateId, {
                         lessonId: target.lesson.id,
                         lessonUuid: target.lesson.uuid,
-                        publishedAt: target.lesson.publishedAt,
+                        publishedAt: target.publishedAt,
                     });
                 }
             }

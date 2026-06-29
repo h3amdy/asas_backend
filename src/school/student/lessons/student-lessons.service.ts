@@ -56,13 +56,15 @@ export class StudentLessonsService {
         }
 
         // 2. جلب الدروس المستهدفة لشعبة الطالب في هذه المادة
+        // DEC-024 v3.0: الظهور يعتمد على target.publishedAt (Per-Target)
         const lessonTargets = await this.prisma.lessonTarget.findMany({
             where: {
                 sectionId,
+                publishedAt: { not: null }, // فقط targets المنشورة لهذه الشعبة
                 lesson: {
                     subjectId: subject.id,
                     schoolId,
-                    status: { in: ['PUBLISHED', 'DELIVERED'] },
+                    status: { not: 'ARCHIVED' },
                     isDeleted: false,
                     isActive: true,
                 },
@@ -144,7 +146,7 @@ export class StudentLessonsService {
                     unitOrder: template.unit?.orderIndex ?? 0,
                     orderIndex: template.orderIndex,
                     questionCount: template._count.questions,
-                    publishedAt: lesson.publishedAt,
+                    publishedAt: lt.publishedAt, // Per-Target: من target وليس lesson
                     coverMediaAssetUuid: template.coverMediaAsset?.uuid ?? null,
                     hasAudio: template.contentBlocks.some((b) => b.items.length > 0),
                     // STD-055: حالة التقدم
@@ -184,17 +186,18 @@ export class StudentLessonsService {
     async getLessonDetail(schoolId: number, userUuid: string, lessonUuid: string) {
         const { sectionId } = await this.getStudentEnrollment(schoolId, userUuid);
 
-        // 1. جلب الدرس مع التحقق من أنه مستهدف لشعبة الطالب
+        // 1. جلب الدرس مع التحقق من أنه مستهدف ومنشور لشعبة الطالب
+        // DEC-024 v3.0: الظهور يعتمد على target.publishedAt
         const lesson = await this.prisma.lesson.findFirst({
             where: {
                 uuid: lessonUuid,
                 schoolId,
-                status: { in: ['PUBLISHED', 'DELIVERED'] },
                 isDeleted: false,
                 isActive: true,
                 targets: {
-                    some: { sectionId },
+                    some: { sectionId, publishedAt: { not: null } },
                 },
+                status: { not: 'ARCHIVED' },
             },
             include: {
                 template: {
@@ -256,13 +259,19 @@ export class StudentLessonsService {
             })),
         }));
 
+        // جلب publishedAt من target الطالب
+        const studentTarget = await this.prisma.lessonTarget.findFirst({
+            where: { lessonId: lesson.id, sectionId, publishedAt: { not: null } },
+            select: { publishedAt: true },
+        });
+
         return {
             uuid: lesson.uuid,
             title: lesson.template.title,
             subjectName: lesson.subject.displayName,
             unitName: lesson.template.unit?.title ?? '',
             questionCount: lesson.template._count.questions,
-            publishedAt: lesson.publishedAt,
+            publishedAt: studentTarget?.publishedAt ?? null, // Per-Target
             blocks,
         };
     }
