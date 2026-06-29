@@ -65,7 +65,7 @@ export class TeacherLessonTargetingService {
         };
     }
 
-    // SRS-P4-02: حصص المادة في شعبة
+    // SRS-P4-02: حصص المادة في شعبة — مع تغطية أسبوعية (MS-13A)
     async getTimetableSlotsForSection(
         schoolId: number, userUuid: string,
         subjectUuid: string, sectionUuid: string,
@@ -83,17 +83,30 @@ export class TeacherLessonTargetingService {
         });
         if (!ss) throw new NotFoundException('المادة غير مرتبطة بهذه الشعبة');
 
+        // جلب الفصل الحالي (termStartDate / termEndDate)
+        const cy = await this.prisma.year.findFirst({
+            where: { schoolId, isCurrent: true, isDeleted: false },
+            include: { terms: { where: { isCurrent: true, isDeleted: false }, take: 1 } },
+        });
+        const currentTerm = cy?.terms?.[0] ?? null;
+
         const tt = await this.prisma.timetable.findFirst({
             where: { sectionId: section.id, isDeleted: false, status: 'PUBLISHED' },
             orderBy: { publishedAt: 'desc' },
         });
-        if (!tt) return { slots: [] };
+        if (!tt) return {
+            termStartDate: currentTerm?.startDate ?? null,
+            termEndDate: currentTerm?.endDate ?? null,
+            slots: [],
+            coverage: [],
+        };
 
         const slots = await this.prisma.timetableSlot.findMany({
             where: { timetableId: tt.id, subjectSectionId: ss.id, isDeleted: false },
             orderBy: [{ weekday: 'asc' }, { lessonNumber: 'asc' }],
             include: {
                 lessonTimetableSlots: {
+                    where: { lesson: { isDeleted: false } },
                     include: {
                         lesson: { include: { template: { select: { title: true } } } },
                     },
@@ -101,18 +114,36 @@ export class TeacherLessonTargetingService {
             },
         });
 
+        // ── Sparse Coverage (MS-13A) ──
+        // weekDate = مصدر الحقيقة. weekNumber = derived في Flutter.
+        const coverage: Array<{
+            slotUuid: string;
+            weekDate: Date | null;
+            coveredByLessonTitle: string;
+            coveredByLessonUuid: string;
+        }> = [];
+
+        for (const slot of slots) {
+            for (const lts of slot.lessonTimetableSlots) {
+                if (lts.lesson.isDeleted) continue;
+                coverage.push({
+                    slotUuid: slot.uuid,
+                    weekDate: lts.weekDate,
+                    coveredByLessonTitle: lts.lesson.template.title,
+                    coveredByLessonUuid: lts.lesson.uuid,
+                });
+            }
+        }
+
         return {
-            slots: slots.map((s) => {
-                const c = s.lessonTimetableSlots.find((l) => !l.lesson.isDeleted);
-                return {
-                    uuid: s.uuid,
-                    weekday: s.weekday,
-                    lessonNumber: s.lessonNumber,
-                    isCovered: !!c,
-                    coveredByLessonTitle: c?.lesson.template.title ?? null,
-                    coveredByLessonUuid: c?.lesson.uuid ?? null,
-                };
-            }),
+            termStartDate: currentTerm?.startDate ?? null,
+            termEndDate: currentTerm?.endDate ?? null,
+            slots: slots.map((s) => ({
+                uuid: s.uuid,
+                weekday: s.weekday,
+                lessonNumber: s.lessonNumber,
+            })),
+            coverage,
         };
     }
 
@@ -213,6 +244,7 @@ export class TeacherLessonTargetingService {
                                 lessonId: lesson.id,
                                 timetableSlotId: slot.id,
                                 targetId: targetId ?? null,
+                                weekDate: sa.weekDate ? new Date(sa.weekDate) : null, // MS-13A: per-week
                             },
                         });
                     }

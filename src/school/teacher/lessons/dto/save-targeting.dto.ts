@@ -13,6 +13,10 @@ export class SlotAssignmentDto {
 
     @IsString()
     slotUuid: string;
+
+    @IsOptional()
+    @IsString()
+    weekDate?: string; // MS-13A: "2026-09-01" — per-week targeting
 }
 
 export class SaveTargetingDto {
