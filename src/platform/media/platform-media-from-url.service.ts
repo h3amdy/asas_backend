@@ -247,7 +247,13 @@ export class PlatformMediaFromUrlService {
         const parsedUrl = new URL(url);
         const client = parsedUrl.protocol === 'https:' ? https : http;
 
-        const req = client.get(url, { timeout: this.DOWNLOAD_TIMEOUT_MS }, (res) => {
+        const req = client.get(url, {
+            timeout: this.DOWNLOAD_TIMEOUT_MS,
+            headers: {
+                'User-Agent': 'AsasEducationPlatform/1.0 (https://asas.edu; contact@asas.edu)',
+                'Accept': '*/*',
+            },
+        }, (res) => {
             // Handle redirects
             if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 const redirectUrl = new URL(res.headers.location, url).href;
