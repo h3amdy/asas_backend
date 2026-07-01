@@ -299,6 +299,9 @@ export class TeacherLessonTargetingService {
                         timetableSlot: {
                             select: { uuid: true, weekday: true, lessonNumber: true },
                         },
+                        target: {
+                            include: { section: { select: { uuid: true } } },
+                        },
                     },
                 },
             },
@@ -318,6 +321,7 @@ export class TeacherLessonTargetingService {
             })),
             assignedSlots: lesson.timetableSlots.map((l) => ({
                 slotUuid: l.timetableSlot.uuid,
+                sectionUuid: l.target?.section?.uuid ?? null,
                 weekday: l.timetableSlot.weekday,
                 lessonNumber: l.timetableSlot.lessonNumber,
                 weekDate: l.weekDate,
