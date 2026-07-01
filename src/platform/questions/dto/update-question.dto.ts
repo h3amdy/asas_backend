@@ -59,8 +59,16 @@ export class UpdateQuestionDto {
     explanationImageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    explanationImageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     explanationAudioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    explanationAudioAssetUuid?: string | null;
 
     // بيانات فرعية — Replace Strategy
     @IsOptional()

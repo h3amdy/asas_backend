@@ -213,8 +213,16 @@ export class CreateQuestionDto {
     explanationImageAssetId?: number | null;
 
     @IsOptional()
+    @IsString()
+    explanationImageAssetUuid?: string | null;
+
+    @IsOptional()
     @IsInt()
     explanationAudioAssetId?: number | null;
+
+    @IsOptional()
+    @IsString()
+    explanationAudioAssetUuid?: string | null;
 
     // ── بيانات النوع الخاصة ──
 

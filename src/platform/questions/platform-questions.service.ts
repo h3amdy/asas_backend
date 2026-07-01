@@ -320,6 +320,8 @@ export class PlatformQuestionsService {
         // تحويل UUIDs → IDs قبل الـ transaction
         const questionImageAssetId = await this.resolveAssetField(dto.questionImageAssetId, dto.questionImageAssetUuid);
         const questionAudioAssetId = await this.resolveAssetField(dto.questionAudioAssetId, dto.questionAudioAssetUuid);
+        const explanationImageAssetId = await this.resolveAssetField(dto.explanationImageAssetId, dto.explanationImageAssetUuid);
+        const explanationAudioAssetId = await this.resolveAssetField(dto.explanationAudioAssetId, dto.explanationAudioAssetUuid);
 
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. إنشاء السؤال
@@ -333,8 +335,8 @@ export class PlatformQuestionsService {
                     questionImageAssetId,
                     questionAudioAssetId,
                     explanationText: dto.explanationText ?? null,
-                    explanationImageAssetId: dto.explanationImageAssetId ?? null,
-                    explanationAudioAssetId: dto.explanationAudioAssetId ?? null,
+                    explanationImageAssetId,
+                    explanationAudioAssetId,
                 },
             });
 
@@ -390,6 +392,12 @@ export class PlatformQuestionsService {
         const resolvedQuestionAudioAssetId = dto.questionAudioAssetUuid
             ? await this.resolveAssetUuid(dto.questionAudioAssetUuid)
             : undefined;
+        const resolvedExplanationImageAssetId = dto.explanationImageAssetUuid
+            ? await this.resolveAssetUuid(dto.explanationImageAssetUuid)
+            : undefined;
+        const resolvedExplanationAudioAssetId = dto.explanationAudioAssetUuid
+            ? await this.resolveAssetUuid(dto.explanationAudioAssetUuid)
+            : undefined;
 
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. تحديث حقول السؤال
@@ -402,7 +410,9 @@ export class PlatformQuestionsService {
             else if (resolvedQuestionAudioAssetId !== undefined) updateData.questionAudioAssetId = resolvedQuestionAudioAssetId;
             if (dto.explanationText !== undefined) updateData.explanationText = dto.explanationText;
             if (dto.explanationImageAssetId !== undefined) updateData.explanationImageAssetId = dto.explanationImageAssetId;
+            else if (resolvedExplanationImageAssetId !== undefined) updateData.explanationImageAssetId = resolvedExplanationImageAssetId;
             if (dto.explanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = dto.explanationAudioAssetId;
+            else if (resolvedExplanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = resolvedExplanationAudioAssetId;
 
             if (Object.keys(updateData).length > 0) {
                 await tx.question.update({
