@@ -199,7 +199,7 @@ export class TimetableService {
             const linkedLessonSlots = await tx.lessonTimetableSlot.findMany({
                 where: { timetableSlotId: slot.id },
                 include: {
-                    lessonTarget: {
+                    target: {
                         select: {
                             id: true,
                             lessonId: true,
@@ -214,7 +214,7 @@ export class TimetableService {
             // 3. لكل target مُجدول (غير منشور) — فحص هل بقيت حصص أخرى
             const affectedTargetIds = new Set<number>();
             for (const lts of linkedLessonSlots) {
-                const target = lts.lessonTarget;
+                const target = lts.target;
                 // لا نتدخل إذا target منشور أو غير مُجدول
                 if (!target || target.publishedAt || !target.scheduledAt) continue;
                 affectedTargetIds.add(target.id);

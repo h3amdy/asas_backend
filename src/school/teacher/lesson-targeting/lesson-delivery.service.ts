@@ -106,7 +106,22 @@ export class LessonDeliveryService {
                 });
             }
 
-            // 2. إعادة حساب حالة الدرس
+            // 2. سجل إجمالي — DEC-021 §6: OPEN → PUBLISH_ALL
+            await tx.lessonDeliveryLog.create({
+                data: {
+                    lessonId,
+                    actorUserId,
+                    action: 'PUBLISH_ALL',
+                    policyAtTime: 'OPEN',
+                    details: JSON.stringify({
+                        targetCount: publishedTargets.length,
+                        publishedAt: now.toISOString(),
+                        targetIds: publishedTargets.map(t => t.targetId),
+                    }),
+                },
+            });
+
+            // 3. إعادة حساب حالة الدرس
             const newStatus = await this.recalculateLessonStatus(tx, lessonId);
 
             // 3. تعيين deliveryMethod
@@ -191,6 +206,16 @@ export class LessonDeliveryService {
 
             if (targets.length === 0) {
                 throw new BadRequestException('يجب استهداف شعبة واحدة على الأقل');
+            }
+
+            // DR-022-02 (S4): SLOT_COVERAGE بدون حصص مربوطة → خطأ 400
+            const totalSlots = targets.reduce(
+                (sum, t) => sum + t.timetableSlots.length, 0,
+            );
+            if (totalSlots === 0) {
+                throw new BadRequestException(
+                    'يجب ربط حصة واحدة على الأقل في سياسة حسب الجدول. يمكنك إضافة حصص أو تغيير نوع الربط إلى "إضافي".',
+                );
             }
 
             let publishedNow = 0;
