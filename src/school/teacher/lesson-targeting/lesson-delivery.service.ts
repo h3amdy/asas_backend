@@ -299,7 +299,10 @@ export class LessonDeliveryService {
             where: {
                 scheduledAt: { lte: now },
                 publishedAt: null,
-                lesson: { isDeleted: false },
+                lesson: {
+                    isDeleted: false,
+                    status: 'SCHEDULED', // DEC-020 §9: Cron يبحث في targets لدروس SCHEDULED فقط
+                },
             },
             select: {
                 id: true,
@@ -584,6 +587,9 @@ export class LessonDeliveryService {
             data: { status: newStatus },
         });
 
+        // DEC-020 §12: التحقق من الثوابت بعد كل عملية
+        this.assertLessonInvariants(newStatus, targets);
+
         return newStatus;
     }
 
@@ -625,5 +631,52 @@ export class LessonDeliveryService {
         }
 
         return earliest;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ██ PRIVATE — التحقق من الثوابت المعمارية (DEC-020 §12-13) ██
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * DEC-020 §12: التحقق من صحة الحالة بعد كل عملية
+     * IMP-001 → IMP-005: حالات مستحيلة = Bug
+     */
+    private assertLessonInvariants(
+        status: string,
+        targets: Array<{ publishedAt: Date | null; scheduledAt: Date | null }>,
+    ): void {
+        const allPublished = targets.every((t) => t.publishedAt !== null);
+        const anyPublished = targets.some((t) => t.publishedAt !== null);
+        const anyScheduled = targets.some(
+            (t) => t.scheduledAt !== null && t.publishedAt === null,
+        );
+
+        // IMP-001: PUBLISHED + target بدون published_at
+        if (status === 'PUBLISHED' && !allPublished) {
+            this.logger.error(
+                `[INVARIANT VIOLATION IMP-001] status=PUBLISHED but not all targets published`,
+            );
+        }
+
+        // IMP-002: READY + target فيه published_at
+        if (status === 'READY' && anyPublished) {
+            this.logger.error(
+                `[INVARIANT VIOLATION IMP-002] status=READY but some targets have published_at`,
+            );
+        }
+
+        // IMP-003: READY + target فيه scheduled_at
+        if (status === 'READY' && anyScheduled) {
+            this.logger.error(
+                `[INVARIANT VIOLATION IMP-003] status=READY but some targets have scheduled_at`,
+            );
+        }
+
+        // IMP-005: ARCHIVED + target مُجدول غير منشور
+        if (status === 'ARCHIVED' && anyScheduled) {
+            this.logger.error(
+                `[INVARIANT VIOLATION IMP-005] status=ARCHIVED but some targets still scheduled`,
+            );
+        }
     }
 }

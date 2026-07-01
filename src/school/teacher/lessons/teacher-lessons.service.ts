@@ -170,15 +170,21 @@ export class TeacherLessonsService {
                     const itemsCount = lt.contentBlocks.reduce(
                         (sum, b) => sum + b._count.items, 0,
                     );
-                    const hasPublishedLesson = lt.lessons.some(
-                        (l) => l.status === 'PUBLISHED',
-                    );
+                    // DEC-020: حالة العرض = حالة Lesson (Derived Aggregate)
+                    // الأولوية: PUBLISHED > SCHEDULED > READY > حالة القالب
+                    let derivedStatus = lt.status; // fallback: حالة القالب
+                    if (lt.lessons.length > 0) {
+                        const lessonStatus = lt.lessons[0].status;
+                        if (['PUBLISHED', 'SCHEDULED', 'READY'].includes(lessonStatus)) {
+                            derivedStatus = lessonStatus;
+                        }
+                    }
                     return {
                         id: lt.id,
                         uuid: lt.uuid,
                         title: lt.title,
                         orderIndex: lt.orderIndex,
-                        status: hasPublishedLesson ? 'PUBLISHED' : lt.status,
+                        status: derivedStatus,
                         coverMediaAssetId: lt.coverMediaAssetId,
                         blocksCount: lt._count.contentBlocks,
                         itemsCount,
@@ -351,6 +357,21 @@ export class TeacherLessonsService {
             );
         }
 
+        // DEC-020 §10.3: لا يمكن حذف القالب إذا يوجد Lesson نشط (غير مؤرشف)
+        const activeLessonCount = await this.prisma.lesson.count({
+            where: {
+                templateId: lesson.id,
+                isDeleted: false,
+                status: { notIn: ['ARCHIVED'] },
+            },
+        });
+
+        if (activeLessonCount > 0) {
+            throw new BadRequestException(
+                'لا يمكن حذف القالب — يوجد درس نشط مرتبط به. أرشف الدرس أولاً.',
+            );
+        }
+
         const now = new Date();
 
         await this.prisma.$transaction([
@@ -444,13 +465,21 @@ export class TeacherLessonsService {
             // const questionsCount = await this.prisma.question.count(...)
         }
 
-        // READY → DRAFT: تحقق أن الدرس لم يُنشر
+        // DEC-020 §10.3: READY → DRAFT — ممنوع إذا يوجد Lesson نشط
         if (dto.status === 'DRAFT' && lesson.status === 'READY') {
-            // Phase 2B: فحص lessons table
-            // const publishedCount = await this.prisma.lesson.count({
-            //     where: { templateId: lesson.id, isDeleted: false },
-            // });
-            // if (publishedCount > 0) throw ...
+            const activeLessonCount = await this.prisma.lesson.count({
+                where: {
+                    templateId: lesson.id,
+                    isDeleted: false,
+                    status: { notIn: ['ARCHIVED'] },
+                },
+            });
+
+            if (activeLessonCount > 0) {
+                throw new BadRequestException(
+                    'لا يمكن إرجاع القالب لمسودة — يوجد درس نشط (منشور أو مُجدول). أرشف الدرس أولاً.',
+                );
+            }
         }
 
         const now = new Date();
