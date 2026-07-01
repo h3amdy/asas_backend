@@ -181,9 +181,157 @@ export class TimetableService {
             throw new NotFoundException('SLOT_NOT_FOUND');
         }
 
-        await this.prisma.timetableSlot.update({
-            where: { id: slot.id },
-            data: { isDeleted: true, deletedAt: new Date(), subjectSectionId: null },
+        await this.prisma.$transaction(async (tx) => {
+            // 1. حذف الحصة (soft delete)
+            await tx.timetableSlot.update({
+                where: { id: slot.id },
+                data: { isDeleted: true, deletedAt: new Date(), subjectSectionId: null },
+            });
+
+            // ────────────────────────────────────────────────────────────────
+            // DEC-022 DR-022-05: إبطال جدولة الدروس المرتبطة بهذه الحصة
+            // "الجدول هو مصدر الحقيقة، وليس scheduled_at"
+            // TimetableService لا تُعدّل scheduled_at مباشرة — لكن تتحقق
+            // من وجود targets مُجدولة مرتبطة وتُبطل جدولتها.
+            // ────────────────────────────────────────────────────────────────
+
+            // 2. إيجاد LessonTimetableSlots المرتبطة بهذه الحصة
+            const linkedLessonSlots = await tx.lessonTimetableSlot.findMany({
+                where: { timetableSlotId: slot.id },
+                include: {
+                    lessonTarget: {
+                        select: {
+                            id: true,
+                            lessonId: true,
+                            sectionId: true,
+                            publishedAt: true,
+                            scheduledAt: true,
+                        },
+                    },
+                },
+            });
+
+            // 3. لكل target مُجدول (غير منشور) — فحص هل بقيت حصص أخرى
+            const affectedTargetIds = new Set<number>();
+            for (const lts of linkedLessonSlots) {
+                const target = lts.lessonTarget;
+                // لا نتدخل إذا target منشور أو غير مُجدول
+                if (!target || target.publishedAt || !target.scheduledAt) continue;
+                affectedTargetIds.add(target.id);
+            }
+
+            for (const targetId of affectedTargetIds) {
+                // كم حصة متبقية لهذا الـ target (غير الحصة المحذوفة)؟
+                const remainingSlots = await tx.lessonTimetableSlot.findMany({
+                    where: {
+                        targetId,
+                        timetableSlot: { isDeleted: false },
+                    },
+                    include: {
+                        timetableSlot: {
+                            include: {
+                                timetable: {
+                                    include: { term: { select: { startDate: true } } },
+                                },
+                            },
+                        },
+                    },
+                });
+
+                const target = await tx.lessonTarget.findUnique({
+                    where: { id: targetId },
+                    select: { lessonId: true, sectionId: true },
+                });
+                if (!target) continue;
+
+                if (remainingSlots.length === 0) {
+                    // DR-022-05: Invalidated Scheduling — لم تبقَ أي حصة
+                    await tx.lessonTarget.update({
+                        where: { id: targetId },
+                        data: { scheduledAt: null },
+                    });
+
+                    await tx.lessonDeliveryLog.create({
+                        data: {
+                            lessonId: target.lessonId,
+                            targetId,
+                            actorUserId: 0, // System action
+                            action: 'INVALIDATE_SCHEDULE',
+                            details: JSON.stringify({
+                                reason: 'SLOT_DELETED',
+                                deletedSlotUuid: slotUuid,
+                                sectionId: target.sectionId,
+                            }),
+                        },
+                    });
+                } else {
+                    // بقيت حصص — إعادة حساب scheduled_at
+                    // أقرب تاريخ حصة مستقبلي
+                    const now = new Date();
+                    let earliest: Date | null = null;
+
+                    for (const rs of remainingSlots) {
+                        const tSlot = rs.timetableSlot;
+                        const term = tSlot.timetable?.term;
+                        if (!term?.startDate || !rs.weekDate) continue;
+
+                        const weekDate = new Date(rs.weekDate);
+                        // حساب التاريخ الفعلي: weekDate + weekday
+                        const targetDate = new Date(weekDate);
+                        targetDate.setDate(targetDate.getDate() + ((tSlot.weekday - targetDate.getDay() + 7) % 7));
+
+                        if (targetDate > now) {
+                            if (!earliest || targetDate < earliest) {
+                                earliest = targetDate;
+                            }
+                        }
+                    }
+
+                    await tx.lessonTarget.update({
+                        where: { id: targetId },
+                        data: { scheduledAt: earliest },
+                    });
+
+                    if (!earliest) {
+                        // كل الحصص المتبقية ماضية — Invalidated
+                        await tx.lessonDeliveryLog.create({
+                            data: {
+                                lessonId: target.lessonId,
+                                targetId,
+                                actorUserId: 0,
+                                action: 'INVALIDATE_SCHEDULE',
+                                details: JSON.stringify({
+                                    reason: 'ALL_REMAINING_SLOTS_PAST',
+                                    deletedSlotUuid: slotUuid,
+                                }),
+                            },
+                        });
+                    }
+                }
+
+                // إعادة حساب حالة الدرس (DEC-020 §10, DEC-022 §10)
+                const lesson = await tx.lesson.findUnique({
+                    where: { id: target.lessonId },
+                    select: { status: true },
+                });
+                if (lesson && lesson.status !== 'ARCHIVED') {
+                    const allTargets = await tx.lessonTarget.findMany({
+                        where: { lessonId: target.lessonId },
+                        select: { publishedAt: true, scheduledAt: true },
+                    });
+                    const allPublished = allTargets.every((t: any) => t.publishedAt !== null);
+                    const anyScheduled = allTargets.some((t: any) => t.scheduledAt !== null && t.publishedAt === null);
+                    let newStatus: string;
+                    if (allPublished) newStatus = 'PUBLISHED';
+                    else if (anyScheduled) newStatus = 'SCHEDULED';
+                    else newStatus = 'READY';
+
+                    await tx.lesson.update({
+                        where: { id: target.lessonId },
+                        data: { status: newStatus },
+                    });
+                }
+            }
         });
 
         return { success: true };

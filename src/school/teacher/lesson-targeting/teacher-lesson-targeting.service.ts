@@ -190,6 +190,12 @@ export class TeacherLessonTargetingService {
             let lesson;
 
             if (existing) {
+                // DEC-020 §10.2: linkType لا يتغير بعد إنشاء الاستهداف — قرار معماري
+                if (existing.linkType !== dto.linkType) {
+                    throw new BadRequestException(
+                        'لا يمكن تغيير نوع الربط بعد إنشاء الاستهداف. احذف الاستهداف وأنشئه من جديد.',
+                    );
+                }
                 // حذف slots أولاً (FK dependency على targets)
                 await tx.lessonTimetableSlot.deleteMany({ where: { lessonId: existing.id } });
                 await tx.lessonTarget.deleteMany({ where: { lessonId: existing.id } });

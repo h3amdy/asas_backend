@@ -223,6 +223,7 @@ export class LessonDeliveryService {
                             details: JSON.stringify({
                                 sectionId: target.sectionId,
                                 lateDelivery: !!scheduledAt,
+                                noSlots: !scheduledAt && target.timetableSlots.length === 0,
                                 publishedAt: now.toISOString(),
                             }),
                         },
