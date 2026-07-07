@@ -1,11 +1,13 @@
 // src/school/teacher/lesson-targeting/teacher-lesson-targeting.service.ts
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SaveTargetingDto } from '../lessons/dto/save-targeting.dto';
 import { LessonDeliveryService } from './lesson-delivery.service';
 
 @Injectable()
 export class TeacherLessonTargetingService {
+    private readonly logger = new Logger(TeacherLessonTargetingService.name);
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly deliveryService: LessonDeliveryService,
@@ -404,6 +406,14 @@ export class TeacherLessonTargetingService {
             },
         });
         if (!lesson) throw new NotFoundException('الدرس لم يُستهدف بعد');
+
+        // التحقق من توافق البيانات (Invariant Violation Check)
+        const allPublished = lesson.targets.every((t) => t.publishedAt !== null);
+        if (lesson.status === 'PUBLISHED' && !allPublished) {
+            this.logger.error(
+                `[INVARIANT VIOLATION IMP-001] Lesson status is PUBLISHED for template ${lessonTemplateUuid}, but not all targets have publishedAt set.`,
+            );
+        }
 
         return {
             lessonUuid: lesson.uuid,
