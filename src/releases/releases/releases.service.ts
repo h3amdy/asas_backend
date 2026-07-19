@@ -188,6 +188,20 @@ export class ReleasesService {
       throw new NotFoundException('الإصدار غير موجود');
     }
 
+    // التحقق من عدم وجود توزيع بنفس (channelType + platform) لهذا الإصدار
+    const existing = await this.prisma.releaseDistribution.findFirst({
+      where: {
+        releaseId: release.id,
+        channelType: dto.channelType as any,
+        platform: dto.platform as any,
+      },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `يوجد رابط تحميل مسجّل لهذه المنصة (${dto.platform}) والقناة (${dto.channelType}) بالفعل. عدّله بدلاً من إضافة جديد.`,
+      );
+    }
+
     const dist = await this.prisma.releaseDistribution.create({
       data: {
         releaseId: release.id,
@@ -198,7 +212,6 @@ export class ReleasesService {
       },
     });
 
-    // BigInt لا يتحول لـ JSON تلقائياً — نحوّله لـ Number
     return {
       ...dist,
       fileSize: dist.fileSize ? Number(dist.fileSize) : null,
