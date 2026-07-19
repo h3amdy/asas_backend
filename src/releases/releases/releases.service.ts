@@ -188,7 +188,7 @@ export class ReleasesService {
       throw new NotFoundException('الإصدار غير موجود');
     }
 
-    return this.prisma.releaseDistribution.create({
+    const dist = await this.prisma.releaseDistribution.create({
       data: {
         releaseId: release.id,
         channelType: dto.channelType as any,
@@ -197,6 +197,12 @@ export class ReleasesService {
         fileSize: dto.fileSize ? BigInt(dto.fileSize) : null,
       },
     });
+
+    // BigInt لا يتحول لـ JSON تلقائياً — نحوّله لـ Number
+    return {
+      ...dist,
+      fileSize: dist.fileSize ? Number(dist.fileSize) : null,
+    };
   }
 
   /** تعديل قناة توزيع */
@@ -211,7 +217,7 @@ export class ReleasesService {
       throw new NotFoundException('قناة التوزيع غير موجودة');
     }
 
-    return this.prisma.releaseDistribution.update({
+    const updated = await this.prisma.releaseDistribution.update({
       where: { uuid },
       data: {
         ...(data.downloadUrl !== undefined && {
@@ -223,6 +229,11 @@ export class ReleasesService {
         ...(data.isEnabled !== undefined && { isEnabled: data.isEnabled }),
       },
     });
+
+    return {
+      ...updated,
+      fileSize: updated.fileSize ? Number(updated.fileSize) : null,
+    };
   }
 
   /** حذف قناة توزيع */

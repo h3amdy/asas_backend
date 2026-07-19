@@ -3,6 +3,11 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 
+// ── BigInt → JSON: Prisma يُرجع BigInt لكن JSON.stringify لا يدعمه ──
+// eslint-disable-next-line no-extend-native
+(BigInt.prototype as any).toJSON = function () {
+  return Number(this);
+};
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
