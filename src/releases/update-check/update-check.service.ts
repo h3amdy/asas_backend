@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CheckUpdateDto } from '../dto/check-update.dto';
 
-interface CheckUpdateResponse {
+export interface CheckUpdateResponse {
   updateAvailable: boolean;
   updatePolicy: 'NONE' | 'OPTIONAL' | 'REQUIRED';
   latestVersion: string | null;

@@ -49,7 +49,7 @@ export class ReleasesService {
     // التحقق من عدم تكرار versionCode
     const existing = await this.prisma.release.findUnique({
       where: {
-        releases_app_version_code_key: {
+        appId_versionCode: {
           appId: app.id,
           versionCode: dto.versionCode,
         },
