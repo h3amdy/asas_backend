@@ -57,8 +57,8 @@ pm2 status
 ---
 
 📜 7) تفقد السجلات
+pm2 logs asas-backend
 
-pm2 logs asas_backend
 
 لإيقاف السجلات:
 
