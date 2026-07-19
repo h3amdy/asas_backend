@@ -71,6 +71,54 @@ enum PlatformRole {
   PLATFORM_TEACHER
 }
 
+// =========================
+// RAMS ENUMS (Release & Application Management System)
+// =========================
+
+enum ManagedAppType {
+  PUBLIC
+  PRIVATE
+  ADMIN_PANEL
+}
+
+enum ManagedAppStatus {
+  ACTIVE
+  DISABLED
+  ARCHIVED
+}
+
+enum AppPlatform {
+  ANDROID
+  IOS
+}
+
+enum ReleaseStatus {
+  DRAFT
+  TESTING
+  PUBLISHED
+  DEPRECATED
+  REVOKED
+}
+
+enum UpdatePolicy {
+  NONE
+  OPTIONAL
+  REQUIRED
+}
+
+enum ReleaseChannel {
+  STABLE
+  BETA
+  INTERNAL
+}
+
+enum DistributionChannelType {
+  APK_DIRECT
+  GOOGLE_PLAY
+  APP_STORE
+  TESTFLIGHT
+}
+
 enum DistributionStatus {
   ACTIVE
   REVOKED
@@ -180,6 +228,11 @@ model School {
   lessons               Lesson[]
   contentDistributions  ContentDistribution[]
   importSessions        ImportSession[]
+
+  // RAMS relations
+  apps                       App[]
+  schoolReleaseAssignments   SchoolReleaseAssignment[]
+  deviceInstallations        DeviceInstallation[]
 }
 
 // قاموس الصفوف العام
@@ -1788,4 +1841,169 @@ model ProcessedClientChange {
   @@index([processedAt], map: "processed_client_changes_date_idx")
   @@index([studentId], map: "processed_client_changes_student_idx")
   @@map("processed_client_changes")
+}
+
+// =========================
+// RAMS — Release & Application Management System
+// =========================
+
+// ── التطبيقات المُدارة ────────────────────────────────────────────────────
+model App {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  code        String           @unique // "PUBLIC", "ALNAHDA", "ALSAEED"...
+  name        String                   // "منصة أساس العامة", "مدارس النهضة"
+  description String?
+
+  appType     ManagedAppType   @map("app_type")
+  packageName String?          @map("package_name") // com.asass.public
+  bundleId    String?          @map("bundle_id")    // iOS (مستقبلي)
+
+  // ربط بالمدرسة (FK — للتطبيقات الخاصة فقط)
+  schoolId    Int?             @map("school_id")
+  school      School?          @relation(fields: [schoolId], references: [id])
+
+  platforms   AppPlatform[]    @default([ANDROID])
+
+  status      ManagedAppStatus @default(ACTIVE)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  releases             Release[]
+  deviceInstallations  DeviceInstallation[]
+
+  @@index([schoolId], map: "apps_school_id_idx")
+  @@map("apps")
+}
+
+// ── الإصدارات ─────────────────────────────────────────────────────────────
+model Release {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  appId Int @map("app_id")
+  app   App @relation(fields: [appId], references: [id])
+
+  versionName String @map("version_name")  // "1.2.0" — للعرض
+  versionCode Int    @map("version_code")  // 10200 — للمقارنة البرمجية
+  buildNumber Int    @map("build_number")  // Flutter build number
+
+  channel ReleaseChannel @default(STABLE)
+  status  ReleaseStatus  @default(DRAFT)
+
+  // سياسة التحديث
+  updatePolicy                UpdatePolicy @default(OPTIONAL) @map("update_policy")
+  minimumSupportedVersionCode Int?         @map("minimum_supported_version_code")
+
+  // ملاحظات الإصدار
+  releaseNotesAr String? @map("release_notes_ar") @db.Text
+  releaseNotesEn String? @map("release_notes_en") @db.Text
+
+  // التحقق من سلامة الملف
+  checksum String?
+
+  publishedAt DateTime? @map("published_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  distributions       ReleaseDistribution[]
+  deviceInstallations DeviceInstallation[]
+  schoolAssignments   SchoolReleaseAssignment[]
+
+  @@unique([appId, versionCode], map: "releases_app_version_code_key")
+  @@index([appId, status], map: "releases_app_status_idx")
+  @@index([publishedAt], map: "releases_published_at_idx")
+  @@map("releases")
+}
+
+// ── قنوات التوزيع ─────────────────────────────────────────────────────────
+model ReleaseDistribution {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  releaseId Int     @map("release_id")
+  release   Release @relation(fields: [releaseId], references: [id])
+
+  channelType DistributionChannelType @map("channel_type")
+  platform    AppPlatform
+
+  downloadUrl String  @map("download_url")
+  fileSize    BigInt? @map("file_size")
+
+  isEnabled Boolean @default(true) @map("is_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([releaseId, channelType, platform], map: "release_distributions_unique_key")
+  @@index([releaseId], map: "release_distributions_release_idx")
+  @@map("release_distributions")
+}
+
+// ── تعيين الإصدار للمدرسة ─────────────────────────────────────────────────
+model SchoolReleaseAssignment {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  schoolId Int    @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+
+  releaseId Int     @map("release_id")
+  release   Release @relation(fields: [releaseId], references: [id])
+
+  isActive Boolean @default(true) @map("is_active")
+  notes    String?
+
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, releaseId], map: "school_release_assignments_unique_key")
+  @@index([schoolId, isActive], map: "school_release_assignments_school_idx")
+  @@map("school_release_assignments")
+}
+
+// ── تتبع الأجهزة ─────────────────────────────────────────────────────────
+model DeviceInstallation {
+  id   Int    @id @default(autoincrement())
+  uuid String @unique @default(uuid())
+
+  installationId String      @unique @map("installation_id")
+  platform       AppPlatform
+
+  appId          Int?   @map("app_id")
+  app            App?   @relation(fields: [appId], references: [id])
+  appCode        String @map("app_code")
+  packageName    String? @map("package_name")
+  currentVersion String @map("current_version")
+  currentBuild   Int    @map("current_build")
+
+  releaseId Int?     @map("release_id")
+  release   Release? @relation(fields: [releaseId], references: [id])
+
+  osVersion   String? @map("os_version")
+  deviceModel String? @map("device_model")
+
+  schoolId Int?    @map("school_id")
+  school   School? @relation(fields: [schoolId], references: [id])
+
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([appId], map: "device_installations_app_id_idx")
+  @@index([appCode], map: "device_installations_app_code_idx")
+  @@index([currentBuild], map: "device_installations_build_idx")
+  @@index([lastSeenAt], map: "device_installations_last_seen_idx")
+  @@index([schoolId], map: "device_installations_school_idx")
+  @@map("device_installations")
 }

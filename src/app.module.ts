@@ -10,6 +10,7 @@ import { PublicModule } from './public/public.module';
 import { SchoolModule } from './school/school.module';
 import { PlatformModule } from './platform/platform.module';
 import { ImportsModule } from './owner/imports/imports.module';
+import { ReleasesModule } from './releases/releases.module';
 
 
 @Module({
@@ -24,6 +25,7 @@ import { ImportsModule } from './owner/imports/imports.module';
     SchoolModule,
     PlatformModule,
     ImportsModule,
+    ReleasesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
