@@ -35,7 +35,7 @@ export class UpdateCheckService {
     }
 
     // 2. البحث عن تعيين مدرسة محدد (SchoolReleaseAssignment)
-    let targetRelease = await this._findSchoolAssignment(dto.schoolCode);
+    let targetRelease = await this._findSchoolAssignment(dto.schoolCode, dto.platform);
 
     // 3. إذا لم يُوجد تعيين — جلب آخر إصدار منشور
     if (!targetRelease) {
@@ -111,7 +111,7 @@ export class UpdateCheckService {
   }
 
   // ── إيجاد تعيين مدرسة محدد ────────────────────────────────────────────
-  private async _findSchoolAssignment(schoolCode?: number) {
+  private async _findSchoolAssignment(schoolCode?: number, platform?: string) {
     if (!schoolCode) return null;
 
     const school = await this.prisma.school.findUnique({
@@ -124,13 +124,20 @@ export class UpdateCheckService {
       where: {
         schoolId: school.id,
         isActive: true,
+        release: {
+          isDeleted: false,
+          status: { in: ['PUBLISHED', 'TESTING'] },
+        },
       },
       orderBy: { assignedAt: 'desc' },
       include: {
         release: {
           include: {
             distributions: {
-              where: { isEnabled: true },
+              where: {
+                isEnabled: true,
+                ...(platform ? { platform: platform as any } : {}),
+              },
               take: 1,
             },
           },
@@ -138,7 +145,7 @@ export class UpdateCheckService {
       },
     });
 
-    if (!assignment || assignment.release.isDeleted) return null;
+    if (!assignment) return null;
     return assignment.release;
   }
 

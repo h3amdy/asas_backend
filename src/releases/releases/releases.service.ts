@@ -144,6 +144,22 @@ export class ReleasesService {
 
   /** نشر إصدار: DRAFT/TESTING → PUBLISHED */
   async publish(uuid: string) {
+    // ── Publish Validation: يجب أن يوجد Distribution مفعّل واحد على الأقل ──
+    const release = await this.prisma.release.findUnique({
+      where: { uuid },
+      include: {
+        distributions: { where: { isEnabled: true } },
+      },
+    });
+    if (!release || release.isDeleted) {
+      throw new NotFoundException('الإصدار غير موجود');
+    }
+    if (release.distributions.length === 0) {
+      throw new BadRequestException(
+        'لا يمكن نشر إصدار بدون قناة توزيع (Distribution) مفعّلة. أضف رابط تحميل أولاً.',
+      );
+    }
+
     return this._transition(uuid, ['DRAFT', 'TESTING'], 'PUBLISHED', {
       publishedAt: new Date(),
     });
