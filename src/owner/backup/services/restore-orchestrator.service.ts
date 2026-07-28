@@ -385,7 +385,9 @@ export class RestoreOrchestratorService {
           await this.prisma.restoreJob.create({
             data: {
               uuid: job.uuid,
-              backupInstanceId: resolvedInstanceId,
+              ...(resolvedInstanceId
+                ? { backupInstance: { connect: { id: resolvedInstanceId } } }
+                : {}),
               restoreDatabase: params.restoreDatabase,
               restoreMedia: params.restoreMedia,
               restoreConfiguration: params.restoreConfiguration,
