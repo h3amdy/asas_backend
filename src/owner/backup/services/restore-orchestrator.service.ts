@@ -113,8 +113,9 @@ export class RestoreOrchestratorService {
       restoreConfiguration: boolean;
     },
   ): Promise<void> {
+    let currentJobId = jobId; // قابل للتغيير بعد استعادة DB
     const job = await this.prisma.restoreJob.findUnique({
-      where: { id: jobId },
+      where: { id: currentJobId },
     });
     if (!job) return;
 
@@ -342,35 +343,73 @@ export class RestoreOrchestratorService {
           return;
         }
 
-        // ── إعادة إنشاء سجل Restore Job بعد استعادة DB ──
-        // السبب: استعادة DB تستبدل كل الجداول بما فيها restore_jobs،
-        // فالسجل الحالي لم يعد موجوداً. نعيد إنشاءه لإكمال Pipeline.
+        // ── إعادة بناء حالة DB بعد الاستعادة ──
+        // 1. تنظيف Jobs العالقة (كانت RUNNING وقت أخذ النسخة)
         try {
-          await this.prisma.restoreJob.upsert({
-            where: { id: jobId },
-            update: {}, // موجود (لم يتأثر) — لا نغير شيئاً
-            create: {
-              id: jobId,
+          await this.prisma.backupJob.updateMany({
+            where: { status: 'RUNNING' },
+            data: {
+              status: 'FAILED',
+              errorMessage: 'Interrupted by database restore',
+              finishedAt: new Date(),
+            },
+          });
+          await this.prisma.restoreJob.updateMany({
+            where: { status: 'RUNNING' },
+            data: {
+              status: 'FAILED' as RestoreJobStatus,
+              errorMessage: 'Interrupted by database restore',
+              finishedAt: new Date(),
+            },
+          });
+          this.logger.log('Cleaned up stale RUNNING jobs after DB restore');
+        } catch (cleanupErr) {
+          const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+          this.logger.warn(`Could not clean stale jobs: ${msg}`);
+        }
+
+        // 2. إيجاد backupInstance بالـ UUID (الـ ID الرقمي قد يتغير بعد الاستعادة)
+        let resolvedInstanceId: number | null = null;
+        try {
+          const restoredInstance = await this.prisma.backupInstance.findUnique({
+            where: { uuid: instance.uuid },
+            select: { id: true },
+          });
+          resolvedInstanceId = restoredInstance?.id ?? null;
+        } catch {
+          // النسخة غير موجودة في الـ DB المستعادة
+        }
+
+        // 3. إعادة إنشاء سجل Restore Job
+        try {
+          await this.prisma.restoreJob.create({
+            data: {
               uuid: job.uuid,
-              backupInstanceId: params.backupInstanceId,
+              backupInstanceId: resolvedInstanceId!,
               restoreDatabase: params.restoreDatabase,
               restoreMedia: params.restoreMedia,
               restoreConfiguration: params.restoreConfiguration,
               initiatedByUserUuid: 'owner',
-              safetyBackupId,
               status: 'RUNNING',
               startedAt: job.startedAt ?? new Date(),
             },
           });
           this.logger.log('Restore job record re-created after DB restore');
-        } catch (upsertErr) {
-          const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr);
+        } catch (createErr) {
+          const msg = createErr instanceof Error ? createErr.message : String(createErr);
           this.logger.warn(`Could not re-create restore job record: ${msg}`);
-          // نكمل — الاستعادة نجحت حتى لو لم ننجح في تتبعها
+        }
+
+        // تحديث jobId للإشارة للسجل الجديد
+        const newJob = await this.prisma.restoreJob.findUnique({
+          where: { uuid: job.uuid },
+        });
+        if (newJob) {
+          currentJobId = newJob.id;
         }
 
         await this.backupLogger.writeLog({
-          restoreJobId: jobId,
+          restoreJobId: currentJobId,
           level: 'INFO',
           phase: 'RESTORE_DB',
           message: 'Database restored successfully',
@@ -409,7 +448,7 @@ export class RestoreOrchestratorService {
           }
 
           await this.backupLogger.writeLog({
-            restoreJobId: jobId,
+            restoreJobId: currentJobId,
             level: 'INFO',
             phase: 'RESTORE_MEDIA',
             message: `Media restored: ${filesCopied} files`,
@@ -419,7 +458,7 @@ export class RestoreOrchestratorService {
           const msg =
             error instanceof Error ? error.message : String(error);
           await this.backupLogger.writeLog({
-            restoreJobId: jobId,
+            restoreJobId: currentJobId,
             level: 'WARN',
             phase: 'RESTORE_MEDIA',
             message: `Media restore partial: ${msg}`,
@@ -469,7 +508,7 @@ export class RestoreOrchestratorService {
           }
 
           await this.backupLogger.writeLog({
-            restoreJobId: jobId,
+            restoreJobId: currentJobId,
             level: 'INFO',
             phase: 'RESTORE_CONFIG',
             message: `Config restored`,
@@ -479,7 +518,7 @@ export class RestoreOrchestratorService {
           const msg =
             error instanceof Error ? error.message : String(error);
           await this.backupLogger.writeLog({
-            restoreJobId: jobId,
+            restoreJobId: currentJobId,
             level: 'WARN',
             phase: 'RESTORE_CONFIG',
             message: `Config restore failed: ${msg}`,
@@ -500,7 +539,7 @@ export class RestoreOrchestratorService {
           migrationCheck?.[0]?.migration_name ?? 'unknown';
 
         await this.backupLogger.writeLog({
-          restoreJobId: jobId,
+          restoreJobId: currentJobId,
           level: 'INFO',
           phase: 'RESTORE_VERIFY',
           message: `Post-restore verification passed (latest migration: ${migrationName})`,
@@ -510,7 +549,7 @@ export class RestoreOrchestratorService {
         const msg =
           error instanceof Error ? error.message : String(error);
         await this.backupLogger.writeLog({
-          restoreJobId: jobId,
+          restoreJobId: currentJobId,
           level: 'WARN',
           phase: 'RESTORE_VERIFY',
           message: `Post-restore verification failed: ${msg}`,
@@ -522,21 +561,25 @@ export class RestoreOrchestratorService {
       await this.storage.deleteDirectory(workDir);
 
       await this.prisma.restoreJob.update({
-        where: { id: jobId },
+        where: { id: currentJobId },
         data: {
           status: 'COMPLETED',
           finishedAt: new Date(),
         },
       });
 
-      // تحديث النسخة — تم استخدامها
-      await this.prisma.backupInstance.update({
-        where: { id: params.backupInstanceId },
-        data: { lastRestoredAt: new Date() },
-      });
+      // تحديث النسخة — تم استخدامها (بالـ UUID لأن الـ ID قد يتغير بعد restore)
+      try {
+        await this.prisma.backupInstance.update({
+          where: { uuid: instance.uuid },
+          data: { lastRestoredAt: new Date() },
+        });
+      } catch {
+        // النسخة قد لا تكون موجودة في الـ DB المستعادة
+      }
 
       await this.backupLogger.writeLog({
-        restoreJobId: jobId,
+        restoreJobId: currentJobId,
         level: 'INFO',
         phase: 'CLEANUP',
         message: 'Restore completed successfully',
@@ -549,7 +592,7 @@ export class RestoreOrchestratorService {
       this.logger.error(
         `Restore pipeline failed: ${msg}`,
       );
-      await this.failJob(jobId, msg, workDir);
+      await this.failJob(currentJobId, msg, workDir);
     }
   }
 
