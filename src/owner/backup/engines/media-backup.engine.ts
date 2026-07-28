@@ -46,11 +46,13 @@ export class MediaBackupEngine {
         `Starting media backup: ${filesExpected} files expected`,
       );
 
+      // ── مرحلة 1: جمع كل مجلدات الأصول (لنسخ variants كاملة لاحقاً) ──
+      const assetDirs = new Set<string>();
+
       for (const storageKey of storageKeys) {
-        const sourcePath = path.resolve(mediaBasePath, storageKey);
+        let sourcePath = path.resolve(mediaBasePath, storageKey);
 
         // ⚠️ حماية أمنية ضد Path Traversal
-        // إذا كان storageKey يحتوي ../ فسيخرج من مجلد الوسائط
         if (!sourcePath.startsWith(resolvedBase)) {
           this.logger.warn(
             `Path traversal detected, skipping: ${storageKey}`,
@@ -59,19 +61,38 @@ export class MediaBackupEngine {
           continue;
         }
 
-        const destPath = path.join(mediaDir, storageKey);
+        // 🔄 Fallback: إذا كان storage_key يشير لـ .jpg/.png محذوف، جرّب .webp
+        // هذا يعالج البيانات القديمة حيث processImage() حذفت الأصلي بدون تحديث DB
+        let actualKey = storageKey;
+        try {
+          await fsp.access(sourcePath);
+        } catch {
+          const webpKey = storageKey.replace(/\.(jpg|jpeg|png|gif)$/i, '.webp');
+          if (webpKey !== storageKey) {
+            const webpPath = path.resolve(mediaBasePath, webpKey);
+            if (webpPath.startsWith(resolvedBase)) {
+              try {
+                await fsp.access(webpPath);
+                sourcePath = webpPath;
+                actualKey = webpKey;
+              } catch {
+                // لا يوجد webp أيضاً
+              }
+            }
+          }
+        }
+
+        // تسجيل مجلد الأصل (لنسخ variants لاحقاً)
+        const assetDir = path.dirname(sourcePath);
+        assetDirs.add(assetDir);
+
+        const destPath = path.join(mediaDir, actualKey);
 
         try {
-          // إنشاء مجلد الوجهة
           await fsp.mkdir(path.dirname(destPath), { recursive: true });
-
-          // نسخ الملف مباشرة — بدون access() منفصلة (توفير I/O)
           await fsp.copyFile(sourcePath, destPath);
-
-          // حساب الحجم
           const stats = await fsp.stat(sourcePath);
           totalSize += BigInt(stats.size);
-
           filesCopied++;
         } catch (error: unknown) {
           const errCode =
@@ -91,13 +112,53 @@ export class MediaBackupEngine {
           }
         }
 
-        // تسجيل التقدم كل 500 ملف (بدلاً من كل ملف مفقود)
+        // تسجيل التقدم كل 500 ملف
         const processed = filesCopied + missingStorageKeys.length;
         if (processed % 500 === 0) {
           this.logger.log(
             `Media backup progress: ${processed}/${filesExpected} (${missingStorageKeys.length} missing)`,
           );
         }
+      }
+
+      // ── مرحلة 2: نسخ variants إضافية (small.webp, medium.webp) من مجلدات الأصول ──
+      let variantsCopied = 0;
+      for (const assetDir of assetDirs) {
+        try {
+          const files = await fsp.readdir(assetDir);
+          for (const file of files) {
+            const filePath = path.join(assetDir, file);
+            // حساب المسار النسبي من mediaBasePath
+            const relativePath = path.relative(resolvedBase, filePath);
+            const destPath = path.join(mediaDir, relativePath);
+
+            // تخطي إذا نُسخ بالفعل
+            try {
+              await fsp.access(destPath);
+              continue;
+            } catch {
+              // لم يُنسخ بعد — ننسخه
+            }
+
+            try {
+              await fsp.mkdir(path.dirname(destPath), { recursive: true });
+              await fsp.copyFile(filePath, destPath);
+              const stats = await fsp.stat(filePath);
+              totalSize += BigInt(stats.size);
+              variantsCopied++;
+            } catch {
+              // تجاهل أخطاء نسخ الـ variants الإضافية
+            }
+          }
+        } catch {
+          // تجاهل إذا المجلد غير موجود
+        }
+      }
+
+      if (variantsCopied > 0) {
+        this.logger.log(
+          `Copied ${variantsCopied} additional variant files from asset directories`,
+        );
       }
 
       const durationMs = Date.now() - startTime;
