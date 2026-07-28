@@ -63,7 +63,7 @@ export class PreflightValidatorService {
   /**
    * تنفيذ جميع فحوصات Pre-flight
    */
-  async validate(storagePath: string, currentJobId?: number): Promise<PreflightResult> {
+  async validate(storagePath: string, currentJobId?: number, options?: { skipRestoreCheck?: boolean }): Promise<PreflightResult> {
     this.logger.log('Starting pre-flight validation...');
 
     const checks: PreflightCheck[] = [];
@@ -85,8 +85,10 @@ export class PreflightValidatorService {
     // 5. فحص عدم وجود عملية نسخ أخرى
     checks.push(await this.checkNoConcurrentBackup(currentJobId));
 
-    // 6. فحص عدم وجود عملية استعادة
-    checks.push(await this.checkNoConcurrentRestore());
+    // 6. فحص عدم وجود عملية استعادة (يُتخطى عند Safety Backup أثناء Restore)
+    if (!options?.skipRestoreCheck) {
+      checks.push(await this.checkNoConcurrentRestore());
+    }
 
     const failedChecks = checks.filter((c) => !c.passed);
     const passed = failedChecks.length === 0;

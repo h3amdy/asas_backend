@@ -157,7 +157,11 @@ export class BackupOrchestratorService {
       });
 
       const preflightStart = Date.now();
-      const preflightResult = await this.preflight.validate(storagePath, jobId);
+      const preflightResult = await this.preflight.validate(
+        storagePath,
+        jobId,
+        { skipRestoreCheck: category === 'SYSTEM_SAFETY' },
+      );
 
       await this.backupLogger.info(
         jobId,
