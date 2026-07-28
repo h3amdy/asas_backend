@@ -49,8 +49,9 @@ export class PgDumpEngine {
 
       // 1. pg_dump
       this.logger.log('Starting pg_dump...');
+      const cleanDbUrl = this.sanitizeDatabaseUrl(databaseUrl);
       await execFileAsync('pg_dump', [
-        '--dbname', databaseUrl,
+        '--dbname', cleanDbUrl,
         '--format', 'plain',
         '--clean',       // إضافة DROP قبل CREATE — ضروري للاستعادة
         '--if-exists',   // لا خطأ إذا الكائن غير موجود
@@ -195,5 +196,19 @@ export class PgDumpEngine {
       stream.on('end', () => resolve(hash.digest('hex')));
       stream.on('error', reject);
     });
+  }
+
+  /**
+   * تنقية رابط الاتصال من أي Query Parameters (مثل ?schema=public)
+   * التي يرفضها libpq/pg_dump/psql
+   */
+  private sanitizeDatabaseUrl(databaseUrl: string): string {
+    try {
+      const parsed = new URL(databaseUrl);
+      parsed.search = '';
+      return parsed.toString();
+    } catch {
+      return databaseUrl;
+    }
   }
 }

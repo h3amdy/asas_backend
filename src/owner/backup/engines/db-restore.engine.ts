@@ -61,7 +61,8 @@ export class DbRestoreEngine {
       );
 
       try {
-        await execFileAsync('psql', [databaseUrl, '-f', sqlPath], {
+        const cleanDbUrl = this.sanitizeDatabaseUrl(databaseUrl);
+        await execFileAsync('psql', [cleanDbUrl, '-f', sqlPath], {
           maxBuffer: 100 * 1024 * 1024, // 100MB buffer للإخراج
         });
       } finally {
@@ -93,6 +94,20 @@ export class DbRestoreEngine {
         durationMs,
         errorMessage: errorMsg,
       };
+    }
+  }
+
+  /**
+   * تنقية رابط الاتصال من أي Query Parameters (مثل ?schema=public)
+   * التي يرفضها libpq/pg_dump/psql
+   */
+  private sanitizeDatabaseUrl(databaseUrl: string): string {
+    try {
+      const parsed = new URL(databaseUrl);
+      parsed.search = '';
+      return parsed.toString();
+    } catch {
+      return databaseUrl;
     }
   }
 }

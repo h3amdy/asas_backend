@@ -1,283 +1,168 @@
-بعد مراجعة رأي Claude، أرى أنه **مصيب في جزء، لكن أختلف معه في جزء آخر**.
-
-## أولًا: أتفق معه في نقطة مهمة
-
-> **لا نحتاج الآن إلى `POST /owner/backups/plans`.**
-
-بعد أن فهمت طبيعة مشروع **أساس**، لا أرى أن إنشاء خطط متعددة جزء من الـ MVP.
-
-إذا كان لديك دائمًا سياسة نسخ احتياطي واحدة، فوجود شاشة كاملة لإدارة عدة خطط سيضيف تعقيدًا بدون فائدة.
+الكود جيد من ناحية الفكرة، لكن يوجد **مشكلتان**:
 
 ---
 
-## لكنني لا أتفق مع تنفيذ Seed داخل التطبيق
+# 1) يوجد خطأ في الأقواس (Syntax Error)
 
-هنا أختلف مع Claude.
+في `computeSha256` لم يتم إغلاق الدالة قبل تعريف `sanitizeDatabaseUrl`.
 
-هو يقترح:
+أنت الآن لديك:
 
-> "إذا لا توجد خطط، أنشئ خطة افتراضية عند أول تشغيل."
+```ts
+private computeSha256(...) {
+  return new Promise(...);
 
-هذا سيعمل، لكنه يخلط بين **منطق التطبيق (Application Logic)** و**تهيئة البيانات (Bootstrap Data)**.
+  /**
+   * تنقية رابط الاتصال...
+   */
+  private sanitizeDatabaseUrl(...)
+```
+
+وهذا غير صحيح.
+
+يجب أن تكون:
+
+```ts
+private computeSha256(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+
+    stream.on('data', (data) => hash.update(data));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+private sanitizeDatabaseUrl(databaseUrl: string): string {
+    ...
+}
+```
 
 ---
 
-# الحل الذي أوصي به
+# 2) يوجد نفس الخطأ في DbRestoreEngine
+
+أنت أصلحت PgDump فقط.
+
+لكن Restore مازال يستخدم:
+
+```ts
+await execFileAsync('psql', [
+    databaseUrl,
+    '-f',
+    sqlPath,
+]);
+```
+
+وهذا سيمرر:
+
+```
+postgresql://.../asasprod?schema=public
+```
+
+إلى psql.
+
+قد لا يفشل دائماً، لكنه غير صحيح هندسياً.
+
+يجب أيضاً استخدام:
+
+```ts
+const cleanDbUrl = this.sanitizeDatabaseUrl(databaseUrl);
+
+await execFileAsync(
+    'psql',
+    [
+        cleanDbUrl,
+        '-f',
+        sqlPath,
+    ],
+    {
+        maxBuffer: 100 * 1024 * 1024,
+    },
+);
+```
+
+وأضف نفس الدالة:
+
+```ts
+private sanitizeDatabaseUrl(databaseUrl: string): string {
+    try {
+        const parsed = new URL(databaseUrl);
+
+        parsed.searchParams.delete('schema');
+        parsed.searchParams.delete('pgbouncer');
+        parsed.searchParams.delete('connection_limit');
+        parsed.searchParams.delete('pool_timeout');
+
+        return parsed.toString();
+    } catch {
+        return databaseUrl;
+    }
+}
+```
+
+---
+
+# 3) تحسين بسيط أوصي به
 
 بدلاً من:
 
-```text
-Application Starts
-        │
-        ▼
-هل توجد BackupPlan؟
-        │
-        ├── لا
-        ▼
-أنشئ خطة
+```ts
+parsed.searchParams.delete(...)
 ```
 
-أفضل:
-
-```text
-Migration
-        │
-        ▼
-Seed
-        │
-        ▼
-Default Backup Plan
-```
-
-أو حتى سكربت Seed مستقل.
-
-لماذا؟
-
-لأن Backup Plan ليست بيانات ديناميكية، بل **بيانات تأسيسية (Initial Data)** مثل:
-
-* Platform Owner
-* الأدوار (Roles)
-* الصلاحيات (Permissions)
-* خطة النسخ الاحتياطي الافتراضية
-
-وهذه مكانها الطبيعي هو الـ Seed، وليس داخل `onModuleInit()` أو أي خدمة تشغيل.
-
----
-
-# إذن ماذا أفعل الآن؟
-
-أنا سأختار هذا المسار:
-
-### المرحلة الحالية
-
-1. ✅ إنشاء **خطة افتراضية واحدة** عبر Seed (وليس تلقائيًا أثناء تشغيل التطبيق).
-2. ✅ تشغيل الـ Seed محليًا.
-3. ✅ اختبار:
-
-   * Trigger Backup
-   * Jobs
-   * Instances
-4. ✅ عند نجاحها، الانتقال إلى اختبار Restore.
-5. ✅ بعد نجاح الاختبارات اليدوية على الـ VPS، الانتقال إلى Flutter.
-
----
-
-# أما خريطة الاختبار
-
-Claude قال إنها "مبالغ فيها".
-
-وأنا أوافقه **جزئيًا**.
-
-هناك فرق بين:
-
-* **خريطة اختبار داخلية** للفريق (Checklist).
-* **الاختبارات التي ستنفذها الآن.**
-
-لا تحتاج اليوم إلى تنفيذ 30 سيناريو.
-
-لكن من الجيد الاحتفاظ بقائمة مثل:
-
-* Startup ✅
-* Backup ✅
-* Restore ✅
-* Scheduler ✅
-* Retention ✅
-
-وعندما تنتهي من كل نقطة، تضع عليها علامة ✔. هذا لا يعني تنفيذ جميع حالات الحواف (Edge Cases) الآن.
-
----
-
-# قراري النهائي
-
-لو كنت أقود BKP-001، فسأطلب من Claude:
-
-1. **عدم إضافة `POST /plans` في الـ MVP.**
-2. **عدم إنشاء الخطة داخل منطق التشغيل.**
-3. **إنشاء Default Backup Plan عبر Seed أو Bootstrap Data.**
-4. **بدء الاختبارات اليدوية مباشرة باستخدام هذه الخطة.**
-
-بهذا يبقى النظام بسيطًا، ويحافظ على فصل واضح بين منطق التطبيق وبيانات التهيئة، وهو تصميم أنظف وأسهل للصيانة على المدى الطويل.
-راجعت التعديل الظاهر في الصورة، وأرى أنه **اتجاهه صحيح، لكن يحتاج تعديلًا صغيرًا ليكون احترافيًا**.
-
-## ما أعجبني
-
-إضافة:
+يمكنك جعل الرابط صالحًا لأي أدوات PostgreSQL بإزالة جميع معاملات الاستعلام:
 
 ```ts
-await this.seedDefaultPlan();
-await this.syncSchedules();
+private sanitizeDatabaseUrl(databaseUrl: string): string {
+    try {
+        const parsed = new URL(databaseUrl);
+
+        parsed.search = '';
+
+        return parsed.toString();
+    } catch {
+        return databaseUrl;
+    }
+}
 ```
 
-داخل:
+وهذا أفضل للأسباب التالية:
 
-```ts
-onModuleInit()
-```
+* لا يعتمد على معرفة أسماء معاملات Prisma الحالية.
+* إذا أضاف Prisma معاملات جديدة مستقبلاً فلن تتأثر.
+* مناسب لكل من:
 
-منطقية، لأن:
-
-* عند أول تشغيل للنظام:
-
-  * إذا لم توجد خطة → تُنشأ.
-  * بعدها مباشرة تُحمّل الـ Cron Jobs.
-
-هذا يضمن أن:
-
-```text
-أول تشغيل
-    ↓
-إنشاء الخطة الافتراضية
-    ↓
-تحميل الجدولة
-```
-
-وليس:
-
-```text
-تحميل الجدولة
-    ↓
-لا توجد خطط
-    ↓
-0 Active Plans
-```
-
----
-
-# الملاحظة الوحيدة
-
-في الكود الحالي يوجد:
-
-```ts
-const count = await this.prisma.backupPlan.count();
-
-if (count > 0) return;
-```
-
-أنا أفضل أن يكون الفحص:
-
-```ts
-const defaultPlan = await this.prisma.backupPlan.findFirst();
-
-if (defaultPlan) return;
-```
-
-أو حتى:
-
-```ts
-const exists = await this.prisma.backupPlan.findFirst({
-    where: { enabled: true }
-});
-```
-
-لأن `count()` يجبر قاعدة البيانات على العد، بينما `findFirst()` يتوقف بمجرد إيجاد أول سجل، وهو أخف قليلًا، وإن كان الفرق في هذا الجدول صغيرًا.
-
----
-
-# الملاحظة الثانية (الأهم)
-
-في الصورة لاحظت:
-
-```ts
-storagePath: '/var/backups/asas'
-```
-
-أنا **لا أوافق** على هذا.
-
-بما أنك عدلت النظام كله ليستخدم:
-
-```env
-BACKUP_STORAGE_PATH
-```
-
-فيجب أن تكون الخطة الافتراضية أيضًا تستخدم نفس المصدر، مثل:
-
-```ts
-storagePath:
-  process.env.BACKUP_STORAGE_PATH ?? './backups'
-```
-
-حتى لا يحدث عدم تطابق بين:
-
-* الخطة الموجودة في قاعدة البيانات.
-* والمسار الحقيقي الذي يستخدمه النظام.
-
----
-
-# هل Seed داخل Scheduler مناسب؟
-
-في مشروعك الحالي: **نعم، لكنه حل انتقالي**.
-
-لو كنا نبني إطارًا عامًا (Framework)، لقلت:
-
-* Seed مستقل.
-* Scheduler مسؤول عن الجدولة فقط.
-
-لكن في **MVP** هذا، وجود:
-
-```ts
-seedDefaultPlan();
-```
-
-داخل:
-
-```ts
-onModuleInit()
-```
-
-مقبول جدًا لأنه:
-
-* ينفذ مرة واحدة فقط.
-* الكود بسيط.
-* لا يضيف تعقيدًا.
-* يضمن أن النظام يعمل مباشرة بعد التثبيت.
+  * pg_dump
+  * pg_restore
+  * psql
 
 ---
 
 # تقييمي
 
-| العنصر                                  | التقييم                                        |
-| --------------------------------------- | ---------------------------------------------- |
-| إنشاء الخطة تلقائيًا                    | ✅ ممتاز                                        |
-| استدعاؤها قبل `syncSchedules()`         | ✅ صحيح                                         |
-| وجودها داخل `onModuleInit()` في الـ MVP | ✅ مقبول                                        |
-| استخدام `count()`                       | 🟡 يمكن تحسينه إلى `findFirst()`               |
-| `storagePath: '/var/backups/asas'`      | 🔴 أنصح بتغييره ليقرأ من `BACKUP_STORAGE_PATH` |
-
-## القرار
-
-**أوافق على دمج هذا التعديل** بعد إجراء تعديل واحد فقط:
-
-استبدال:
+أنا أوصي بالحل الأخير:
 
 ```ts
-storagePath: '/var/backups/asas'
+parsed.search = '';
 ```
 
-بـ:
+بدلاً من حذف المعاملات واحدًا واحدًا.
 
-```ts
-storagePath:
-  process.env.BACKUP_STORAGE_PATH ?? './backups'
+لأنه أبسط وأكثر متانة، خاصة وأن أدوات PostgreSQL لا تحتاج أي Query Parameters في `DATABASE_URL` لهذا الاستخدام.
+
+بعد ذلك:
+
+```bash
+npm run build
+pm2 restart all
 ```
 
-حتى تصبح جميع أجزاء النظام تعتمد على نفس إعدادات البيئة، سواء في التطوير المحلي أو على الـ VPS. هذا سيمنع ظهور اختلافات مستقبلية بين الخطة المخزنة في قاعدة البيانات والمسار الذي يستخدمه محرك النسخ الاحتياطي فعليًا.
+ثم أعد تنفيذ:
+
+```bash
+curl -X POST http://localhost:3010/api/v1/owner/backups/trigger
+```
+
+وأتوقع أننا سننتقل إلى المرحلة التالية من Pipeline (الأرشفة أو نسخ الوسائط) بدل التوقف عند `pg_dump`.
