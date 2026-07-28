@@ -44,7 +44,7 @@ CREATE TABLE "backup_plans" (
     "run_time" TEXT NOT NULL DEFAULT '02:00',
     "timezone" TEXT NOT NULL DEFAULT 'Asia/Aden',
     "storage_type" TEXT NOT NULL DEFAULT 'LOCAL',
-    "storage_path" TEXT NOT NULL DEFAULT '/var/backups/asas',
+    "storage_path" TEXT NOT NULL DEFAULT '/var/backups/mafhooom',
     "max_backups" INTEGER NOT NULL DEFAULT 30,
     "max_age_days" INTEGER NOT NULL DEFAULT 90,
     "auto_cleanup" BOOLEAN NOT NULL DEFAULT true,

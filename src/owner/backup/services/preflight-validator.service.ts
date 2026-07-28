@@ -63,7 +63,7 @@ export class PreflightValidatorService {
   /**
    * تنفيذ جميع فحوصات Pre-flight
    */
-  async validate(storagePath: string): Promise<PreflightResult> {
+  async validate(storagePath: string, currentJobId?: number): Promise<PreflightResult> {
     this.logger.log('Starting pre-flight validation...');
 
     const checks: PreflightCheck[] = [];
@@ -83,7 +83,7 @@ export class PreflightValidatorService {
     }
 
     // 5. فحص عدم وجود عملية نسخ أخرى
-    checks.push(await this.checkNoConcurrentBackup());
+    checks.push(await this.checkNoConcurrentBackup(currentJobId));
 
     // 6. فحص عدم وجود عملية استعادة
     checks.push(await this.checkNoConcurrentRestore());
@@ -199,10 +199,13 @@ export class PreflightValidatorService {
     }
   }
 
-  private async checkNoConcurrentBackup(): Promise<PreflightCheck> {
+  private async checkNoConcurrentBackup(currentJobId?: number): Promise<PreflightCheck> {
     const name = 'no_concurrent_backup';
     const runningJob = await this.prisma.backupJob.findFirst({
-      where: { status: 'RUNNING' },
+      where: {
+        status: 'RUNNING',
+        ...(currentJobId ? { id: { not: currentJobId } } : {}),
+      },
       select: { uuid: true, createdAt: true },
     });
     if (!runningJob) {

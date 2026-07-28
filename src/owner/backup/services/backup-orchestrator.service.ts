@@ -75,7 +75,7 @@ export class BackupOrchestratorService {
       process.env.BACKUP_STORAGE_PATH || './backups',
     );
     const storagePath =
-      plan?.storagePath && plan.storagePath !== '/var/backups/asas'
+      plan?.storagePath && plan.storagePath !== '/var/backups/mafhooom'
         ? plan.storagePath
         : defaultStoragePath;
     const category = params.category ?? 'NORMAL';
@@ -157,7 +157,7 @@ export class BackupOrchestratorService {
       });
 
       const preflightStart = Date.now();
-      const preflightResult = await this.preflight.validate(storagePath);
+      const preflightResult = await this.preflight.validate(storagePath, jobId);
 
       await this.backupLogger.info(
         jobId,

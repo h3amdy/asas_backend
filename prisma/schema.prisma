@@ -1392,7 +1392,7 @@ model BackupPlan {
   runTime      String             @default("02:00") @map("run_time")
   timezone     String             @default("Asia/Aden")
   storageType  String             @default("LOCAL") @map("storage_type")
-  storagePath  String             @default("/var/backups/asas") @map("storage_path")
+  storagePath  String             @default("/var/backups/mafhooom") @map("storage_path")
   maxBackups   Int                @default(30) @map("max_backups")
   maxAgeDays   Int                @default(90) @map("max_age_days")
   autoCleanup  Boolean            @default(true) @map("auto_cleanup")

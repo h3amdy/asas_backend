@@ -55,7 +55,7 @@ export class BackupSchedulerService implements OnModuleInit {
         runTime: '02:00',
         timezone: 'Asia/Aden',
         storageType: 'LOCAL',
-        storagePath: process.env.BACKUP_STORAGE_PATH ?? '/var/backups/asas',
+        storagePath: process.env.BACKUP_STORAGE_PATH ?? '/var/backups/mafhooom',
         maxBackups: 30,
         maxAgeDays: 90,
         autoCleanup: true,
