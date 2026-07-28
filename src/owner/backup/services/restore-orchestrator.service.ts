@@ -537,7 +537,9 @@ export class RestoreOrchestratorService {
     // المستوى 1: فحص وجود .sha256 file (كشف تلف الأرشيف قبل فك الضغط)
     const checksumFile = `${archivePath}.sha256`;
     try {
-      const storedChecksum = (await fsp.readFile(checksumFile, 'utf-8')).trim();
+      const storedLine = (await fsp.readFile(checksumFile, 'utf-8')).trim();
+      // صيغة sha256sum القياسية: "hash  filename" — نستخرج الـ hash فقط
+      const storedChecksum = storedLine.split(/\s+/)[0];
       if (storedChecksum !== expectedSha256) {
         throw new Error(
           `Checksum file mismatch: .sha256 file says ${storedChecksum.slice(0, 16)}..., DB says ${expectedSha256.slice(0, 16)}...`,
