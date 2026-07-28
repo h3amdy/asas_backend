@@ -129,9 +129,10 @@ export class PgDumpEngine {
     sqlFilePath: string,
   ): Promise<string[]> {
     return new Promise((resolve, reject) => {
-      const keys: string[] = [];
+      const keysSet = new Set<string>();
       let inMediaTable = false;
       let storageKeyIndex = -1;
+      let variantsJsonIndex = -1;
 
       const rl = readline.createInterface({
         input: fs.createReadStream(sqlFilePath, { encoding: 'utf-8' }),
@@ -145,13 +146,14 @@ export class PgDumpEngine {
           line.includes('media_assets')
         ) {
           inMediaTable = true;
-          // استخراج ترتيب الأعمدة لمعرفة موقع storage_key
+          // استخراج ترتيب الأعمدة لمعرفة موقع storage_key و variants_json
           const columnsMatch = line.match(/\(([^)]+)\)/);
           if (columnsMatch) {
             const columns = columnsMatch[1]
               .split(',')
               .map((c) => c.trim());
             storageKeyIndex = columns.indexOf('storage_key');
+            variantsJsonIndex = columns.indexOf('variants_json');
           }
           return;
         }
@@ -162,19 +164,41 @@ export class PgDumpEngine {
           return;
         }
 
-        // استخراج storage_key من كل سطر بيانات
-        if (inMediaTable && storageKeyIndex >= 0) {
+        // استخراج storage_key + variants_json من كل سطر بيانات
+        if (inMediaTable) {
           const fields = line.split('\t');
-          if (fields.length > storageKeyIndex) {
+
+          // 1. storage_key الأساسي
+          if (storageKeyIndex >= 0 && fields.length > storageKeyIndex) {
             const key = fields[storageKeyIndex];
             if (key && key !== '\\N') {
-              keys.push(key);
+              keysSet.add(key);
+            }
+          }
+
+          // 2. استخراج كل storage_key من variants_json
+          // بعد المعالجة، الصور تُحذف original.jpg وتُنشأ original.webp + medium.webp + small.webp
+          // هذه المسارات موجودة فقط في variants_json وليس في storage_key
+          if (variantsJsonIndex >= 0 && fields.length > variantsJsonIndex) {
+            const variantsRaw = fields[variantsJsonIndex];
+            if (variantsRaw && variantsRaw !== '\\N') {
+              try {
+                const variants = JSON.parse(variantsRaw);
+                for (const variantName of Object.keys(variants)) {
+                  const variant = variants[variantName];
+                  if (variant?.storage_key) {
+                    keysSet.add(variant.storage_key);
+                  }
+                }
+              } catch {
+                // تجاهل JSON غير صالح
+              }
             }
           }
         }
       });
 
-      rl.on('close', () => resolve(keys));
+      rl.on('close', () => resolve(Array.from(keysSet)));
       rl.on('error', (err) => {
         this.logger.warn(
           `Failed to extract media keys from dump: ${err.message}`,

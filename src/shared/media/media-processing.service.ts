@@ -60,6 +60,9 @@ export class MediaProcessingService {
             await this.prisma.mediaAsset.update({
                 where: { id: mediaAssetId },
                 data: {
+                    storageKey: processedOriginal.storage_key,
+                    contentType: processedOriginal.content_type,
+                    preferredVariant: 'original',
                     variantsJson: JSON.stringify(variants),
                     sizeBytes: BigInt(processedOriginal.size_bytes),
                     etag: processedOriginal.etag,
