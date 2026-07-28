@@ -46,8 +46,6 @@ export class MediaBackupEngine {
         `Starting media backup: ${filesExpected} files expected`,
       );
 
-      // ── مرحلة 1: جمع كل مجلدات الأصول (لنسخ variants كاملة لاحقاً) ──
-      const assetDirs = new Set<string>();
 
       for (const storageKey of storageKeys) {
         let sourcePath = path.resolve(mediaBasePath, storageKey);
@@ -82,10 +80,6 @@ export class MediaBackupEngine {
           }
         }
 
-        // تسجيل مجلد الأصل (لنسخ variants لاحقاً)
-        const assetDir = path.dirname(sourcePath);
-        assetDirs.add(assetDir);
-
         const destPath = path.join(mediaDir, actualKey);
 
         try {
@@ -119,46 +113,6 @@ export class MediaBackupEngine {
             `Media backup progress: ${processed}/${filesExpected} (${missingStorageKeys.length} missing)`,
           );
         }
-      }
-
-      // ── مرحلة 2: نسخ variants إضافية (small.webp, medium.webp) من مجلدات الأصول ──
-      let variantsCopied = 0;
-      for (const assetDir of assetDirs) {
-        try {
-          const files = await fsp.readdir(assetDir);
-          for (const file of files) {
-            const filePath = path.join(assetDir, file);
-            // حساب المسار النسبي من mediaBasePath
-            const relativePath = path.relative(resolvedBase, filePath);
-            const destPath = path.join(mediaDir, relativePath);
-
-            // تخطي إذا نُسخ بالفعل
-            try {
-              await fsp.access(destPath);
-              continue;
-            } catch {
-              // لم يُنسخ بعد — ننسخه
-            }
-
-            try {
-              await fsp.mkdir(path.dirname(destPath), { recursive: true });
-              await fsp.copyFile(filePath, destPath);
-              const stats = await fsp.stat(filePath);
-              totalSize += BigInt(stats.size);
-              variantsCopied++;
-            } catch {
-              // تجاهل أخطاء نسخ الـ variants الإضافية
-            }
-          }
-        } catch {
-          // تجاهل إذا المجلد غير موجود
-        }
-      }
-
-      if (variantsCopied > 0) {
-        this.logger.log(
-          `Copied ${variantsCopied} additional variant files from asset directories`,
-        );
       }
 
       const durationMs = Date.now() - startTime;
