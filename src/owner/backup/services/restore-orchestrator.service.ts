@@ -380,12 +380,12 @@ export class RestoreOrchestratorService {
           // النسخة غير موجودة في الـ DB المستعادة
         }
 
-        // 3. إعادة إنشاء سجل Restore Job
+        // 3. إعادة إنشاء سجل Restore Job (backupInstanceId اختياري بعد تعديل Schema)
         try {
           await this.prisma.restoreJob.create({
             data: {
               uuid: job.uuid,
-              backupInstanceId: resolvedInstanceId!,
+              backupInstanceId: resolvedInstanceId,
               restoreDatabase: params.restoreDatabase,
               restoreMedia: params.restoreMedia,
               restoreConfiguration: params.restoreConfiguration,
@@ -400,7 +400,7 @@ export class RestoreOrchestratorService {
           this.logger.warn(`Could not re-create restore job record: ${msg}`);
         }
 
-        // تحديث jobId للإشارة للسجل الجديد
+        // تحديث currentJobId للإشارة للسجل الجديد
         const newJob = await this.prisma.restoreJob.findUnique({
           where: { uuid: job.uuid },
         });
@@ -560,13 +560,17 @@ export class RestoreOrchestratorService {
       // ── 9. CLEANUP + SUCCESS ──
       await this.storage.deleteDirectory(workDir);
 
-      await this.prisma.restoreJob.update({
-        where: { id: currentJobId },
-        data: {
-          status: 'COMPLETED',
-          finishedAt: new Date(),
-        },
-      });
+      try {
+        await this.prisma.restoreJob.update({
+          where: { id: currentJobId },
+          data: {
+            status: 'COMPLETED',
+            finishedAt: new Date(),
+          },
+        });
+      } catch {
+        this.logger.warn('Could not mark restore job as COMPLETED (record may not exist)');
+      }
 
       // تحديث النسخة — تم استخدامها (بالـ UUID لأن الـ ID قد يتغير بعد restore)
       try {
@@ -811,21 +815,29 @@ export class RestoreOrchestratorService {
     errorMessage: string,
     workDir?: string,
   ): Promise<void> {
-    await this.prisma.restoreJob.update({
-      where: { id: jobId },
-      data: {
-        status: 'FAILED',
-        errorMessage,
-        finishedAt: new Date(),
-      },
-    });
+    try {
+      await this.prisma.restoreJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'FAILED',
+          errorMessage,
+          finishedAt: new Date(),
+        },
+      });
+    } catch {
+      this.logger.warn(`Could not update restore job ${jobId} to FAILED (record may not exist after DB restore)`);
+    }
 
-    await this.backupLogger.writeLog({
-      restoreJobId: jobId,
-      level: 'ERROR',
-      phase: 'CLEANUP',
-      message: errorMessage,
-    });
+    try {
+      await this.backupLogger.writeLog({
+        restoreJobId: jobId,
+        level: 'ERROR',
+        phase: 'CLEANUP',
+        message: errorMessage,
+      });
+    } catch {
+      this.logger.error(`[FALLBACK] failJob: ${errorMessage}`);
+    }
 
     if (workDir) {
       try {

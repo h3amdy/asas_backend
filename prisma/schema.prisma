@@ -1469,7 +1469,7 @@ model BackupInstance {
 model RestoreJob {
   id                   Int              @id @default(autoincrement())
   uuid                 String           @unique @default(uuid())
-  backupInstanceId     Int              @map("backup_instance_id")
+  backupInstanceId     Int?             @map("backup_instance_id")
   status               RestoreJobStatus @default(PENDING)
   errorMessage         String?          @map("error_message")
   restoreDatabase      Boolean          @default(true) @map("restore_database")
@@ -1481,7 +1481,7 @@ model RestoreJob {
   finishedAt           DateTime?        @map("finished_at")
   createdAt            DateTime         @default(now()) @map("created_at")
   logs                 BackupLog[]
-  backupInstance       BackupInstance   @relation("RestoredFrom", fields: [backupInstanceId], references: [id])
+  backupInstance       BackupInstance?   @relation("RestoredFrom", fields: [backupInstanceId], references: [id])
   safetyBackup         BackupInstance?  @relation("SafetyBackup", fields: [safetyBackupId], references: [id])
 
   @@index([status])
