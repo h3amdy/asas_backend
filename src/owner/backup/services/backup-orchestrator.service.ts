@@ -85,7 +85,7 @@ export class BackupOrchestratorService {
     // لمنع طلبين متزامنين من إنشاء Job في نفس الوقت
     const job = await this.prisma.$transaction(async (tx) => {
       // Advisory Lock (رقم ثابت وفريد لعمليات النسخ)
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(8675309)`;
+      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(8675309)');
 
       // التحقق من عدم وجود Job أو Restore قيد التنفيذ
       const runningBackup = await tx.backupJob.findFirst({

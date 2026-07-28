@@ -62,7 +62,7 @@ export class RestoreOrchestratorService {
   }): Promise<{ jobUuid: string }> {
     // ⚠️ حماية من Race Condition (مثل Backup)
     const job = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(8675309)`;
+      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(8675309)');
 
       const runningBackup = await tx.backupJob.findFirst({
         where: { status: 'RUNNING' },

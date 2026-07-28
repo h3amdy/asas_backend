@@ -1,395 +1,100 @@
-نعم، أرى أن الوقت أصبح مناسباً لتنفيذ هذا الإصلاح، لكن **ليس بالطريقة التي وصفها Gemini بالكامل**. هناك نقطة مهمة تتعلق بالترحيل (migration) والإنتاج.
-
-## أولاً: هل الفكرة صحيحة؟
-
-**نعم.**
-
-في مشروع أساس، هذه القيود السبعة ليست قواعد أعمال (Business Rules)، بل هي آلية لمنع تكرار `orderIndex`.
-
-وبما أنك اعتمدت رسمياً:
-
-```sql
-CREATE UNIQUE INDEX ...
-WHERE is_deleted = false
-```
-
-فالـ **Partial Unique Index** هو مصدر الحقيقة، وليس `@@unique` في Prisma.
-
-لذلك تحويل:
-
-```prisma
-@@unique(...)
-```
-
-إلى:
-
-```prisma
-@@index(...)
-```
-
-قرار صحيح في مشروعك.
-
----
-
-# لكن لا أنصح بتعديل الـ schema فقط ثم رفعه مباشرة.
-
-أنصح بهذه الخطة:
-
-## المرحلة الأولى (المحلي)
-
-### 1. عدّل الـ schema
-
-حوّل السبعة:
-
-```prisma
-@@unique(...)
-```
-
-↓
-
-```prisma
-@@index(...)
-```
-
----
-
-### 2. لا تنشئ Migration مباشرة
-
-نفذ:
-
-```bash
-npx prisma format
-```
-
-ثم:
-
-```bash
-npx prisma validate
-```
-
----
-
-### 3. جرّب
-
-نفذ:
-
-```bash
-npx prisma migrate dev --create-only --name verify_partial_indexes
-```
-
-إذا اختفت التحذيرات السبعة...
-
-فهذا هو المطلوب.
-
-إذا ظهرت Migration فارغة أو تحتوي فقط على تغييراتك الجديدة، فقد نجح الإصلاح.
-
----
-
-## المرحلة الثانية
-
-بعد التأكد أن التحذيرات اختفت:
-
-احذف Migration التجريبية إن كانت فارغة.
-
-ثم تابع تطويرك الطبيعي.
-
----
-
-# ماذا عن الـ VPS؟
-
-هنا الفرق المهم الذي لم يذكره Gemini.
-
-## لا تنفذ أي Migration خاصة بهذا التعديل.
-
-لماذا؟
-
-لأن:
-
-أنت **لا تريد تغيير قاعدة البيانات**.
-
-أنت فقط تريد أن يصبح:
-
-```text
-schema.prisma
-```
-
-مطابقاً لما هو موجود أصلاً في قاعدة البيانات.
-
-بمعنى:
-
-قبل:
-
-```text
-schema.prisma
-↓
-@@unique
-```
-
-بعد:
-
-```text
-schema.prisma
-↓
-@@index
-```
-
-أما قاعدة البيانات...
-
-فستظل تحتوي على:
-
-```sql
-CREATE UNIQUE INDEX ...
-WHERE is_deleted = false
-```
-
-كما هي.
-
-إذن لا يوجد أي SQL يحتاج للتطبيق.
-
----
-
-# إذا أنشأ Prisma Migration
-
-إذا بعد تعديل الـ schema أنشأ Migration مثل:
-
-```sql
-DROP INDEX ...
-
-CREATE INDEX ...
-```
-
-فلا ترفعها مباشرة.
-
-راجعها أولاً.
-
-في كثير من الأحيان ستكون محاولة من Prisma لمواءمة الـ schema مع فهمه، وليس مع ما تريده أنت.
-
----
-
-# الخطة التي أوصي بها لمشروع أساس
-
-1. ✅ عدّل السبعة من `@@unique` إلى `@@index`.
-2. ✅ اختبر محلياً حتى تختفي التحذيرات.
-3. ✅ لا تعدّل الـ Partial Indexes الموجودة في PostgreSQL.
-4. ✅ لا تنشئ Migration خاصة بهذا الإصلاح إلا إذا احتوت على تغييرات مقصودة فعلاً.
-5. ✅ بعد نجاح الاختبار، استمر بتطوير الميزات الجديدة، وستتوقف مشكلة إعادة إنشاء الـ 7 فهارس في كل Migration.
-
-## ملاحظة أخيرة
-
-أنت الآن كررت نفس العملية مع ثلاث ميزات مختلفة:
-
-* توزيع المحتوى.
-* استيراد البيانات.
-* بنية المزامنة.
-* ثم إضافة `scheduledAt`.
-
-هذا يؤكد أن المشكلة أصبحت **عبئاً دائماً على سير العمل**، وليست حالة عابرة.
-
-لذلك أرى أن إصلاحها الآن أفضل من الاستمرار في حذف نفس الأسطر يدوياً في كل Migration جديدة. هذا سيجعل دورة التطوير أبسط وأكثر أماناً، خاصة مع كثرة الـ migrations في مشروع أساس.
-سؤال ممتاز. هذه ليست مشكلة خاصة بمشروع أساس، بل هي مشكلة معروفة عند استخدام **Prisma + PostgreSQL Partial Indexes**.
-
-هناك ثلاثة حلول يتبعها المطورون، ولكل واحد مزايا وعيوب.
-
----
-
-# الحل الأول (الأكثر شيوعاً في الشركات)
-
-**اعتبار Prisma مسؤولاً عن 95% من قاعدة البيانات، وأي ميزة لا يدعمها Prisma تُدار يدوياً.**
-
-أي:
-
-* في `schema.prisma`:
-
-```prisma
-@@index([templateId, orderIndex])
-```
-
-* وفي Migration يدوية:
-
-```sql
-DROP INDEX IF EXISTS lesson_contents_template_order_idx;
-
-CREATE UNIQUE INDEX lesson_contents_template_order_active_idx
-ON lesson_contents(template_id, order_index)
-WHERE is_deleted = false;
-```
-
-ثم لا يضيفون `@@unique` مرة أخرى.
-
-## المزايا
-
-* لا توجد تحذيرات.
-* لا يعاد إنشاء الـ indexes.
-* الـ schema تبقى مستقرة.
-
-## العيوب
-
-Prisma لا يعرف أن هناك فرادة (Uniqueness)، بل قاعدة البيانات هي التي تفرضها.
-
----
-
-# الحل الثاني (يستخدمه كثير من الفرق)
-
-يبقون:
-
-```prisma
-@@unique(...)
-```
-
-وفي كل Migration يراجعون الملف ويحذفون الأسطر غير المرغوبة.
-
-هذا ما كنت تفعله.
-
-## المزايا
-
-* Prisma يعرف أن العلاقة Unique.
-* IntelliSense وORM يعبران عن المنطق.
-
-## العيوب
-
-* مزعج جداً.
-* كل Migration تحتاج مراجعة.
-* قد ينسى أحد المطورين حذف الأسطر ويصل الخطأ للإنتاج.
-
----
-
-# الحل الثالث (المفضل في المشاريع الكبيرة)
-
-عدم استخدام `migrate dev` لتوليد SQL النهائي.
-
-بدلاً من ذلك:
-
-1. يكتب المطور الـ schema.
-2. يولد Migration.
-3. يراجع كل SQL.
-4. يعدله.
-5. يعتبر ملف SQL هو المصدر النهائي للحقيقة.
-
-كثير من الشركات تعتبر:
-
-```text
-schema.prisma
-```
-
-وسيلة توليد فقط.
-
-أما الحقيقة فهي:
-
-```text
-migration.sql
-```
-
----
-
-# ماذا أنصح لمشروع أساس؟
-
-بناءً على معرفتي بمشروعك:
-
-* PostgreSQL.
-* Offline-first.
-* Soft Delete في معظم الجداول.
-* عدد كبير من الجداول المرتبة (`orderIndex`).
-
-أرى أن **الحل الأول هو الأنسب**.
-
-أي:
-
-### الخطوة 1
-
-حوّل السبعة:
-
-```prisma
-@@unique(...)
-```
-
-↓
-
-```prisma
-@@index(...)
-```
-
-### الخطوة 2
-
-اترك الـ Partial Unique Indexes الموجودة في الـ migrations كما هي.
-
-### الخطوة 3
-
-لا تعدّلها مرة أخرى.
-
----
-
-# ماذا يحدث على الـ VPS؟
-
-**لا شيء.**
-
-هذا أهم شيء.
-
-أنت لن تنفذ:
-
-```sql
-DROP INDEX ...
-```
-
-ولن تنشئ:
-
-```sql
-CREATE INDEX ...
-```
-
-أنت فقط تغير:
-
-```prisma
-@@unique
-```
-
-↓
-
-```prisma
-@@index
-```
-
-أي أن التغيير في **وصف Prisma** فقط، وليس في قاعدة البيانات.
-
----
-
-# لماذا أنا مرتاح لهذا الحل؟
-
-لأنك الآن كررت نفس السيناريو أربع مرات:
-
-1. توزيع المحتوى.
-2. الاستيراد.
-3. البنية التحتية للمزامنة.
-4. إضافة `scheduledAt`.
-
-وفي كل مرة:
-
-```text
-Prisma
-↓
-يحاول إنشاء 7 Unique Indexes
-↓
-أنت تحذفها
-↓
-تكمل
-```
-
-هذا دليل أن لديك **مشكلة دائمة في بيئة التطوير** وليست خطأ في ميزة معينة.
-
----
-
-# الخطة التي أوصي بها
-
-بعد الانتهاء من الميزة الحالية (حتى لا تخلط إصلاحات متعددة في نفس الـ commit):
-
-1. عدّل السبعة من `@@unique` إلى `@@index`.
-2. نفذ:
-
-   ```bash
-   npx prisma format
-   npx prisma validate
-   ```
-3. أنشئ Migration تجريبية بـ `--create-only`.
-4. إذا اختفت التحذيرات ولم يحاول Prisma إعادة إنشاء الـ 7 فهارس، احذف الـ Migration التجريبية (إن لم تكن تحتوي تغييرات حقيقية).
-5. ارفع **فقط** تعديل `schema.prisma` مع ميزتك التالية أو في Commit مستقل.
-
-بهذه الطريقة ستتوقف مشكلة التحذيرات المتكررة، وستبقى الـ Partial Unique Indexes التي تعتمد عليها سياسة الـ Soft Delete كما هي دون تغيير.
+Welcome to Ubuntu 24.04.3 LTS (GNU/Linux 6.8.0-117-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Tue Jul 28 13:35:29 UTC 2026
+
+  System load:  0.1                Processes:             136
+  Usage of /:   21.9% of 47.39GB   Users logged in:       1
+  Memory usage: 28%                IPv4 address for eth0: 168.231.115.146
+  Swap usage:   0%                 IPv6 address for eth0: 2a02:4780:f:99c9::1
+
+ * Strictly confined Kubernetes makes edge and IoT secure. Learn how MicroK8s
+   just raised the bar for easy, resilient and secure K8s cluster deployment.
+
+   https://ubuntu.com/engage/secure-kubernetes-at-the-edge
+
+Expanded Security Maintenance for Applications is not enabled.
+
+73 updates can be applied immediately.
+1 of these updates is a standard security update.
+To see these additional updates run: apt list --upgradable
+
+Enable ESM Apps to receive additional future security updates.
+See https://ubuntu.com/esm or run: sudo pro status
+
+
+1 updates could not be installed automatically. For more details,
+see /var/log/unattended-upgrades/unattended-upgrades.log
+
+*** System restart required ***
+Last login: Tue Jul 28 13:33:26 2026 from 127.0.0.1
+root@srv992229:~# # 1. تأكد الخطة موجودة
+curl http://localhost:3000/api/v1/owner/backups/plans
+
+# 2. أنشئ أول backup
+curl -X POST http://localhost:3000/api/v1/owner/backups/trigger \
+  -H "Content-Type: application/json" \
+  -d '{"triggeredBy": "MANUAL"}'
+
+# 3. تابع الحالة
+curl http://localhost:3000/api/v1/owner/backups/jobs
+
+# 4. شاهد النسخ
+curl http://localhost:3000/api/v1/owner/backups/instances
+
+# 5. Dashboard
+curl http://localhost:3000/api/v1/owner/backups/dashboard
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /api/v1/owner/backups/plans</pre>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api/v1/owner/backups/trigger</pre>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /api/v1/owner/backups/jobs</pre>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /api/v1/owner/backups/instances</pre>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /api/v1/owner/backups/dashboard</pre>
+</body>
+</html>
+root@srv992229:~# 
