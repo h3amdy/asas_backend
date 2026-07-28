@@ -304,17 +304,15 @@ export class RestoreOrchestratorService {
           databaseUrl,
         );
 
-        await this.backupLogger.writeLog({
-          restoreJobId: jobId,
-          level: dbResult.success ? 'INFO' : 'ERROR',
-          phase: 'RESTORE_DB',
-          message: dbResult.success
-            ? 'Database restored successfully'
-            : `Database restore failed: ${dbResult.errorMessage}`,
-          durationMs: Date.now() - dbStart,
-        });
-
+        // عند الفشل: السجل لا يزال موجوداً (DB لم تُستبدل)
         if (!dbResult.success) {
+          await this.backupLogger.writeLog({
+            restoreJobId: jobId,
+            level: 'ERROR',
+            phase: 'RESTORE_DB',
+            message: `Database restore failed: ${dbResult.errorMessage}`,
+            durationMs: Date.now() - dbStart,
+          });
           // تصنيف سبب الفشل: بيئة (psql/permissions) أم بيانات (corrupt dump)
           const errorMsg = dbResult.errorMessage ?? '';
           const isEnvironmentError =
@@ -343,6 +341,41 @@ export class RestoreOrchestratorService {
           }
           return;
         }
+
+        // ── إعادة إنشاء سجل Restore Job بعد استعادة DB ──
+        // السبب: استعادة DB تستبدل كل الجداول بما فيها restore_jobs،
+        // فالسجل الحالي لم يعد موجوداً. نعيد إنشاءه لإكمال Pipeline.
+        try {
+          await this.prisma.restoreJob.upsert({
+            where: { id: jobId },
+            update: {}, // موجود (لم يتأثر) — لا نغير شيئاً
+            create: {
+              id: jobId,
+              uuid: job.uuid,
+              backupInstanceId: params.backupInstanceId,
+              restoreDatabase: params.restoreDatabase,
+              restoreMedia: params.restoreMedia,
+              restoreConfiguration: params.restoreConfiguration,
+              initiatedByUserUuid: 'owner',
+              safetyBackupId,
+              status: 'RUNNING',
+              startedAt: job.startedAt ?? new Date(),
+            },
+          });
+          this.logger.log('Restore job record re-created after DB restore');
+        } catch (upsertErr) {
+          const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr);
+          this.logger.warn(`Could not re-create restore job record: ${msg}`);
+          // نكمل — الاستعادة نجحت حتى لو لم ننجح في تتبعها
+        }
+
+        await this.backupLogger.writeLog({
+          restoreJobId: jobId,
+          level: 'INFO',
+          phase: 'RESTORE_DB',
+          message: 'Database restored successfully',
+          durationMs: Date.now() - dbStart,
+        });
       }
 
       // ── 6. RESTORE MEDIA ──
