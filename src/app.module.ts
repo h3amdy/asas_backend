@@ -11,6 +11,8 @@ import { SchoolModule } from './school/school.module';
 import { PlatformModule } from './platform/platform.module';
 import { ImportsModule } from './owner/imports/imports.module';
 import { ReleasesModule } from './releases/releases.module';
+import { BackupModule } from './owner/backup/backup.module';
+
 
 
 @Module({
@@ -26,6 +28,7 @@ import { ReleasesModule } from './releases/releases.module';
     PlatformModule,
     ImportsModule,
     ReleasesModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [AppService],

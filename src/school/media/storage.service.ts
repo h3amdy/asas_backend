@@ -15,7 +15,7 @@ export class StorageService {
     private readonly basePath: string;
 
     constructor() {
-        this.basePath = process.env.MEDIA_STORAGE_PATH || '/var/data/asas/storage';
+        this.basePath = path.resolve(process.env.MEDIA_STORAGE_PATH || './storage');
         this.ensureDir(this.basePath);
         this.ensureDir(path.join(this.basePath, 'tmp'));
     }
