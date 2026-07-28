@@ -1,168 +1,120 @@
-الكود جيد من ناحية الفكرة، لكن يوجد **مشكلتان**:
+إذا كانت الوسائط موجودة بالفعل، فهذه النتيجة:
+
+```json
+"containsMedia": false,
+"mediaFilesCount": 0,
+"mediaFilesCopied": 0
+```
+
+تعني أن **هناك خطأ في عملية اكتشاف الوسائط أو نسخها**، وليس بالضرورة أن الوسائط غير موجودة.
+
+وألاحظ شيئًا مهمًا جدًا من سجل النسخة:
+
+```text
+Database dump completed (4 MB)
+Media copy: 0/0 files
+```
+
+هذا يعني أن النظام **اعتقد أن عدد الملفات المطلوب نسخه هو صفر** قبل أن يبدأ النسخ.
+
+أي أن المشكلة ليست في `MediaCopy` نفسها، وإنما قبلها.
+
+## الاحتمالات الأقوى
+
+### الاحتمال الأول (وهو الأكثر احتمالًا)
+
+الدالة:
+
+```ts
+extractMediaKeysFromDump(sqlFile)
+```
+
+لم تستخرج أي `storage_key`.
+
+أي أن:
+
+```ts
+mediaStorageKeys.length == 0
+```
+
+وبالتالي مرحلة النسخ لم تجد شيئًا لتنسخه.
 
 ---
 
-# 1) يوجد خطأ في الأقواس (Syntax Error)
+### الاحتمال الثاني
 
-في `computeSha256` لم يتم إغلاق الدالة قبل تعريف `sanitizeDatabaseUrl`.
+اسم الجدول في قاعدة البيانات ليس:
 
-أنت الآن لديك:
-
-```ts
-private computeSha256(...) {
-  return new Promise(...);
-
-  /**
-   * تنقية رابط الاتصال...
-   */
-  private sanitizeDatabaseUrl(...)
+```text
+media_asset_variants
 ```
 
-وهذا غير صحيح.
-
-يجب أن تكون:
+بينما الكود يبحث عن:
 
 ```ts
-private computeSha256(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
-    const stream = fs.createReadStream(filePath);
-
-    stream.on('data', (data) => hash.update(data));
-    stream.on('end', () => resolve(hash.digest('hex')));
-    stream.on('error', reject);
-  });
-}
-
-private sanitizeDatabaseUrl(databaseUrl: string): string {
-    ...
-}
+line.includes("media_asset_variants")
 ```
+
+إذا كان اسم الجدول مثل:
+
+```text
+platform_media_variants
+```
+
+أو
+
+```text
+media_variants
+```
+
+فلن يعثر عليه إطلاقًا.
 
 ---
 
-# 2) يوجد نفس الخطأ في DbRestoreEngine
+### الاحتمال الثالث
 
-أنت أصلحت PgDump فقط.
-
-لكن Restore مازال يستخدم:
-
-```ts
-await execFileAsync('psql', [
-    databaseUrl,
-    '-f',
-    sqlPath,
-]);
-```
-
-وهذا سيمرر:
-
-```
-postgresql://.../asasprod?schema=public
-```
-
-إلى psql.
-
-قد لا يفشل دائماً، لكنه غير صحيح هندسياً.
-
-يجب أيضاً استخدام:
-
-```ts
-const cleanDbUrl = this.sanitizeDatabaseUrl(databaseUrl);
-
-await execFileAsync(
-    'psql',
-    [
-        cleanDbUrl,
-        '-f',
-        sqlPath,
-    ],
-    {
-        maxBuffer: 100 * 1024 * 1024,
-    },
-);
-```
-
-وأضف نفس الدالة:
-
-```ts
-private sanitizeDatabaseUrl(databaseUrl: string): string {
-    try {
-        const parsed = new URL(databaseUrl);
-
-        parsed.searchParams.delete('schema');
-        parsed.searchParams.delete('pgbouncer');
-        parsed.searchParams.delete('connection_limit');
-        parsed.searchParams.delete('pool_timeout');
-
-        return parsed.toString();
-    } catch {
-        return databaseUrl;
-    }
-}
-```
+صيغة `COPY` التي ينتجها `pg_dump` تختلف عما تتوقعه الدالة.
 
 ---
 
-# 3) تحسين بسيط أوصي به
+# أول شيء أريد التأكد منه
 
-بدلاً من:
-
-```ts
-parsed.searchParams.delete(...)
-```
-
-يمكنك جعل الرابط صالحًا لأي أدوات PostgreSQL بإزالة جميع معاملات الاستعلام:
-
-```ts
-private sanitizeDatabaseUrl(databaseUrl: string): string {
-    try {
-        const parsed = new URL(databaseUrl);
-
-        parsed.search = '';
-
-        return parsed.toString();
-    } catch {
-        return databaseUrl;
-    }
-}
-```
-
-وهذا أفضل للأسباب التالية:
-
-* لا يعتمد على معرفة أسماء معاملات Prisma الحالية.
-* إذا أضاف Prisma معاملات جديدة مستقبلاً فلن تتأثر.
-* مناسب لكل من:
-
-  * pg_dump
-  * pg_restore
-  * psql
-
----
-
-# تقييمي
-
-أنا أوصي بالحل الأخير:
-
-```ts
-parsed.search = '';
-```
-
-بدلاً من حذف المعاملات واحدًا واحدًا.
-
-لأنه أبسط وأكثر متانة، خاصة وأن أدوات PostgreSQL لا تحتاج أي Query Parameters في `DATABASE_URL` لهذا الاستخدام.
-
-بعد ذلك:
+نفذ هذا الأمر على الخادم:
 
 ```bash
-npm run build
-pm2 restart all
+grep -n "COPY .*media" /var/backups/mafhooom/temp/*/database/postgres.sql
 ```
 
-ثم أعد تنفيذ:
+إذا لم يعد الملف موجودًا لأن مجلد `temp` حُذف بعد التنظيف، فأنشئ نسخة جديدة مع إيقاف التنظيف مؤقتًا، أو ببساطة نفذ على قاعدة البيانات:
 
-```bash
-curl -X POST http://localhost:3010/api/v1/owner/backups/trigger
+```sql
+SELECT COUNT(*) FROM media_asset_variants;
 ```
 
-وأتوقع أننا سننتقل إلى المرحلة التالية من Pipeline (الأرشفة أو نسخ الوسائط) بدل التوقف عند `pg_dump`.
+ثم:
+
+```sql
+SELECT storage_key
+FROM media_asset_variants
+LIMIT 10;
+```
+
+---
+
+# وهناك سؤال مهم
+
+أريد معرفة مخطط قاعدة البيانات لديك.
+
+ما هو اسم الجدول الذي يحتوي على ملفات الوسائط؟
+
+هل هو بالفعل:
+
+```text
+media_asset_variants
+```
+
+أم اسم آخر؟
+
+لأن إذا كان الاسم مختلفًا، فقد وجدنا السبب مباشرة.
+
+**أرسل أيضًا كود الدالة `MediaCopyService` أو الخدمة التي تستقبل `mediaStorageKeys` بعد `PgDumpEngine`، لأننا نحتاج التأكد أن القائمة المستخرجة تُمرر كما هي ولا يتم تفريغها في مرحلة لاحقة.**

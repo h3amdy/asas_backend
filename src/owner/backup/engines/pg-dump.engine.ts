@@ -142,7 +142,7 @@ export class PgDumpEngine {
         // بداية نسخ بيانات الجدول
         if (
           line.startsWith('COPY') &&
-          line.includes('media_asset_variants')
+          line.includes('media_assets')
         ) {
           inMediaTable = true;
           // استخراج ترتيب الأعمدة لمعرفة موقع storage_key
