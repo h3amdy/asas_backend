@@ -34,7 +34,7 @@ import { UpdatePlanDto } from './dto/update-plan.dto';
  * فقط Platform Owner يصل إلى هذه العمليات (DEC-006)
  */
 @Controller('owner/backups')
-// @UseGuards(PlatformJwtAuthGuard, PlatformAdminGuard)  // TODO: أعِد تفعيل بعد الاختبار
+@UseGuards(PlatformJwtAuthGuard, PlatformAdminGuard)
 export class BackupController {
   constructor(
     private readonly prisma: PrismaService,
