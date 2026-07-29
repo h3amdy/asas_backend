@@ -382,20 +382,23 @@ export class RestoreOrchestratorService {
 
         // 3. إعادة إنشاء سجل Restore Job (backupInstanceId اختياري بعد تعديل Schema)
         try {
-          await this.prisma.restoreJob.create({
-            data: {
-              uuid: job.uuid,
-              ...(resolvedInstanceId
-                ? { backupInstance: { connect: { id: resolvedInstanceId } } }
-                : {}),
-              restoreDatabase: params.restoreDatabase,
-              restoreMedia: params.restoreMedia,
-              restoreConfiguration: params.restoreConfiguration,
-              initiatedByUserUuid: 'owner',
-              status: 'RUNNING',
-              startedAt: job.startedAt ?? new Date(),
-            },
-          });
+          const createData = {
+            uuid: job.uuid,
+            restoreDatabase: params.restoreDatabase,
+            restoreMedia: params.restoreMedia,
+            restoreConfiguration: params.restoreConfiguration,
+            initiatedByUserUuid: 'owner',
+            status: 'RUNNING' as const,
+            startedAt: job.startedAt ?? new Date(),
+          };
+
+          if (resolvedInstanceId) {
+            await this.prisma.restoreJob.create({
+              data: { ...createData, backupInstance: { connect: { id: resolvedInstanceId } } },
+            });
+          } else {
+            await this.prisma.restoreJob.create({ data: createData });
+          }
           this.logger.log('Restore job record re-created after DB restore');
         } catch (createErr) {
           const msg = createErr instanceof Error ? createErr.message : String(createErr);
