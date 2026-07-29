@@ -166,8 +166,9 @@ export class BackupController {
     @Query('limit') limit?: string,
   ) {
     const pageNum = Math.max(1, parseInt(page ?? '1', 10) || 1);
+    // الحد الأقصى 200 نسخة — يكفي لأي حالة عملية
     const limitNum = Math.min(
-      50,
+      200,
       Math.max(1, parseInt(limit ?? '20', 10) || 20),
     );
     const skip = (pageNum - 1) * limitNum;
@@ -226,15 +227,13 @@ export class BackupController {
       throw new NotFoundException('Backup instance not found');
     }
 
+    // نُعيد الكائن الكامل ليتوافق مع BackupInstanceModel في Flutter
     const updated = await this.prisma.backupInstance.update({
       where: { uuid },
       data: { isPinned: !instance.isPinned },
     });
 
-    return {
-      message: updated.isPinned ? 'Backup pinned' : 'Backup unpinned',
-      isPinned: updated.isPinned,
-    };
+    return updated;
   }
 
   /**
@@ -255,6 +254,24 @@ export class BackupController {
       throw new BadRequestException(
         'Cannot delete a pinned backup. Unpin it first.',
       );
+    }
+
+    // ── حماية الحد الأدنى: لا يُسمح بالحذف إذا سيُبقي أقل من 3 نسخ ناجحة ──
+    // يُطبَّق فقط على النسخ الناجحة لأنها هي التي يمكن الاستعادة منها
+    if (instance.status === 'SUCCESS') {
+      const successCount = await this.prisma.backupInstance.count({
+        where: {
+          isDeleted: false,
+          status: 'SUCCESS',
+        },
+      });
+
+      if (successCount <= 3) {
+        throw new BadRequestException(
+          `Cannot delete: system requires a minimum of 3 successful backups. ` +
+          `Currently only ${successCount} exist. Create more backups first.`,
+        );
+      }
     }
 
     await this.prisma.backupInstance.update({
@@ -340,28 +357,46 @@ export class BackupController {
   async getDashboard() {
     const [
       totalInstances,
-      lastBackup,
+      totalSizeResult,
+      latestInstance,
+      latestJob,
+      latestRestore,
       runningJobs,
       failedJobs24h,
       activePlan,
     ] = await Promise.all([
+      // 1. إجمالي النسخ
       this.prisma.backupInstance.count({
         where: { isDeleted: false },
       }),
+      // 2. الحجم الكلي (aggregate)
+      this.prisma.backupInstance.aggregate({
+        where: { isDeleted: false, fileSizeBytes: { gt: 0 } },
+        _sum: { fileSizeBytes: true },
+      }),
+      // 3. آخر نسخة (latestInstance — يتوافق مع Flutter model)
       this.prisma.backupInstance.findFirst({
         where: { isDeleted: false },
         orderBy: { createdAt: 'desc' },
-        select: {
-          uuid: true,
-          backupName: true,
-          status: true,
-          fileSizeBytes: true,
-          createdAt: true,
+      }),
+      // 4. آخر عملية نسخ (latestJob)
+      this.prisma.backupJob.findFirst({
+        orderBy: { createdAt: 'desc' },
+      }),
+      // 5. آخر عملية استعادة (latestRestore)
+      this.prisma.restoreJob.findFirst({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          backupInstance: {
+            select: { uuid: true, backupName: true },
+          },
         },
       }),
+      // 6. عمليات قيد التنفيذ
       this.prisma.backupJob.count({
         where: { status: 'RUNNING' },
       }),
+      // 7. فشل آخر 24 ساعة
       this.prisma.backupJob.count({
         where: {
           status: 'FAILED',
@@ -370,6 +405,7 @@ export class BackupController {
           },
         },
       }),
+      // 8. الخطة النشطة
       this.prisma.backupPlan.findFirst({
         where: { enabled: true },
         select: {
@@ -382,8 +418,13 @@ export class BackupController {
     ]);
 
     return {
+      // حقول تتوافق مع BackupDashboardModel في Flutter
       totalInstances,
-      lastBackup,
+      totalSizeBytes: totalSizeResult._sum?.fileSizeBytes ?? 0,
+      latestInstance,
+      latestJob,
+      latestRestore,
+      // حقول إضافية للـ Dashboard UI
       runningJobs,
       failedJobs24h,
       activePlan,

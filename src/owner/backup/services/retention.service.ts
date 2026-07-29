@@ -25,6 +25,12 @@ export class RetentionService {
   /** عدد أيام الانتظار بعد soft delete قبل الحذف الفعلي */
   private readonly PURGE_AFTER_DAYS = 7;
 
+  /**
+   * الحد الأدنى المطلق للنسخ الناجحة في النظام — لا يمكن النزول عنه
+   * حتى لو كانت إعدادات الخطة تسمح بأقل من ذلك
+   */
+  private readonly MIN_SAFE_BACKUPS = 3;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageProvider,
@@ -78,6 +84,10 @@ export class RetentionService {
     // جمع IDs المرشحة للحذف
     const idsToDelete: number[] = [];
 
+    // الحد الفعلي المعمول به = الأكبر بين إعداد الخطة و MIN_SAFE_BACKUPS
+    // يمنع هذا حذف نسخ تُبقي النظام بأقل من الحد الآمن
+    const effectiveMaxBackups = Math.max(plan.maxBackups, this.MIN_SAFE_BACKUPS);
+
     // 1. حذف بالعمر (maxAgeDays)
     const cutoffDate = new Date(
       Date.now() - plan.maxAgeDays * 24 * 60 * 60 * 1000,
@@ -97,7 +107,7 @@ export class RetentionService {
 
     idsToDelete.push(...oldInstances.map((i) => i.id));
 
-    // 2. حذف بالعدد (maxBackups)
+    // 2. حذف بالعدد — يستخدم effectiveMaxBackups بدلاً من plan.maxBackups
     const activeCount = await this.prisma.backupInstance.count({
       where: {
         planId: plan.id,
@@ -109,8 +119,8 @@ export class RetentionService {
 
     // نحسب العدد المتبقي بعد حذف القديمة
     const remainingAfterAge = activeCount - idsToDelete.length;
-    if (remainingAfterAge > plan.maxBackups) {
-      const excess = remainingAfterAge - plan.maxBackups;
+    if (remainingAfterAge > effectiveMaxBackups) {
+      const excess = remainingAfterAge - effectiveMaxBackups;
       const excessInstances = await this.prisma.backupInstance.findMany({
         where: {
           planId: plan.id,
@@ -128,6 +138,28 @@ export class RetentionService {
     }
 
     if (idsToDelete.length === 0) return 0;
+
+    // ── حماية نهائية: التحقق من عدد النسخ الناجحة على مستوى النظام كله ──
+    // حتى لو اجتمعت عدة خطط تحذف في نفس الوقت، نضمن بقاء MIN_SAFE_BACKUPS
+    const globalSuccessCount = await this.prisma.backupInstance.count({
+      where: { isDeleted: false, status: 'SUCCESS' },
+    });
+
+    if (globalSuccessCount - idsToDelete.length < this.MIN_SAFE_BACKUPS) {
+      // نُقلّص قائمة الحذف لتحافظ على الحد الأدنى
+      const allowedToDelete = Math.max(0, globalSuccessCount - this.MIN_SAFE_BACKUPS);
+      if (allowedToDelete === 0) {
+        this.logger.warn(
+          `Retention for "${plan.name}": skipped — would drop below MIN_SAFE_BACKUPS (${this.MIN_SAFE_BACKUPS})`,
+        );
+        return 0;
+      }
+      // احذف فقط القدر المسموح به (الأقدم أولاً — ترتيب idsToDelete)
+      idsToDelete.splice(allowedToDelete);
+      this.logger.warn(
+        `Retention for "${plan.name}": trimmed to ${allowedToDelete} deletions to preserve MIN_SAFE_BACKUPS`,
+      );
+    }
 
     // ⚠️ تنفيذ كل الحذف في Transaction واحد
     await this.prisma.$transaction(async (tx) => {

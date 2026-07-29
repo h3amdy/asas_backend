@@ -386,6 +386,7 @@ export class RestoreOrchestratorService {
             data: {
               uuid: job.uuid,
               backupInstanceId: resolvedInstanceId,
+              safetyBackupId: safetyBackupId,   // ← مهم: يحفظ مرجع نسخة الأمان بعد استعادة DB
               restoreDatabase: params.restoreDatabase,
               restoreMedia: params.restoreMedia,
               restoreConfiguration: params.restoreConfiguration,
@@ -538,13 +539,25 @@ export class RestoreOrchestratorService {
         const migrationName =
           migrationCheck?.[0]?.migration_name ?? 'unknown';
 
+        // إحصاءات المحتوى بعد الاستعادة — تُساعد في اكتشاف فقدان البيانات
+        const [unitsCount, lessonsCount, contentsCount] = await Promise.all([
+          this.prisma.unit.count({ where: { isDeleted: false } }),
+          this.prisma.lessonTemplate.count({ where: { isDeleted: false } }),
+          this.prisma.lessonContent.count({ where: { isDeleted: false } }),
+        ]);
+
         await this.backupLogger.writeLog({
           restoreJobId: currentJobId,
           level: 'INFO',
           phase: 'RESTORE_VERIFY',
-          message: `Post-restore verification passed (latest migration: ${migrationName})`,
+          message: `Post-restore verification passed (latest migration: ${migrationName}) | Content stats: units=${unitsCount}, lessons=${lessonsCount}, contents=${contentsCount}`,
           durationMs: Date.now() - verifyStart,
+          metadata: { migrationName, unitsCount, lessonsCount, contentsCount },
         });
+
+        this.logger.log(
+          `✅ Post-restore stats: units=${unitsCount}, lessons=${lessonsCount}, contents=${contentsCount}`,
+        );
       } catch (error) {
         const msg =
           error instanceof Error ? error.message : String(error);
@@ -553,7 +566,6 @@ export class RestoreOrchestratorService {
           level: 'WARN',
           phase: 'RESTORE_VERIFY',
           message: `Post-restore verification failed: ${msg}`,
-          durationMs: Date.now() - verifyStart,
         });
       }
 

@@ -41,6 +41,12 @@ export interface BackupManifest {
 
   /** checksums لكل ملف داخل الأرشيف */
   checksums: Record<string, string>;
+
+  /**
+   * إحصاءات المحتوى وقت إنشاء النسخة
+   * تُستخدم لإظهار تحذير قبل الاستعادة إذا كان المحتوى أقل من الحالي
+   */
+  contentStats?: BackupContentStats;
 }
 
 export interface ManifestDatabaseComponent {
@@ -71,4 +77,13 @@ export interface ManifestConsistency {
   databaseSnapshot: string;
   status: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED';
   missingStorageKeys: string[];
+}
+
+/** إحصاءات المحتوى المُدرجة في manifest لمقارنة النسخ */
+export interface BackupContentStats {
+  totalUnits: number;
+  totalLessons: number;
+  totalContents: number;
+  totalQuestions: number;
+  capturedAt: string;
 }

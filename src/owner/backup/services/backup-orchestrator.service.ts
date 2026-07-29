@@ -271,6 +271,36 @@ export class BackupOrchestratorService {
 
       // ── 6. BUILD MANIFEST ──
       const manifestStart = Date.now();
+
+      // إحصاءات المحتوى وقت إنشاء النسخة — تُستخدم لاحقاً لعرض تحذير قبل الاستعادة
+      let contentStats: {
+        totalUnits: number;
+        totalLessons: number;
+        totalContents: number;
+        totalQuestions: number;
+        capturedAt: string;
+      } | undefined;
+      try {
+        const [units, lessons, contents, questions] = await Promise.all([
+          this.prisma.unit.count({ where: { isDeleted: false } }),
+          this.prisma.lessonTemplate.count({ where: { isDeleted: false } }),
+          this.prisma.lessonContent.count({ where: { isDeleted: false } }),
+          this.prisma.question.count({ where: { isDeleted: false } }),
+        ]);
+        contentStats = {
+          totalUnits: units,
+          totalLessons: lessons,
+          totalContents: contents,
+          totalQuestions: questions,
+          capturedAt: new Date().toISOString(),
+        };
+        this.logger.log(
+          `Content stats at backup time: units=${units}, lessons=${lessons}, contents=${contents}, questions=${questions}`,
+        );
+      } catch (statsErr) {
+        this.logger.warn('Could not capture content stats for manifest');
+      }
+
       const manifest = this.buildManifest(
         job.uuid,
         category,
@@ -279,6 +309,7 @@ export class BackupOrchestratorService {
         mediaResult,
         configResult,
         mediaStatus,
+        contentStats,
       );
 
       const manifestPath = path.join(workDir, 'manifest.json');
@@ -291,7 +322,7 @@ export class BackupOrchestratorService {
       await this.backupLogger.info(
         jobId,
         'MANIFEST',
-        'Manifest created',
+        `Manifest created — content snapshot: units=${contentStats?.totalUnits ?? '?'}, lessons=${contentStats?.totalLessons ?? '?'}`,
         undefined,
         Date.now() - manifestStart,
       );
@@ -495,6 +526,13 @@ export class BackupOrchestratorService {
     mediaResult: MediaBackupResult,
     configResult: ConfigBackupResult,
     consistencyStatus: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED',
+    contentStats?: {
+      totalUnits: number;
+      totalLessons: number;
+      totalContents: number;
+      totalQuestions: number;
+      capturedAt: string;
+    },
   ): BackupManifest {
     // حساب checksums لكل ملف مهم
     const checksums: Record<string, string> = {};
@@ -548,6 +586,7 @@ export class BackupOrchestratorService {
         missingStorageKeys: mediaResult.details?.missingStorageKeys ?? [],
       },
       checksums,
+      contentStats,
     };
   }
 
