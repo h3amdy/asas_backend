@@ -613,8 +613,178 @@ export class RestoreOrchestratorService {
   }
 
   // ══════════════════════════════════════════════
+  // ──  PRE-RESTORE ANALYSIS (DEC-014)
+  // ══════════════════════════════════════════════
+
+  /**
+   * تحليل نسخة قبل استعادتها
+   * يُعيد مقارنة بين المحتوى في النسخة والمحتوى الحالي + تقييم المخاطر
+   */
+  async getRestorePreview(backupUuid: string): Promise<RestorePreviewResult> {
+    const instance = await this.prisma.backupInstance.findUnique({
+      where: { uuid: backupUuid },
+    });
+
+    if (!instance || instance.isDeleted) {
+      return {
+        backupInfo: null,
+        backupStats: null,
+        currentStats: await this.getCurrentStats(),
+        diff: null,
+        riskLevel: 'UNKNOWN',
+        warnings: [],
+        hasContentStats: false,
+        canRestore: false,
+        canRestoreReason: 'Backup not found or deleted',
+      };
+    }
+
+    // ── قراءة manifest من داخل الأرشيف بدون فك كامل ──
+    let manifest: BackupManifest | null = null;
+    try {
+      const tmpDir = path.join(path.dirname(path.dirname(instance.storagePath)), STORAGE_DIRS.TEMP, `preview-${backupUuid}`);
+      await this.storage.ensureDirectory(tmpDir);
+
+      // استخراج manifest.json فقط
+      await execFileAsync('tar', ['-xzf', instance.storagePath, '-C', tmpDir, 'manifest.json']);
+
+      const manifestPath = path.join(tmpDir, 'manifest.json');
+      const raw = await fsp.readFile(manifestPath, 'utf-8');
+      manifest = JSON.parse(raw) as BackupManifest;
+
+      // تنظيف مجلد preview المؤقت
+      await fsp.rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      this.logger.warn(`Could not read manifest for backup ${backupUuid}`);
+    }
+
+    const currentStats = await this.getCurrentStats();
+    const backupStats = manifest?.contentStats ?? null;
+
+    const backupInfo = {
+      uuid: instance.uuid,
+      backupName: instance.backupName,
+      createdAt: instance.createdAt.toISOString(),
+      fileSizeBytes: Number(instance.fileSizeBytes ?? 0),
+      category: instance.category,
+    };
+
+    if (!backupStats) {
+      return {
+        backupInfo,
+        backupStats: null,
+        currentStats,
+        diff: null,
+        riskLevel: 'UNKNOWN',
+        warnings: [
+          {
+            type: 'NO_STATS',
+            severity: 'MEDIUM',
+            count: 0,
+            percentage: 0,
+            message: 'إحصاءات هذه النسخة غير متاحة — أُنشئت قبل تحديث النظام',
+          },
+        ],
+        hasContentStats: false,
+        canRestore: true,
+      };
+    }
+
+    // ── حساب الفروقات ──
+    const diff = this.computeDiff(currentStats, backupStats);
+
+    // ── تقييم المخاطر ──
+    const { riskLevel, warnings } = this.computeRisk(diff, backupStats, currentStats);
+
+    return {
+      backupInfo,
+      backupStats,
+      currentStats,
+      diff,
+      riskLevel,
+      warnings,
+      hasContentStats: true,
+      canRestore: true,
+    };
+  }
+
+  /** إحصاءات قاعدة البيانات الحالية */
+  private async getCurrentStats(): Promise<ContentStats> {
+    const [totalUnits, totalLessons, totalContents, totalQuestions] = await Promise.all([
+      this.prisma.unit.count({ where: { isDeleted: false } }),
+      this.prisma.lessonTemplate.count({ where: { isDeleted: false } }),
+      this.prisma.lessonContent.count({ where: { isDeleted: false } }),
+      this.prisma.question.count({ where: { isDeleted: false } }),
+    ]);
+    return { totalUnits, totalLessons, totalContents, totalQuestions };
+  }
+
+  /** حساب الفرق بالعدد والنسبة لكل مكون */
+  private computeDiff(
+    current: ContentStats,
+    backup: ContentStats,
+  ): ContentDiff {
+    const calc = (cur: number, bak: number) => ({
+      difference: bak - cur,
+      percentage: cur === 0 ? 0 : Math.round(((bak - cur) / cur) * 1000) / 10,
+    });
+
+    return {
+      units:     calc(current.totalUnits,     backup.totalUnits),
+      lessons:   calc(current.totalLessons,   backup.totalLessons),
+      contents:  calc(current.totalContents,  backup.totalContents),
+      questions: calc(current.totalQuestions, backup.totalQuestions),
+    };
+  }
+
+  /** تحديد مستوى الخطر والتحذيرات المُهيكلة */
+  private computeRisk(
+    diff: ContentDiff,
+    backupStats: ContentStats,
+    currentStats: ContentStats,
+  ): { riskLevel: RiskLevel; warnings: RestoreWarning[] } {
+    const warnings: RestoreWarning[] = [];
+
+    const checks = [
+      { key: 'units',     label: 'وحدة',  type: 'UNITS_LOSS',    diff: diff.units,     current: currentStats.totalUnits },
+      { key: 'lessons',   label: 'درساً', type: 'LESSONS_LOSS',  diff: diff.lessons,   current: currentStats.totalLessons },
+      { key: 'contents',  label: 'محتوى', type: 'CONTENTS_LOSS', diff: diff.contents,  current: currentStats.totalContents },
+      { key: 'questions', label: 'سؤالاً',type: 'QUESTIONS_LOSS',diff: diff.questions, current: currentStats.totalQuestions },
+    ];
+
+    let maxLoss = 0;
+
+    for (const check of checks) {
+      if (check.diff.difference < 0) {
+        const lossCount = Math.abs(check.diff.difference);
+        const lossPct   = Math.abs(check.diff.percentage);
+        maxLoss = Math.max(maxLoss, lossPct);
+
+        const severity: 'LOW' | 'MEDIUM' | 'HIGH' =
+          lossPct > 15 ? 'HIGH' : lossPct > 5 ? 'MEDIUM' : 'LOW';
+
+        warnings.push({
+          type:       check.type,
+          severity,
+          count:      lossCount,
+          percentage: lossPct,
+          message:    `ستفقد ${lossCount.toLocaleString('ar-SA')} ${check.label} (-${lossPct}%)`,
+        });
+      }
+    }
+
+    const riskLevel: RiskLevel =
+      maxLoss === 0   ? 'SAFE'   :
+      maxLoss < 5     ? 'LOW'    :
+      maxLoss < 15    ? 'MEDIUM' : 'HIGH';
+
+    return { riskLevel, warnings };
+  }
+
+  // ══════════════════════════════════════════════
   // ──  HELPER METHODS
   // ══════════════════════════════════════════════
+
 
   /**
    * التحقق من سلامة الأرشيف
@@ -906,4 +1076,55 @@ export class RestoreOrchestratorService {
 
     return files;
   }
+}
+
+// ══════════════════════════════════════════════
+// ──  Types: Pre-Restore Analysis
+// ══════════════════════════════════════════════
+
+export type RiskLevel = 'SAFE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN';
+
+export interface ContentStats {
+  totalUnits: number;
+  totalLessons: number;
+  totalContents: number;
+  totalQuestions: number;
+}
+
+export interface ContentDiffItem {
+  difference: number;   // موجب = زيادة، سالب = نقص
+  percentage: number;   // النسبة المئوية للتغيير
+}
+
+export interface ContentDiff {
+  units:     ContentDiffItem;
+  lessons:   ContentDiffItem;
+  contents:  ContentDiffItem;
+  questions: ContentDiffItem;
+}
+
+export interface RestoreWarning {
+  type:       string;             // UNITS_LOSS | LESSONS_LOSS | ...
+  severity:   'LOW' | 'MEDIUM' | 'HIGH';
+  count:      number;
+  percentage: number;
+  message:    string;             // نص عربي للعرض
+}
+
+export interface RestorePreviewResult {
+  backupInfo: {
+    uuid: string;
+    backupName: string;
+    createdAt: string;
+    fileSizeBytes: number;
+    category: string;
+  } | null;
+  backupStats:     ContentStats | null;
+  currentStats:    ContentStats;
+  diff:            ContentDiff | null;
+  riskLevel:       RiskLevel;
+  warnings:        RestoreWarning[];
+  hasContentStats: boolean;
+  canRestore:      boolean;
+  canRestoreReason?: string;
 }

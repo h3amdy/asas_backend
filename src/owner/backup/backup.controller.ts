@@ -214,6 +214,15 @@ export class BackupController {
   }
 
   /**
+   * GET /owner/backups/instances/:uuid/restore-preview
+   * تحليل نسخة قبل استعادتها — يُعيد مقارنة المحتوى + تقييم المخاطر (DEC-014)
+   */
+  @Get('instances/:uuid/restore-preview')
+  async getRestorePreview(@Param('uuid') uuid: string) {
+    return this.restoreOrchestrator.getRestorePreview(uuid);
+  }
+
+  /**
    * PATCH /owner/backups/instances/:uuid/pin
    * تثبيت/إلغاء تثبيت نسخة (منع الحذف التلقائي)
    */
