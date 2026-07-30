@@ -388,6 +388,9 @@ export class BackupOrchestratorService {
       await this.storage.moveFile(archivePath, finalArchivePath);
       await this.storage.moveFile(checksumPath, finalChecksumPath);
 
+      // حفظ manifest كـ sidecar — يُسرّع restore-preview بدون فك ضغط الأرشيف
+      const sidecarManifestPath = `${finalArchivePath}.manifest.json`;
+
       await this.backupLogger.info(
         jobId,
         'ACTIVATE',
@@ -417,6 +420,13 @@ export class BackupOrchestratorService {
           'utf-8',
         );
       }
+
+      // كتابة sidecar manifest.json بجانب الأرشيف للوصول السريع
+      await fsp.writeFile(
+        sidecarManifestPath,
+        JSON.stringify(manifest, null, 2),
+        'utf-8',
+      );
 
       const instanceStatus: BackupInstanceStatus =
         mediaStatus === 'PARTIAL_SUCCESS'

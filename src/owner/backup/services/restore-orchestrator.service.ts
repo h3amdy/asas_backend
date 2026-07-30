@@ -639,21 +639,41 @@ export class RestoreOrchestratorService {
       };
     }
 
-    // ── قراءة manifest من داخل الأرشيف بدون فك كامل ──
+    // ── قراءة manifest — Sidecar (سريع) أو tar (للنسخ القديمة) ──
     let manifest: BackupManifest | null = null;
     try {
-      const tmpDir = path.join(path.dirname(path.dirname(instance.storagePath)), STORAGE_DIRS.TEMP, `preview-${backupUuid}`);
-      await this.storage.ensureDirectory(tmpDir);
+      const sidecarPath = `${instance.storagePath}.manifest.json`;
 
-      // استخراج manifest.json فقط
-      await execFileAsync('tar', ['-xzf', instance.storagePath, '-C', tmpDir, 'manifest.json']);
+      // محاولة قراءة الـ sidecar أولاً (النسخ الجديدة)
+      const sidecarExists = await fsp.access(sidecarPath).then(() => true).catch(() => false);
 
-      const manifestPath = path.join(tmpDir, 'manifest.json');
-      const raw = await fsp.readFile(manifestPath, 'utf-8');
-      manifest = JSON.parse(raw) as BackupManifest;
+      if (sidecarExists) {
+        // مسار سريع — قراءة مباشرة بدون فك ضغط
+        const raw = await fsp.readFile(sidecarPath, 'utf-8');
+        manifest = JSON.parse(raw) as BackupManifest;
+        this.logger.debug(`restore-preview: used sidecar for ${backupUuid}`);
+      } else {
+        // مسار احتياطي — فك الأرشيف للنسخ القديمة
+        const tmpDir = path.join(
+          path.dirname(path.dirname(instance.storagePath)),
+          STORAGE_DIRS.TEMP,
+          `preview-${backupUuid}`,
+        );
+        await this.storage.ensureDirectory(tmpDir);
 
-      // تنظيف مجلد preview المؤقت
-      await fsp.rm(tmpDir, { recursive: true, force: true });
+        await execFileAsync('tar', ['-xzf', instance.storagePath, '-C', tmpDir, 'manifest.json']);
+
+        const manifestPath = path.join(tmpDir, 'manifest.json');
+        const raw = await fsp.readFile(manifestPath, 'utf-8');
+        manifest = JSON.parse(raw) as BackupManifest;
+
+        // تنظيف مجلد preview المؤقت
+        await fsp.rm(tmpDir, { recursive: true, force: true });
+
+        // حفظ sidecar للمرات القادمة
+        await fsp.writeFile(sidecarPath, JSON.stringify(manifest, null, 2), 'utf-8');
+        this.logger.debug(`restore-preview: created sidecar for ${backupUuid}`);
+      }
     } catch {
       this.logger.warn(`Could not read manifest for backup ${backupUuid}`);
     }
