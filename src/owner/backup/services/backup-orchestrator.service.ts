@@ -224,21 +224,25 @@ export class BackupOrchestratorService {
         dbResult.details.mediaStorageKeys,
       );
 
-      const mediaStatus =
-        mediaResult.details.missingStorageKeys.length > 0
-          ? 'PARTIAL_SUCCESS'
-          : 'SUCCESS';
+      // ── تحديد حالة الوسائط — صادق وبسيط ──
+      const missingCount = mediaResult.details.missingStorageKeys.length;
+      const totalExpected = mediaResult.details.filesExpected;
+      const missingPercent = totalExpected > 0 ? (missingCount / totalExpected) * 100 : 0;
+
+      const mediaStatus = missingCount === 0 ? 'SUCCESS' : 'PARTIAL_SUCCESS';
 
       await this.backupLogger.logBackupEvent({
         backupJobId: jobId,
-        level:
-          mediaResult.details.missingStorageKeys.length > 0 ? 'WARN' : 'INFO',
+        level: missingCount > 0 ? 'WARN' : 'INFO',
         phase: 'MEDIA_COPY',
-        message: `Media copy: ${mediaResult.details.filesCopied}/${mediaResult.details.filesExpected} files`,
+        message: `Media copy: ${mediaResult.details.filesCopied}/${totalExpected} files (${missingCount} missing, ${missingPercent.toFixed(1)}%)`,
         metadata: {
           filesCopied: mediaResult.details.filesCopied,
-          filesExpected: mediaResult.details.filesExpected,
-          missingCount: mediaResult.details.missingStorageKeys.length,
+          filesExpected: totalExpected,
+          missingCount,
+          missingPercent: Number(missingPercent.toFixed(1)),
+          mediaStatus,
+          missingKeys: mediaResult.details.missingStorageKeys.slice(0, 20), // أول 20 للتشخيص
         },
         durationMs: mediaResult.durationMs,
       });

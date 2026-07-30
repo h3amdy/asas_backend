@@ -59,13 +59,14 @@ export class MediaBackupEngine {
           continue;
         }
 
-        // 🔄 Fallback: إذا كان storage_key يشير لـ .jpg/.png محذوف، جرّب .webp
-        // هذا يعالج البيانات القديمة حيث processImage() حذفت الأصلي بدون تحديث DB
+        // 🔄 Fallback: إذا كان storage_key يشير لـ .jpg/.png/.bin محذوف، جرّب .webp
+        // يعالج: (1) بيانات قديمة حيث processImage() حذفت الأصلي بدون تحديث DB
+        //         (2) ملفات .bin من contentType غير معروف تحوّلت إلى .webp
         let actualKey = storageKey;
         try {
           await fsp.access(sourcePath);
         } catch {
-          const webpKey = storageKey.replace(/\.(jpg|jpeg|png|gif)$/i, '.webp');
+          const webpKey = storageKey.replace(/\.(jpg|jpeg|png|gif|bin)$/i, '.webp');
           if (webpKey !== storageKey) {
             const webpPath = path.resolve(mediaBasePath, webpKey);
             if (webpPath.startsWith(resolvedBase)) {

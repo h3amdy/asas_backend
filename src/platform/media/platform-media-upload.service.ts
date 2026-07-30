@@ -310,7 +310,7 @@ export class PlatformMediaUploadService {
             'audio/wav': 'wav', 'audio/mp4': 'm4a',
             'application/pdf': 'pdf',
         };
-        return map[contentType] || 'bin';
+        return map[contentType] || (contentType.startsWith('image/') ? 'webp' : 'bin');
     }
 
     private isContentTypeValidForKind(contentType: string, kind: MediaKind): boolean {
