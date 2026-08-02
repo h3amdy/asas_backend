@@ -6,6 +6,9 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PreviewStudentsImportDto, PreviewTeachersImportDto } from './dto/import.dto';
 import { UserType } from '@prisma/client';
+import { normalizeImportName } from './utils/import-name.normalizer';
+import { normalizeSection, normalizeAssignmentSections } from './utils/import-section.normalizer';
+import { PERSON } from '../../shared/validation/person';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -25,40 +28,6 @@ export interface CredentialEntry {
     phone?: string;
     studentNames?: string[];
     subjects?: string[];
-}
-
-// ─── Normalizer — يقبل كلا الصيغتين ─────────────────────────
-
-/** يجمع الأسماء المجزأة في اسم واحد، أو يُرجع الاسم الكامل */
-function normalizeName(record: any, fullNameKey: string): string | null {
-    // صيغة 1: اسم واحد كامل
-    if (record[fullNameKey]) return record[fullNameKey].trim();
-
-    // صيغة 2: أسماء مجزأة
-    const parts = [
-        record.first_name,
-        record.second_name,
-        record.third_name,
-        record.last_name,
-    ].filter(Boolean).map((p: string) => p.trim());
-
-    return parts.length >= 2 ? parts.join(' ') : parts.length === 1 ? parts[0] : null;
-}
-
-/** يوحّد اسم الشعبة: يقبل section أو section_name */
-function normalizeSection(record: any): string | null {
-    return record.section_name?.trim() || record.section?.trim() || null;
-}
-
-/** يوحّد شعب الإسناد: يقبل sections[] أو section_name (string) */
-function normalizeAssignmentSections(assignment: any): string[] {
-    if (assignment.sections && assignment.sections.length > 0) {
-        return assignment.sections;
-    }
-    if (assignment.section_name) {
-        return [assignment.section_name];
-    }
-    return []; // فارغ = جميع الشعب (DEC-ADM-091-06)
 }
 
 @Injectable()
@@ -304,8 +273,8 @@ export class ImportsService {
             }
         }
 
-        // Track phones in file for in-file duplicate detection
-        const phonesInFile = new Map<string, number>();
+        // Track name+grade+section in file for in-file duplicate detection
+        const studentsInFile = new Map<string, number>();
 
         const records: RecordResult[] = [];
         let newCount = 0, dupCount = 0, errCount = 0;
@@ -316,41 +285,17 @@ export class ImportsService {
             let isDuplicate = false;
 
             // ─── Normalize: اسم الطالب ──────────────────────
-            const studentName = normalizeName(s, 'student_name');
-            if (!studentName || studentName.length < 2) {
-                errors.push('اسم الطالب مطلوب (student_name أو first_name + last_name)');
+            const studentName = normalizeImportName(s, 'student_name');
+            if (!studentName || studentName.length < 1) {
+                errors.push('اسم الطالب مطلوب (student_name أو first_name على الأقل)');
+            } else if (studentName.length > PERSON.NAME_MAX) {
+                errors.push(`اسم الطالب يجب ألا يتجاوز ${PERSON.NAME_MAX} حرف`);
             }
 
             // ─── Normalize: الشعبة ──────────────────────────
             const sectionName = normalizeSection(s);
             if (!sectionName) {
                 errors.push('اسم الشعبة مطلوب (section أو section_name)');
-            }
-
-            // ─── كشف التكرار بالهاتف ────────────────────────
-            if (s.phone) {
-                // تكرار داخل الملف
-                if (phonesInFile.has(s.phone)) {
-                    errors.push(`الطالب مكرر في الملف (سطر ${phonesInFile.get(s.phone)! + 1})`);
-                    isDuplicate = true;
-                } else {
-                    phonesInFile.set(s.phone, i);
-                }
-
-                // تكرار في المدرسة
-                if (!isDuplicate) {
-                    const existingStudent = await this.prisma.user.findFirst({
-                        where: {
-                            phone: s.phone,
-                            userType: 'STUDENT',
-                            schoolId: school.id,
-                            isDeleted: false,
-                        },
-                    });
-                    if (existingStudent) {
-                        isDuplicate = true;
-                    }
-                }
             }
 
             // Validate grade
@@ -372,6 +317,39 @@ export class ImportsService {
                 }
             }
 
+            // ─── كشف التكرار بالاسم+الصف+الشعبة ─────────────
+            if (studentName && s.grade_code && sectionName) {
+                const dupKey = `${studentName}|${s.grade_code}|${sectionName}`;
+
+                // تكرار داخل الملف
+                if (studentsInFile.has(dupKey)) {
+                    isDuplicate = true;
+                } else {
+                    studentsInFile.set(dupKey, i);
+                }
+
+                // تكرار في المدرسة (بالاسم + الصف + الشعبة + السنة)
+                if (!isDuplicate && grade && sectionId) {
+                    const existingEnrollment = await this.prisma.studentEnrollment.findFirst({
+                        where: {
+                            yearId: currentYear.id,
+                            gradeId: grade.id,
+                            sectionId: sectionId,
+                            student: {
+                                user: {
+                                    name: studentName,
+                                    schoolId: school.id,
+                                    isDeleted: false,
+                                },
+                            },
+                        },
+                    });
+                    if (existingEnrollment) {
+                        isDuplicate = true;
+                    }
+                }
+            }
+
             // Validate birth_date format
             if (s.birth_date && isNaN(Date.parse(s.birth_date))) {
                 errors.push(`تاريخ الميلاد "${s.birth_date}" غير صالح`);
@@ -380,9 +358,11 @@ export class ImportsService {
             // ─── Normalize: ولي الأمر ───────────────────────
             let parentName: string | null = null;
             if (s.parent) {
-                parentName = normalizeName(s.parent, 'name');
-                if (!parentName || parentName.length < 2) {
-                    errors.push('اسم ولي الأمر مطلوب (name أو first_name + last_name)');
+                parentName = normalizeImportName(s.parent, 'name');
+                if (!parentName || parentName.length < 1) {
+                    errors.push('اسم ولي الأمر مطلوب (name أو first_name على الأقل)');
+                } else if (parentName.length > PERSON.NAME_MAX) {
+                    errors.push(`اسم ولي الأمر يجب ألا يتجاوز ${PERSON.NAME_MAX} حرف`);
                 }
             }
 
@@ -500,9 +480,11 @@ export class ImportsService {
             let isDuplicate = false;
 
             // ─── Normalize: اسم المعلم ──────────────────────
-            const teacherName = normalizeName(t, 'teacher_name');
-            if (!teacherName || teacherName.length < 2) {
-                errors.push('اسم المعلم مطلوب (teacher_name أو first_name + last_name)');
+            const teacherName = normalizeImportName(t, 'teacher_name');
+            if (!teacherName || teacherName.length < 1) {
+                errors.push('اسم المعلم مطلوب (teacher_name أو first_name على الأقل)');
+            } else if (teacherName.length > PERSON.NAME_MAX) {
+                errors.push(`اسم المعلم يجب ألا يتجاوز ${PERSON.NAME_MAX} حرف`);
             }
 
             // Check in-file duplicate by phone
@@ -740,8 +722,8 @@ export class ImportsService {
         credentials: CredentialEntry[],
     ) {
         // ─ Normalize: استخدم الاسم الموحّد من preview details
-        const studentName = normalizeName(studentData, 'student_name') || details.name;
-        const parentName = details.parent?.name || normalizeName(studentData.parent, 'name');
+        const studentName = normalizeImportName(studentData, 'student_name') || details.name;
+        const parentName = details.parent?.name || normalizeImportName(studentData.parent, 'name');
 
         await this.prisma.$transaction(async (tx) => {
             // Increment school code

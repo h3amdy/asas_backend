@@ -1,50 +1,46 @@
 // src/school/manager/parents/dto/parents.dto.ts
-import { IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsArray, IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+    PersonName, PersonPhone, PersonGender, PersonEmail, PERSON,
+} from '../../../../shared/validation/person';
 
 // ─── SRS-PAR-02: Create Parent ────────────────────────────
 
 export class CreateParentDto {
     // ── البيانات الشخصية (users) ──
 
-    @IsString()
-    @MinLength(2)
-    @MaxLength(80)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @PersonName()
     name!: string;
 
     @IsOptional()
-    @IsString()
-    @IsIn(['MALE', 'FEMALE'])
+    @PersonGender()
     gender?: string;
 
-    @IsString()
-    @MinLength(6)
-    @MaxLength(20)
+    @PersonPhone()
     phone!: string;
 
     @IsOptional()
-    @IsEmail()
+    @PersonEmail()
     email?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.PROVINCE_MAX)
     province?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.DISTRICT_MAX)
     district?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.ADDRESS_AREA_MAX)
     addressArea?: string;
 
     @IsOptional()
     @IsString()
-    @MinLength(6)
+    @MinLength(PERSON.PASSWORD_MIN)
     password?: string;
 }
 
@@ -52,40 +48,34 @@ export class CreateParentDto {
 
 export class UpdateParentDto {
     @IsOptional()
-    @IsString()
-    @MinLength(2)
-    @MaxLength(80)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @PersonName()
     name?: string;
 
     @IsOptional()
-    @IsString()
-    @IsIn(['MALE', 'FEMALE'])
+    @PersonGender()
     gender?: string;
 
     @IsOptional()
-    @IsString()
-    @MinLength(6)
-    @MaxLength(20)
+    @PersonPhone()
     phone?: string;
 
     @IsOptional()
-    @IsEmail()
+    @PersonEmail()
     email?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.PROVINCE_MAX)
     province?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.DISTRICT_MAX)
     district?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.ADDRESS_AREA_MAX)
     addressArea?: string | null;
 }
 
@@ -102,7 +92,7 @@ export class LinkChildrenDto {
 export class ResetPasswordDto {
     @IsOptional()
     @IsString()
-    @MinLength(6)
+    @MinLength(PERSON.PASSWORD_MIN)
     password?: string;
 }
 

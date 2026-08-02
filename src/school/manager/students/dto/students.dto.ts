@@ -3,44 +3,44 @@ import {
     IsDateString, IsEnum, IsInt, IsOptional, IsString,
     MaxLength, Min, MinLength, IsBoolean,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import {
+    PersonName, OptionalPersonPhone, PersonGender, PersonEmail, PERSON,
+} from '../../../../shared/validation/person';
 
 // ─── SRS-STU-02: Create Student ───────────────────────────────
 
 export class CreateStudentDto {
-    @IsString()
-    @MinLength(2)
-    @MaxLength(100)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @PersonName()
     name!: string;
 
     @IsOptional()
-    @IsString()
-    @IsEnum(['MALE', 'FEMALE'], { message: 'gender must be MALE or FEMALE' })
+    @PersonGender()
     gender?: string;
 
     @IsOptional()
     @IsDateString()
     birthDate?: string;
 
-    @IsOptional()
-    @IsString()
+    @OptionalPersonPhone()
     phone?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(PERSON.PROVINCE_MAX)
     province?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(PERSON.DISTRICT_MAX)
     district?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(PERSON.ADDRESS_AREA_MAX)
     addressArea?: string;
 
     @IsString()
-    @MinLength(6)
+    @MinLength(PERSON.PASSWORD_MIN)
     password!: string;
 
     @IsInt()
@@ -61,48 +61,47 @@ export class CreateStudentDto {
 
 export class UpdateStudentDto {
     @IsOptional()
-    @IsString()
-    @MinLength(2)
-    @MaxLength(100)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @PersonName()
     name?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.NAME_MAX)
     displayName?: string;
 
     @IsOptional()
-    @IsString()
-    @IsEnum(['MALE', 'FEMALE'], { message: 'gender must be MALE or FEMALE' })
+    @PersonGender()
     gender?: string;
 
     @IsOptional()
     @IsDateString()
     birthDate?: string;
 
-    @IsOptional()
-    @IsString()
+    @OptionalPersonPhone()
     phone?: string;
 
     @IsOptional()
-    @IsString()
+    @PersonEmail()
     email?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(PERSON.PROVINCE_MAX)
     province?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(PERSON.DISTRICT_MAX)
     district?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(PERSON.ADDRESS_AREA_MAX)
     addressArea?: string;
 
     @IsOptional()
     @IsString()
+    @MaxLength(PERSON.ADDRESS_DETAILS_MAX)
     addressDetails?: string;
 }
 
@@ -154,7 +153,7 @@ export class ReEnrollDto {
 
 export class ResetPasswordDto {
     @IsString()
-    @MinLength(6)
+    @MinLength(PERSON.PASSWORD_MIN)
     newPassword!: string;
 }
 

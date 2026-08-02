@@ -1,71 +1,68 @@
 // src/school/manager/teachers/dto/teachers.dto.ts
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+    PersonName, OptionalPersonPhone, PersonGender, PersonEmail, PERSON,
+} from '../../../../shared/validation/person';
+import { TEACHER } from '../../../../shared/validation/teacher/teacher.constants';
 
 // ─── SRS-TCH-02: Create Teacher ───────────────────────────
 
 export class CreateTeacherDto {
     // ── البيانات الشخصية (users) ──
 
-    @IsString()
-    @MinLength(2)
-    @MaxLength(80)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @PersonName()
     name!: string;
 
-    @IsString()
-    @IsIn(['MALE', 'FEMALE'])
+    @PersonGender()
     gender!: string;
 
-    @IsString()
-    @MinLength(6)
-    @MaxLength(20)
-    phone!: string;
+    @OptionalPersonPhone()
+    phone?: string;
 
     @IsOptional()
-    @IsEmail()
+    @PersonEmail()
     email?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.PROVINCE_MAX)
     province?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.DISTRICT_MAX)
     district?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.ADDRESS_AREA_MAX)
     addressArea?: string;
 
     @IsOptional()
     @IsString()
-    @MinLength(6)
+    @MinLength(PERSON.PASSWORD_MIN)
     password?: string;
 
     // ── البيانات المهنية (teachers) ──
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(TEACHER.SPECIALIZATION_MAX)
     specialization?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(TEACHER.QUALIFICATION_MAX)
     qualification?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(200)
+    @MaxLength(TEACHER.EXPERIENCE_MAX)
     experience?: string;
 
     @IsOptional()
     @IsString()
-    @MaxLength(500)
+    @MaxLength(TEACHER.NOTES_MAX)
     notes?: string;
 }
 
@@ -75,62 +72,55 @@ export class UpdateTeacherDto {
     // ── البيانات الشخصية (users) ──
 
     @IsOptional()
-    @IsString()
-    @MinLength(2)
-    @MaxLength(80)
-    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @PersonName()
     name?: string;
 
     @IsOptional()
-    @IsString()
-    @IsIn(['MALE', 'FEMALE'])
+    @PersonGender()
     gender?: string;
 
-    @IsOptional()
-    @IsString()
-    @MinLength(6)
-    @MaxLength(20)
+    @OptionalPersonPhone()
     phone?: string;
 
     @IsOptional()
-    @IsEmail()
+    @PersonEmail()
     email?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.PROVINCE_MAX)
     province?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.DISTRICT_MAX)
     district?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.ADDRESS_AREA_MAX)
     addressArea?: string | null;
 
     // ── البيانات المهنية (teachers) ──
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(TEACHER.SPECIALIZATION_MAX)
     specialization?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(TEACHER.QUALIFICATION_MAX)
     qualification?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(200)
+    @MaxLength(TEACHER.EXPERIENCE_MAX)
     experience?: string | null;
 
     @IsOptional()
     @IsString()
-    @MaxLength(500)
+    @MaxLength(TEACHER.NOTES_MAX)
     notes?: string | null;
 }
 
@@ -139,7 +129,7 @@ export class UpdateTeacherDto {
 export class ResetPasswordDto {
     @IsOptional()
     @IsString()
-    @MinLength(6)
+    @MinLength(PERSON.PASSWORD_MIN)
     newPassword?: string;
 }
 

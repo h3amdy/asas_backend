@@ -1,9 +1,12 @@
 // src/owner/imports/dto/import.dto.ts
 import {
-    IsString, IsArray, IsOptional, IsEnum,
-    ValidateNested, MinLength, MaxLength, Matches,
+    IsString, IsArray, IsOptional,
+    ValidateNested, MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+    PersonPhone, OptionalPersonPhone, PersonGender, PERSON,
+} from '../../../shared/validation/person';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Student Import DTOs
@@ -29,13 +32,11 @@ class StudentParentDto {
     @IsString()
     last_name?: string;
 
-    @IsString()
-    @Matches(/^7\d{8}$/, { message: 'رقم هاتف ولي الأمر يجب أن يكون 9 أرقام ويبدأ بـ 7' })
+    @PersonPhone()
     phone!: string;
 
     @IsOptional()
-    @IsString()
-    @IsEnum(['MALE', 'FEMALE'], { message: 'gender must be MALE or FEMALE' })
+    @PersonGender()
     gender?: string;
 
     @IsOptional()
@@ -48,7 +49,7 @@ class StudentRecordDto {
     // صيغة 1: student_name (اسم واحد كامل)
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.NAME_MAX)
     student_name?: string;
 
     // صيغة 2: أسماء مجزأة (تُجمع في الـ Service)
@@ -68,13 +69,10 @@ class StudentRecordDto {
     @IsString()
     last_name?: string;
 
-    @IsOptional()
-    @IsString()
-    @Matches(/^7\d{8}$/, { message: 'رقم الهاتف يجب أن يكون 9 أرقام ويبدأ بـ 7' })
+    @OptionalPersonPhone()
     phone?: string;
 
-    @IsString()
-    @IsEnum(['MALE', 'FEMALE'], { message: 'gender must be MALE or FEMALE' })
+    @PersonGender()
     gender!: string;
 
     @IsString()
@@ -129,7 +127,6 @@ class TeacherAssignmentDto {
 
     @IsOptional()
     @IsString()
-    @IsEnum(['PRIMARY', 'ASSISTANT'], { message: 'role must be PRIMARY or ASSISTANT' })
     role?: string;
 }
 
@@ -138,7 +135,7 @@ class TeacherRecordDto {
     // صيغة 1: teacher_name (اسم واحد كامل)
     @IsOptional()
     @IsString()
-    @MaxLength(100)
+    @MaxLength(PERSON.NAME_MAX)
     teacher_name?: string;
 
     // صيغة 2: أسماء مجزأة
@@ -158,13 +155,10 @@ class TeacherRecordDto {
     @IsString()
     last_name?: string;
 
-    @IsOptional()
-    @IsString()
-    @Matches(/^7\d{8}$/, { message: 'رقم الهاتف يجب أن يكون 9 أرقام ويبدأ بـ 7' })
+    @OptionalPersonPhone()
     phone?: string;
 
-    @IsString()
-    @IsEnum(['MALE', 'FEMALE'], { message: 'gender must be MALE or FEMALE' })
+    @PersonGender()
     gender!: string;
 
     @IsOptional()
