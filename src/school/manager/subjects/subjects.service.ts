@@ -466,7 +466,10 @@ export class SubjectsService {
                 // 1. تحقق من وجود المادة في القاموس
                 const dictSubject = await tx.subjectDictionary.findFirst({
                     where: { id: dictId, isDeleted: false, isActive: true },
-                    include: { gradeDictionary: { select: { id: true } } },
+                    include: {
+                        gradeDictionary: { select: { id: true } },
+                        coverMediaAsset: { select: { id: true } },
+                    },
                 });
                 if (!dictSubject) {
                     throw new BadRequestException(`INVALID_DICTIONARY_SUBJECT_${dictId}`);
@@ -494,7 +497,7 @@ export class SubjectsService {
                     );
                 }
 
-                // 4. إنشاء المادة
+                // 4. إنشاء المادة (مع نسخ غلاف القاموس الرسمي)
                 const subject = await tx.subject.create({
                     data: {
                         schoolId,
@@ -503,6 +506,7 @@ export class SubjectsService {
                         displayName: dictSubject.defaultName,
                         shortName: dictSubject.shortName,
                         code: dictSubject.code,
+                        coverMediaAssetId: dictSubject.coverMediaAsset?.id ?? null,
                     },
                 });
 
