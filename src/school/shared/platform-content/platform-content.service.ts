@@ -538,19 +538,19 @@ export class PlatformContentService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    //  4. Fork & Publish — نسخ + نشر مباشر
+    //  4. Fork for Publish — نسخ الدرس تمهيداً للنشر عبر المسار العادي
+    //
+    //  قاعدة معمارية (DEC-020 §11 #4 / DEC-021 §3):
+    //    Fork يُنشئ LessonTemplate فقط بحالة READY.
+    //    لا يُنشئ Lesson ولا LessonTarget ولا يُعدّل status/publishedAt.
+    //    النشر يتم عبر: saveTargeting() → publishLesson() → LessonDeliveryEngine.
     // ═══════════════════════════════════════════════════════════
 
-    async forkAndPublish(
+    async forkForPublish(
         schoolId: number,
         userUuid: string,
         lessonUuid: string,
-        sectionUuids: string[],
     ) {
-        if (!sectionUuids || sectionUuids.length === 0) {
-            throw new BadRequestException('يجب اختيار شعبة واحدة على الأقل');
-        }
-
         const { userId, teacherId } = await this.getTeacherContext(schoolId, userUuid);
 
         // 1. التحقق من التوزيع (نفس منطق fork)
@@ -606,23 +606,6 @@ export class PlatformContentService {
             throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
         }
 
-        // التحقق من الشُعب
-        const sections = await this.prisma.section.findMany({
-            where: { uuid: { in: sectionUuids }, isDeleted: false, isActive: true, grade: { schoolId } },
-        });
-        if (sections.length !== sectionUuids.length) {
-            throw new BadRequestException('بعض الشُعب غير موجودة');
-        }
-
-        // السنة والفصل الحالي
-        const cy = await this.prisma.year.findFirst({
-            where: { schoolId, isCurrent: true, isDeleted: false },
-            include: { terms: { where: { isCurrent: true, isDeleted: false }, take: 1 } },
-        });
-        if (!cy || cy.terms.length === 0) {
-            throw new BadRequestException('لا يوجد سنة أو فصل دراسي حالي');
-        }
-
         // الوحدة
         let targetUnitId: number | null = null;
         if (source.unit) {
@@ -645,7 +628,7 @@ export class PlatformContentService {
             targetUnitId = unit.id;
         }
 
-        // Transaction: Fork + Create Lesson + Target + Publish
+        // Transaction: Fork LessonTemplate فقط — بحالة READY
         return await this.prisma.$transaction(async (tx) => {
             // ترتيب آمن
             const maxOrder = await tx.lessonTemplate.aggregate({
@@ -654,7 +637,8 @@ export class PlatformContentService {
             });
             const newOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
 
-            // Fork LessonTemplate
+            // Fork LessonTemplate — READY وليس PUBLISHED
+            // (READY لأن المحتوى منسوخ من المنصة ومكتمل — saveTargeting يشترط READY)
             const newTemplate = await tx.lessonTemplate.create({
                 data: {
                     ownerType: 'SCHOOL',
@@ -663,7 +647,7 @@ export class PlatformContentService {
                     unitId: targetUnitId,
                     title: source.title,
                     orderIndex: newOrderIndex,
-                    status: 'PUBLISHED',
+                    status: 'READY',
                     coverMediaAssetId: source.coverMediaAssetId,
                     templateVersion: 1,
                     sourceTemplateId: source.id,
@@ -682,52 +666,16 @@ export class PlatformContentService {
                 data: { schoolLessonTemplateId: newTemplate.id },
             });
 
-            // Create published Lesson
-            const lesson = await tx.lesson.create({
-                data: {
-                    templateId: newTemplate.id,
-                    schoolId,
-                    teacherId,
-                    subjectId: schoolSubject.id,
-                    yearId: cy.id,
-                    termId: cy.terms[0].id,
-                    status: 'PUBLISHED',
-                    deliveryMethod: 'OPEN',
-                    linkType: 'ADDITIONAL',
-                    publishedAt: new Date(),
-                },
-            });
-
-            // Create LessonTargets
-            for (const sec of sections) {
-                await tx.lessonTarget.create({
-                    data: { lessonId: lesson.id, sectionId: sec.id },
-                });
-            }
-
-            // Delivery Log
-            await tx.lessonDeliveryLog.create({
-                data: {
-                    lessonId: lesson.id,
-                    actorUserId: userId,
-                    action: 'PUBLISH',
-                    policyAtTime: 'OPEN',
-                    details: JSON.stringify({
-                        source: 'platform_fork_and_publish',
-                        targetCount: sections.length,
-                        sourceLessonUuid: lessonUuid,
-                    }),
-                },
-            });
+            // لا Lesson، لا LessonTarget، لا DeliveryLog
+            // النشر يتم عبر المسار العادي: saveTargeting → publishLesson → DeliveryEngine
 
             return {
                 schoolLesson: {
                     uuid: newTemplate.uuid,
                     title: newTemplate.title,
-                    status: newTemplate.status,
+                    status: 'READY',
                 },
-                assignedSections: sections.length,
-                message: 'تم نشر الدرس مباشرة على الشعب المختارة',
+                message: 'تم نسخ الدرس — حدد الشعب وانشره',
             };
         });
     }
