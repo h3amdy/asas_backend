@@ -17,7 +17,7 @@ import { CreateBlockItemDto } from './dto/create-block-item.dto';
 import { UpdateBlockItemDto } from './dto/update-block-item.dto';
 import { ReorderBlocksDto } from './dto/reorder-blocks.dto';
 import { ReorderBlockItemsDto } from './dto/reorder-block-items.dto';
-import { bumpContentRevision } from '../../common/helpers/lesson-revision.helper';
+import { bumpContentRevision, touchRelatedLessons } from '../../common/helpers/lesson-revision.helper';
 
 @Injectable()
 export class TeacherLessonsService {
@@ -314,16 +314,24 @@ export class TeacherLessonsService {
             }
         }
 
-        const updated = await this.prisma.lessonTemplate.update({
-            where: { id: lesson.id },
-            data: {
-                ...(dto.title !== undefined && { title: dto.title }),
-                ...(targetUnitId !== lesson.unitId && { unitId: targetUnitId }),
-                ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
-                ...(dto.coverMediaAssetId !== undefined && {
-                    coverMediaAssetId: dto.coverMediaAssetId,
-                }),
-            },
+        // DEC-026 Phase 5: Administrative mutation + Sync signal (no revision bump)
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const result = await tx.lessonTemplate.update({
+                where: { id: lesson.id },
+                data: {
+                    ...(dto.title !== undefined && { title: dto.title }),
+                    ...(targetUnitId !== lesson.unitId && { unitId: targetUnitId }),
+                    ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
+                    ...(dto.coverMediaAssetId !== undefined && {
+                        coverMediaAssetId: dto.coverMediaAssetId,
+                    }),
+                },
+            });
+
+            // Sync signal: Lesson.updatedAt لإعلام Flutter بالتغيير
+            await touchRelatedLessons(tx, lesson.id);
+
+            return result;
         });
 
         return {
