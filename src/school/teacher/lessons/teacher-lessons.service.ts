@@ -17,6 +17,7 @@ import { CreateBlockItemDto } from './dto/create-block-item.dto';
 import { UpdateBlockItemDto } from './dto/update-block-item.dto';
 import { ReorderBlocksDto } from './dto/reorder-blocks.dto';
 import { ReorderBlockItemsDto } from './dto/reorder-block-items.dto';
+import { bumpContentRevision } from '../../common/helpers/lesson-revision.helper';
 
 @Injectable()
 export class TeacherLessonsService {
@@ -581,20 +582,24 @@ export class TeacherLessonsService {
             finalOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
         }
 
-        const block = await this.prisma.lessonContentBlock.create({
-            data: {
-                templateId: lesson.id,
-                title: dto.title ?? null,
-                orderIndex: finalOrderIndex,
-            },
-        });
+        return await this.prisma.$transaction(async (tx) => {
+            const block = await tx.lessonContentBlock.create({
+                data: {
+                    templateId: lesson.id,
+                    title: dto.title ?? null,
+                    orderIndex: finalOrderIndex,
+                },
+            });
 
-        return {
-            uuid: block.uuid,
-            title: block.title,
-            orderIndex: block.orderIndex,
-            items: [],
-        };
+            await bumpContentRevision(tx, lesson.id);
+
+            return {
+                uuid: block.uuid,
+                title: block.title,
+                orderIndex: block.orderIndex,
+                items: [],
+            };
+        });
     }
 
     // ─────── تعديل فقرة ──────────────────────────────────────────
@@ -619,18 +624,22 @@ export class TeacherLessonsService {
             throw new NotFoundException('الفقرة غير موجودة');
         }
 
-        const updated = await this.prisma.lessonContentBlock.update({
-            where: { id: block.id },
-            data: {
-                ...(dto.title !== undefined && { title: dto.title }),
-            },
-        });
+        return await this.prisma.$transaction(async (tx) => {
+            const updated = await tx.lessonContentBlock.update({
+                where: { id: block.id },
+                data: {
+                    ...(dto.title !== undefined && { title: dto.title }),
+                },
+            });
 
-        return {
-            uuid: updated.uuid,
-            title: updated.title,
-            orderIndex: updated.orderIndex,
-        };
+            await bumpContentRevision(tx, lesson.id);
+
+            return {
+                uuid: updated.uuid,
+                title: updated.title,
+                orderIndex: updated.orderIndex,
+            };
+        });
     }
 
     // ─────── حذف فقرة (مع عناصرها) ───────────────────────────────
@@ -656,18 +665,20 @@ export class TeacherLessonsService {
 
         const now = new Date();
 
-        await this.prisma.$transaction([
+        await this.prisma.$transaction(async (tx) => {
             // soft-delete العناصر
-            this.prisma.lessonBlockItem.updateMany({
+            await tx.lessonBlockItem.updateMany({
                 where: { blockId: block.id, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
+            });
             // soft-delete الفقرة
-            this.prisma.lessonContentBlock.update({
+            await tx.lessonContentBlock.update({
                 where: { id: block.id },
                 data: { isDeleted: true, deletedAt: now },
-            }),
-        ]);
+            });
+
+            await bumpContentRevision(tx, lesson.id);
+        });
 
         return { message: 'تم حذف الفقرة بنجاح' };
     }
@@ -702,15 +713,17 @@ export class TeacherLessonsService {
         }
 
         // بما أنه لا يوجد unique constraint → يمكن التحديث مباشرة
-        await this.prisma.$transaction(
-            dto.orderedUuids.map((uuid, i) => {
-                const block = blocks.find((b) => b.uuid === uuid)!;
-                return this.prisma.lessonContentBlock.update({
+        await this.prisma.$transaction(async (tx) => {
+            for (let i = 0; i < dto.orderedUuids.length; i++) {
+                const block = blocks.find((b) => b.uuid === dto.orderedUuids[i])!;
+                await tx.lessonContentBlock.update({
                     where: { id: block.id },
                     data: { orderIndex: i + 1 },
                 });
-            }),
-        );
+            }
+
+            await bumpContentRevision(tx, lesson.id);
+        });
 
         return { message: 'تم إعادة ترتيب الفقرات بنجاح' };
     }
@@ -764,27 +777,31 @@ export class TeacherLessonsService {
             mediaAssetId = asset.id;
         }
 
-        const item = await this.prisma.lessonBlockItem.create({
-            data: {
-                blockId: block.id,
-                itemType: dto.itemType,
-                orderIndex: finalOrderIndex,
-                textContent: dto.textContent ?? null,
-                mediaAssetId,
-                caption: dto.caption ?? null,
-            },
-            include: { mediaAsset: { select: { uuid: true, kind: true } } },
-        });
+        return await this.prisma.$transaction(async (tx) => {
+            const item = await tx.lessonBlockItem.create({
+                data: {
+                    blockId: block.id,
+                    itemType: dto.itemType,
+                    orderIndex: finalOrderIndex,
+                    textContent: dto.textContent ?? null,
+                    mediaAssetId,
+                    caption: dto.caption ?? null,
+                },
+                include: { mediaAsset: { select: { uuid: true, kind: true } } },
+            });
 
-        return {
-            uuid: item.uuid,
-            itemType: item.itemType,
-            orderIndex: item.orderIndex,
-            textContent: item.textContent,
-            mediaAssetUuid: item.mediaAsset?.uuid ?? null,
-            mediaAssetKind: item.mediaAsset?.kind ?? null,
-            caption: item.caption,
-        };
+            await bumpContentRevision(tx, lesson.id);
+
+            return {
+                uuid: item.uuid,
+                itemType: item.itemType,
+                orderIndex: item.orderIndex,
+                textContent: item.textContent,
+                mediaAssetUuid: item.mediaAsset?.uuid ?? null,
+                mediaAssetKind: item.mediaAsset?.kind ?? null,
+                caption: item.caption,
+            };
+        });
     }
 
     // ─────── تعديل عنصر ──────────────────────────────────────────
@@ -831,25 +848,29 @@ export class TeacherLessonsService {
             resolvedMediaAssetId = asset.id;
         }
 
-        const updated = await this.prisma.lessonBlockItem.update({
-            where: { id: item.id },
-            data: {
-                ...(dto.textContent !== undefined && { textContent: dto.textContent }),
-                ...(resolvedMediaAssetId !== undefined && { mediaAssetId: resolvedMediaAssetId }),
-                ...(dto.caption !== undefined && { caption: dto.caption }),
-            },
-            include: { mediaAsset: { select: { uuid: true, kind: true } } },
-        });
+        return await this.prisma.$transaction(async (tx) => {
+            const updated = await tx.lessonBlockItem.update({
+                where: { id: item.id },
+                data: {
+                    ...(dto.textContent !== undefined && { textContent: dto.textContent }),
+                    ...(resolvedMediaAssetId !== undefined && { mediaAssetId: resolvedMediaAssetId }),
+                    ...(dto.caption !== undefined && { caption: dto.caption }),
+                },
+                include: { mediaAsset: { select: { uuid: true, kind: true } } },
+            });
 
-        return {
-            uuid: updated.uuid,
-            itemType: updated.itemType,
-            orderIndex: updated.orderIndex,
-            textContent: updated.textContent,
-            mediaAssetUuid: updated.mediaAsset?.uuid ?? null,
-            mediaAssetKind: updated.mediaAsset?.kind ?? null,
-            caption: updated.caption,
-        };
+            await bumpContentRevision(tx, lesson.id);
+
+            return {
+                uuid: updated.uuid,
+                itemType: updated.itemType,
+                orderIndex: updated.orderIndex,
+                textContent: updated.textContent,
+                mediaAssetUuid: updated.mediaAsset?.uuid ?? null,
+                mediaAssetKind: updated.mediaAsset?.kind ?? null,
+                caption: updated.caption,
+            };
+        });
     }
 
     // ─────── حذف عنصر ────────────────────────────────────────────
@@ -882,9 +903,13 @@ export class TeacherLessonsService {
             throw new NotFoundException('العنصر غير موجود');
         }
 
-        await this.prisma.lessonBlockItem.update({
-            where: { id: item.id },
-            data: { isDeleted: true, deletedAt: new Date() },
+        await this.prisma.$transaction(async (tx) => {
+            await tx.lessonBlockItem.update({
+                where: { id: item.id },
+                data: { isDeleted: true, deletedAt: new Date() },
+            });
+
+            await bumpContentRevision(tx, lesson.id);
         });
 
         return { message: 'تم حذف العنصر بنجاح' };
@@ -928,15 +953,17 @@ export class TeacherLessonsService {
             throw new NotFoundException('بعض العناصر غير موجودة أو لا تنتمي لهذه الفقرة');
         }
 
-        await this.prisma.$transaction(
-            dto.orderedUuids.map((uuid, i) => {
-                const item = items.find((it) => it.uuid === uuid)!;
-                return this.prisma.lessonBlockItem.update({
+        await this.prisma.$transaction(async (tx) => {
+            for (let i = 0; i < dto.orderedUuids.length; i++) {
+                const item = items.find((it) => it.uuid === dto.orderedUuids[i])!;
+                await tx.lessonBlockItem.update({
                     where: { id: item.id },
                     data: { orderIndex: i + 1 },
                 });
-            }),
-        );
+            }
+
+            await bumpContentRevision(tx, lesson.id);
+        });
 
         return { message: 'تم إعادة ترتيب العناصر بنجاح' };
     }
@@ -982,23 +1009,25 @@ export class TeacherLessonsService {
 
         // إذا نفس الفقرة — مجرد إعادة ترتيب
         if (sourceBlock.id === targetBlock.id) {
-            await this.prisma.lessonBlockItem.update({
-                where: { id: item.id },
-                data: { orderIndex: dto.targetOrderIndex },
-            });
-            // إعادة ترقيم كل عناصر الفقرة
-            const items = await this.prisma.lessonBlockItem.findMany({
-                where: { blockId: sourceBlock.id, isDeleted: false },
-                orderBy: { orderIndex: 'asc' },
-            });
-            await this.prisma.$transaction(
-                items.map((it, i) =>
-                    this.prisma.lessonBlockItem.update({
-                        where: { id: it.id },
+            await this.prisma.$transaction(async (tx) => {
+                await tx.lessonBlockItem.update({
+                    where: { id: item.id },
+                    data: { orderIndex: dto.targetOrderIndex },
+                });
+                // إعادة ترقيم كل عناصر الفقرة
+                const items = await tx.lessonBlockItem.findMany({
+                    where: { blockId: sourceBlock.id, isDeleted: false },
+                    orderBy: { orderIndex: 'asc' },
+                });
+                for (let i = 0; i < items.length; i++) {
+                    await tx.lessonBlockItem.update({
+                        where: { id: items[i].id },
                         data: { orderIndex: i + 1 },
-                    }),
-                ),
-            );
+                    });
+                }
+
+                await bumpContentRevision(tx, lesson.id);
+            });
             return { message: 'تم نقل العنصر بنجاح' };
         }
 
@@ -1036,6 +1065,8 @@ export class TeacherLessonsService {
                     data: { orderIndex: i + 1 },
                 });
             }
+
+            await bumpContentRevision(tx, lesson.id);
         });
 
         return { message: 'تم نقل العنصر بنجاح' };
