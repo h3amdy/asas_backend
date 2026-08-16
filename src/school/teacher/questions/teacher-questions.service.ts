@@ -10,6 +10,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
+import { bumpQuestionsRevision } from '../../common/helpers/lesson-revision.helper';
 
 /**
  * ❓ Teacher Questions Service
@@ -357,6 +358,9 @@ export class TeacherQuestionsService {
             // 2. إنشاء البيانات الفرعية حسب النوع
             await this.createSubItems(tx, question.id, dto);
 
+            // DEC-026: questionsRevision++
+            await bumpQuestionsRevision(tx, lesson.id);
+
             // 3. جلب السؤال كاملاً
             return tx.question.findUnique({
                 where: { id: question.id },
@@ -474,6 +478,9 @@ export class TeacherQuestionsService {
                 if (dto.fillAnswers) await this.createFillAnswers(tx, question.id, dto.fillAnswers);
             }
 
+            // DEC-026: questionsRevision++
+            await bumpQuestionsRevision(tx, question.template.id);
+
             // 3. جلب السؤال المحدّث
             return tx.question.findUnique({
                 where: { id: question.id },
@@ -524,6 +531,9 @@ export class TeacherQuestionsService {
                 where: { id: question.id },
                 data: { isDeleted: true, deletedAt: now },
             });
+
+            // DEC-026: questionsRevision++
+            await bumpQuestionsRevision(tx, question.template.id);
         });
 
         return { message: 'تم حذف السؤال بنجاح' };
@@ -571,6 +581,9 @@ export class TeacherQuestionsService {
                     data: { orderIndex: i + 1 },
                 });
             }
+
+            // DEC-026: questionsRevision++
+            await bumpQuestionsRevision(tx, lesson.id);
         });
 
         return { message: 'تم تحديث ترتيب الأسئلة' };
