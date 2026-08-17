@@ -9,9 +9,10 @@ export class PublicSchoolsController {
   constructor(private readonly publicSchoolsService: PublicSchoolsService) { }
 
   // GET /public/schools/search?q=النور&limit=10&province=تعز
+  // q اختياري عند وجود province
   @Get('search')
   async search(@Query() query: SearchSchoolsQueryDto) {
-    return this.publicSchoolsService.searchByName(query.q, query.limit ?? 10, query.province);
+    return this.publicSchoolsService.searchSchools(query.q, query.limit ?? 10, query.province);
   }
 
   // POST /public/schools/verify-code  { "schoolCode": 1001 }

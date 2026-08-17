@@ -35,30 +35,49 @@ export class PublicSchoolsService {
     };
   }
 
-  async searchByName(q: string, limit = 10, province?: string): Promise<{ items: PublicSchoolDto[] }> {
+  async searchSchools(q?: string, limit = 10, province?: string): Promise<{ items: PublicSchoolDto[] }> {
     const query = (q ?? '').trim();
-    if (query.length < 2) throw new BadRequestException('q must be at least 2 characters');
+
+    // Guard: يجب وجود q أو province على الأقل
+    if (!query && !province) {
+      throw new BadRequestException('q or province is required');
+    }
+
+    // إذا وجد q يجب أن يكون >= 2 أحرف
+    if (query && query.length < 2) {
+      throw new BadRequestException('q must be at least 2 characters');
+    }
 
     const take = Math.min(Math.max(limit ?? 10, 1), 50);
 
+    // بناء where clause ديناميكي
+    const where: any = {
+      isDeleted: false,
+      isActive: true,
+      appType: 'PUBLIC',
+    };
+
+    // province filter
+    if (province) {
+      where.province = province;
+    }
+
+    // text search — فقط عند وجود q
+    if (query) {
+      where.OR = [
+        { displayName: { contains: query, mode: 'insensitive' } },
+        { name: { contains: query, mode: 'insensitive' } },
+      ];
+    }
+
     const rows = await this.prisma.school.findMany({
-      where: {
-        isDeleted: false,
-        isActive: true,
-        appType: 'PUBLIC',
-        ...(province ? { province } : {}),
-        OR: [
-          { displayName: { contains: query, mode: 'insensitive' } },
-          // OPTIONAL: لو تريد دعم البحث بـ name الرسمي (لكن لا ترجعه)
-          { name: { contains: query, mode: 'insensitive' } },
-        ],
-      },
+      where,
       take,
       orderBy: [{ displayName: 'asc' }],
       select: {
         uuid: true,
         displayName: true,
-        name: true, // فقط للبحث (حتى لو ما تستخدمه في dto)
+        name: true,
         schoolCode: true,
         appType: true,
 
