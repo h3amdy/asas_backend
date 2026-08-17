@@ -750,6 +750,7 @@ export class StudentSyncService {
                             gradeLabel,
                             calculatedAt: new Date(),
                             version: 1,
+                            questionsRevisionAtSubmit: change.payload.questionsRevision ?? null,  // DEC-026 Phase 8
                         },
                     });
 
@@ -870,6 +871,7 @@ export class StudentSyncService {
                 gradeLabel,
                 calculatedAt: new Date(),
                 version: existingCount + 1,
+                questionsRevisionAtSubmit: change.payload.questionsRevision ?? null,  // DEC-026 Phase 8
             },
         });
     }

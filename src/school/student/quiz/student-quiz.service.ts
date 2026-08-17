@@ -56,6 +56,12 @@ export class StudentQuizService {
     async getQuestions(schoolId: number, userUuid: string, lessonUuid: string) {
         const { studentId, lesson } = await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
 
+        // DEC-026 Phase 6: جلب questionsRevision لإرساله مع الأسئلة
+        const template = await this.prisma.lessonTemplate.findUnique({
+            where: { id: lesson.templateId },
+            select: { questionsRevision: true },
+        });
+
         // حساب عدد المحاولات السابقة
         const attemptCount = await this.prisma.studentLessonResult.count({
             where: { studentId, lessonId: lesson.id, isDeleted: false },
@@ -221,6 +227,7 @@ export class StudentQuizService {
 
         return {
             lessonUuid,
+            questionsRevision: template?.questionsRevision ?? 1,
             attemptNumber: attemptCount + 1,
             maxAttempts: MAX_ATTEMPTS,
             canAttempt,
@@ -275,6 +282,7 @@ export class StudentQuizService {
         userUuid: string,
         lessonUuid: string,
         answers: { questionUuid: string; answerValue: any; isCorrect: boolean }[],
+        questionsRevision?: number,
     ) {
         const { studentId, lesson } = await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
 
@@ -326,6 +334,7 @@ export class StudentQuizService {
                 gradeLabel,
                 calculatedAt: new Date(),
                 version: 1,
+                questionsRevisionAtSubmit: questionsRevision ?? null,  // DEC-026 Phase 7
             },
         });
 
@@ -433,6 +442,33 @@ export class StudentQuizService {
             orderBy: { calculatedAt: 'desc' },
         });
         if (!result) throw new NotFoundException('RESULT_NOT_FOUND');
+
+        // DEC-026 Phase 9: جلب questionsRevision لمقارنة revision
+        const template = await this.prisma.lessonTemplate.findUnique({
+            where: { id: lesson.templateId },
+            select: { questionsRevision: true },
+        });
+
+        const reviewAvailable =
+            result.questionsRevisionAtSubmit === null ||
+            result.questionsRevisionAtSubmit === template?.questionsRevision;
+
+        // إذا الأسئلة تغيرت — نرجع النتيجة فقط بدون أسئلة
+        if (!reviewAvailable) {
+            return {
+                result: {
+                    resultUuid: result.uuid,
+                    totalQuestions: result.totalQuestions,
+                    correctQuestions: result.correctQuestions,
+                    totalPoints: result.totalPoints,
+                    earnedPoints: result.earnedPoints,
+                    percent: Math.round(result.percent),
+                    gradeLabel: result.gradeLabel,
+                },
+                reviewAvailable: false,
+                questions: [],
+            };
+        }
 
         // 2. جلب الأسئلة مع كل البيانات
         const questions = await this.prisma.question.findMany({
@@ -585,6 +621,7 @@ export class StudentQuizService {
                 percent: Math.round(result.percent),
                 gradeLabel: result.gradeLabel,
             },
+            reviewAvailable: true,
             questions: reviewQuestions,
         };
     }

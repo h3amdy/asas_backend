@@ -59,13 +59,17 @@ export class StudentQuizController {
     submitQuiz(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,
-        @Body() body: { answers: { questionUuid: string; answerValue: any; isCorrect: boolean }[] },
+        @Body() body: {
+            questionsRevision?: number;
+            answers: { questionUuid: string; answerValue: any; isCorrect: boolean }[];
+        },
     ) {
         return this.service.submitQuiz(
             req.schoolContext.id,
             req.user.sub,
             lessonUuid,
             body.answers,
+            body.questionsRevision,
         );
     }
 
