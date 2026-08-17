@@ -35,7 +35,7 @@ export class PublicSchoolsService {
     };
   }
 
-  async searchByName(q: string, limit = 10): Promise<{ items: PublicSchoolDto[] }> {
+  async searchByName(q: string, limit = 10, province?: string): Promise<{ items: PublicSchoolDto[] }> {
     const query = (q ?? '').trim();
     if (query.length < 2) throw new BadRequestException('q must be at least 2 characters');
 
@@ -46,6 +46,7 @@ export class PublicSchoolsService {
         isDeleted: false,
         isActive: true,
         appType: 'PUBLIC',
+        ...(province ? { province } : {}),
         OR: [
           { displayName: { contains: query, mode: 'insensitive' } },
           // OPTIONAL: لو تريد دعم البحث بـ name الرسمي (لكن لا ترجعه)
@@ -162,5 +163,24 @@ export class PublicSchoolsService {
       school: this.toDto(school),
       serverTime: new Date().toISOString(),
     };
+  }
+
+  /**
+   * جلب قائمة المحافظات المتاحة (DISTINCT)
+   * GET /public/schools/provinces
+   */
+  async getDistinctProvinces(): Promise<{ provinces: string[] }> {
+    const rows = await this.prisma.school.findMany({
+      where: {
+        isDeleted: false,
+        isActive: true,
+        appType: 'PUBLIC',
+        province: { not: null },
+      },
+      select: { province: true },
+      distinct: ['province'],
+      orderBy: { province: 'asc' },
+    });
+    return { provinces: rows.map((r) => r.province!).filter(Boolean) };
   }
 }

@@ -8,6 +8,11 @@ export class SearchSchoolsQueryDto {
   q!: string;
 
   @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  province?: string;
+
+  @IsOptional()
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(1)

@@ -8,10 +8,10 @@ import { VerifySchoolCodeDto } from './dto/verify-school-code.dto';
 export class PublicSchoolsController {
   constructor(private readonly publicSchoolsService: PublicSchoolsService) { }
 
-  // GET /public/schools/search?q=النور&limit=10
+  // GET /public/schools/search?q=النور&limit=10&province=تعز
   @Get('search')
   async search(@Query() query: SearchSchoolsQueryDto) {
-    return this.publicSchoolsService.searchByName(query.q, query.limit ?? 10);
+    return this.publicSchoolsService.searchByName(query.q, query.limit ?? 10, query.province);
   }
 
   // POST /public/schools/verify-code  { "schoolCode": 1001 }
@@ -20,9 +20,16 @@ export class PublicSchoolsController {
     return this.publicSchoolsService.verifyBySchoolCode(body.schoolCode);
   }
 
+  // GET /public/schools/provinces
+  @Get('provinces')
+  async getProvinces() {
+    return this.publicSchoolsService.getDistinctProvinces();
+  }
+
   // GET /public/schools/:uuid/profile
   @Get(':uuid/profile')
   async getProfile(@Param('uuid') uuid: string) {
     return this.publicSchoolsService.getProfile(uuid);
   }
 }
+
