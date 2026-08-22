@@ -1,6 +1,6 @@
 // src/owner/imports/imports.service.ts
 import {
-    Injectable, NotFoundException, BadRequestException,
+    Injectable, NotFoundException, BadRequestException, Logger,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -32,6 +32,7 @@ export interface CredentialEntry {
 
 @Injectable()
 export class ImportsService {
+    private readonly logger = new Logger(ImportsService.name);
     constructor(private readonly prisma: PrismaService) {}
 
     // ─── Helpers ────────────────────────────────────────────────
@@ -672,8 +673,19 @@ export class ImportsService {
                     createdCount++;
                 } catch (err: any) {
                     record.status = 'ERROR';
-                    record.errors.push(`فشل الإنشاء: ${err.message}`);
+                    const errMsg = err.message || 'Unknown error';
+                    record.errors.push(`فشل الإنشاء: ${errMsg}`);
                     failedCount++;
+                    this.logger.error(
+                        `[ImportExecute] Student #${i} "${record.name}" failed: ${errMsg}`,
+                        err.stack,
+                    );
+                    // Log Prisma-specific details if available
+                    if (err.code) {
+                        this.logger.error(
+                            `[ImportExecute] Prisma error code: ${err.code}, meta: ${JSON.stringify(err.meta)}`,
+                        );
+                    }
                 }
             }
         } else if (session.importType === 'TEACHERS') {
@@ -694,6 +706,10 @@ export class ImportsService {
                 }
             }
         }
+
+        this.logger.log(
+            `[ImportExecute] Import ${session.uuid} completed: created=${createdCount}, failed=${failedCount}, total=${previewRecords.length}`,
+        );
 
         // Update session
         await this.prisma.importSession.update({

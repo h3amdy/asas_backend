@@ -23,7 +23,8 @@ export interface ImportNameFields {
  * @param fullNameKey - اسم الحقل الكامل (مثل 'student_name' أو 'teacher_name' أو 'name')
  * @returns الاسم المُطبّع، أو null إذا لم يوجد اسم
  */
-export function normalizeImportName(record: object, fullNameKey: string): string | null {
+export function normalizeImportName(record: object | null | undefined, fullNameKey: string): string | null {
+  if (!record) return null;
   const rec = record as Record<string, unknown>;
   // صيغة 1: اسم كامل (أولوية — لا يُدمج مع الأسماء المجزأة)
   // لكن إذا كان فارغاً بعد التطبيع → fallback إلى split names
