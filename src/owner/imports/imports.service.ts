@@ -186,6 +186,7 @@ export class ImportsService {
             orderBy: { createdAt: 'desc' },
             take: 5,
             select: {
+                uuid: true,
                 importType: true,
                 createdAt: true,
                 totalRecords: true,
@@ -237,6 +238,7 @@ export class ImportsService {
                 },
             },
             recentImports: recentImports.map(i => ({
+                uuid: i.uuid,
                 type: i.importType,
                 date: i.createdAt,
                 totalRecords: i.totalRecords,
