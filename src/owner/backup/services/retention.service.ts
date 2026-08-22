@@ -207,20 +207,33 @@ export class RetentionService {
     for (const instance of toPurge) {
       try {
         if (instance.storagePath) {
-          // 1. حذف checksum أولاً (الأقل أهمية)
-          try {
-            await this.storage.deleteFile(
-              `${instance.storagePath}.sha256`,
-            );
-          } catch {
-            // checksum مفقود — مقبول
+          // 1. حذف الملفات الجانبية (checksum + sidecar manifest)
+          for (const suffix of ['.sha256', '.manifest.json']) {
+            try {
+              await this.storage.deleteFile(
+                `${instance.storagePath}${suffix}`,
+              );
+            } catch {
+              // ملف جانبي مفقود — مقبول
+            }
           }
 
-          // 2. حذف الأرشيف
-          await this.storage.deleteFile(instance.storagePath);
+          // 2. حذف الأرشيف — متسامح مع ENOENT
+          // إذا الملف محذوف مسبقاً (تنظيف يدوي مثلاً) لا نمنع حذف السجل
+          try {
+            await this.storage.deleteFile(instance.storagePath);
+          } catch (fileErr: any) {
+            if (fileErr?.code === 'ENOENT') {
+              this.logger.debug(
+                `Archive already removed from disk: ${instance.backupName}`,
+              );
+            } else {
+              throw fileErr; // خطأ حقيقي (صلاحيات، IO) — لا نحذف السجل
+            }
+          }
         }
 
-        // 3. حذف سجل DB — فقط إذا نجح حذف الملفات
+        // 3. حذف سجل DB — يصل هنا حتى لو الملف كان مفقوداً
         await this.prisma.backupInstance.delete({
           where: { id: instance.id },
         });
@@ -239,4 +252,5 @@ export class RetentionService {
 
     return purgedCount;
   }
+
 }
