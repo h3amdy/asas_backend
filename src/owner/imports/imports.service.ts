@@ -35,6 +35,18 @@ export class ImportsService {
     private readonly logger = new Logger(ImportsService.name);
     constructor(private readonly prisma: PrismaService) {}
 
+    // ─── Password Mode ──────────────────────────────────────────
+    // true = كلمة مرور عشوائية (6 أرقام)، false = الرقم المدرسي
+    private readonly useRandomPassword = true;
+
+    private generatePassword(schoolCode: number): string {
+        if (this.useRandomPassword) {
+            // توليد 6 أرقام عشوائية
+            return String(Math.floor(100000 + Math.random() * 900000));
+        }
+        return String(schoolCode);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────
 
     private async resolveSchool(schoolUuid: string) {
@@ -314,7 +326,8 @@ export class ImportsService {
                     sec => sec.name === sectionName,
                 );
                 if (!section) {
-                    errors.push(`الشعبة "${sectionName}" غير موجودة في الصف "${s.grade_code}"`);
+                    const gradeName = grade.dictionary?.name || s.grade_code;
+                    errors.push(`الشعبة "${sectionName}" غير موجودة في الصف ${gradeName} (${s.grade_code})`);
                 } else {
                     sectionId = section.id;
                 }
@@ -383,6 +396,7 @@ export class ImportsService {
                 errors,
                 details: {
                     grade_code: s.grade_code,
+                    gradeName: grade?.dictionary?.name || s.grade_code,
                     section: sectionName,
                     gradeId: grade?.id,
                     sectionId,
@@ -750,7 +764,7 @@ export class ImportsService {
                 data: { nextUserCode: { increment: 1 } },
             });
             const code = updatedSchool.nextUserCode - 1;
-            const password = String(code);
+            const password = this.generatePassword(code);
             const passwordHash = await bcrypt.hash(password, 10);
 
             // Create user
@@ -834,7 +848,7 @@ export class ImportsService {
                         data: { nextUserCode: { increment: 1 } },
                     });
                     const parentCode = parentSchool.nextUserCode - 1;
-                    const parentPassword = String(parentCode);
+                    const parentPassword = this.generatePassword(parentCode);
                     const parentHash = await bcrypt.hash(parentPassword, 10);
 
                     const parentUser = await tx.user.create({
@@ -912,7 +926,7 @@ export class ImportsService {
                     data: { nextUserCode: { increment: 1 } },
                 });
                 const code = updatedSchool.nextUserCode - 1;
-                const password = String(code);
+                const password = this.generatePassword(code);
                 const passwordHash = await bcrypt.hash(password, 10);
 
                 const user = await tx.user.create({
