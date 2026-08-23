@@ -326,7 +326,7 @@ export class ImportsService {
                     sec => sec.name === sectionName,
                 );
                 if (!section) {
-                    const gradeName = grade.dictionary?.name || s.grade_code;
+                    const gradeName = grade.dictionary?.defaultName || s.grade_code;
                     errors.push(`الشعبة "${sectionName}" غير موجودة في الصف ${gradeName} (${s.grade_code})`);
                 } else {
                     sectionId = section.id;
@@ -396,7 +396,7 @@ export class ImportsService {
                 errors,
                 details: {
                     grade_code: s.grade_code,
-                    gradeName: grade?.dictionary?.name || s.grade_code,
+                    gradeName: grade?.dictionary?.defaultName || s.grade_code,
                     section: sectionName,
                     gradeId: grade?.id,
                     sectionId,
