@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -12,6 +12,8 @@ import { PlatformModule } from './platform/platform.module';
 import { ImportsModule } from './owner/imports/imports.module';
 import { ReleasesModule } from './releases/releases.module';
 import { BackupModule } from './owner/backup/backup.module';
+import { HealthModule } from './common/health/health.module';
+import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 
 
 
@@ -29,9 +31,14 @@ import { BackupModule } from './owner/backup/backup.module';
     ImportsModule,
     ReleasesModule,
     BackupModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestLoggerMiddleware).forRoutes('*');
+  }
+}
 
