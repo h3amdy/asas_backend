@@ -54,7 +54,6 @@ export class PublicSchoolsService {
     const where: any = {
       isDeleted: false,
       isActive: true,
-      appType: 'PUBLIC',
     };
 
     // province filter
@@ -111,7 +110,6 @@ export class PublicSchoolsService {
       where: {
         isDeleted: false,
         isActive: true,
-        appType: 'PUBLIC',
         schoolCode,
       },
       select: {
@@ -193,7 +191,6 @@ export class PublicSchoolsService {
       where: {
         isDeleted: false,
         isActive: true,
-        appType: 'PUBLIC',
         province: { not: null },
       },
       select: { province: true },
