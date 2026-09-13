@@ -1,7 +1,11 @@
+// 🛡️ STG-001: تحميل .env قبل أي شيء آخر — مطلوب لأن PM2 يشغّل node dist/main.js مباشرة
+import 'dotenv/config';
+
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { validateEnvironment } from './config/environment-safety';
 
 // ── BigInt → JSON: Prisma يُرجع BigInt لكن JSON.stringify لا يدعمه ──
 // eslint-disable-next-line no-extend-native
@@ -9,6 +13,9 @@ import { AppModule } from './app.module';
   return Number(this);
 };
 async function bootstrap() {
+  // 🛡️ STG-001: التحقق من سلامة الإعدادات قبل بدء التطبيق
+  validateEnvironment();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
   });
@@ -37,6 +44,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port);
 
-  console.log(`🚀 Server is running on port ${port}`);
+  const appEnv = process.env.APP_ENV || 'unknown';
+  console.log(`🚀 Server is running on port ${port} [${appEnv}]`);
 }
 bootstrap();

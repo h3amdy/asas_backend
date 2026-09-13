@@ -18,7 +18,11 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "prisma:migrate": "prisma migrate deploy"
+    "prisma:migrate": "prisma migrate deploy",
+    "start:staging": "npx dotenv -e .env.staging -- nest start --watch",
+    "staging:seed": "npx dotenv -e .env.staging -- npx ts-node src/tools/staging-seed.ts",
+    "staging:reset": "bash scripts/staging-reset.sh",
+    "staging:e2e": "npx dotenv -e .env.staging -- jest --config ./test/jest-e2e.json --testPathPatterns=staging --runInBand --forceExit"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -32,6 +36,7 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
+    "dotenv": "^17.4.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
@@ -51,6 +56,7 @@
     "@types/node": "^22.10.7",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

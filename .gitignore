@@ -41,6 +41,12 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+.env.staging
+.env.staging.active
+
+# STG-001: Staging isolation
+storage-staging/
+backups-staging/
 
 # temp directory
 .temp
