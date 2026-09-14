@@ -85,14 +85,18 @@ export class SubjectsService {
         }
 
         // 4. إنشاء المادة
-        // ← جلب الكود من القاموس إن وُجد
+        // ← جلب الكود والغلاف من القاموس إن وُجد
         let code: string | null = null;
         if (dto.dictionaryId) {
             const dict = await this.prisma.subjectDictionary.findFirst({
                 where: { id: dto.dictionaryId, isDeleted: false },
-                select: { code: true },
+                select: { code: true, coverMediaAssetId: true },
             });
             code = dict?.code ?? null;
+            // إذا لم يرسل المستخدم غلافاً مخصصاً، ننسخ غلاف القاموس الرسمي
+            if (!coverMediaAssetId && dict?.coverMediaAssetId) {
+                coverMediaAssetId = dict.coverMediaAssetId;
+            }
         }
 
         const subject = await this.prisma.subject.create({
