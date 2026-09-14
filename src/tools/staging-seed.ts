@@ -252,6 +252,7 @@ async function seedSchools(): Promise<void> {
     await prisma.school.create({
       data: {
         name: schoolDef.name,
+        displayName: schoolDef.name,
         schoolCode: schoolDef.code,
         appType: schoolDef.appType,
         isActive: true,
@@ -277,15 +278,17 @@ interface UserDef {
 }
 
 const TEST_USERS: UserDef[] = [
-  // مدرسة أ
-  { email: 'admin-a@test.invalid', password: 'test-admin-123', name: 'مدير مدرسة أ', userType: UserType.ADMIN, schoolCode: 99001, code: 1001 },
-  { email: 'teacher-a@test.invalid', password: 'test-teacher-123', name: 'معلم مدرسة أ', userType: UserType.TEACHER, schoolCode: 99001, code: 2001 },
-  { email: 'student-a@test.invalid', password: 'test-student-123', name: 'طالب مدرسة أ', userType: UserType.STUDENT, schoolCode: 99001, code: 3001 },
-  { email: 'parent-a@test.invalid', password: 'test-parent-123', name: 'ولي أمر مدرسة أ', userType: UserType.PARENT, schoolCode: 99001, phone: '770000001' },
-  // مدرسة ب
-  { email: 'admin-b@test.invalid', password: 'test-admin-123', name: 'مدير مدرسة ب', userType: UserType.ADMIN, schoolCode: 99002, code: 1001 },
-  { email: 'teacher-b@test.invalid', password: 'test-teacher-123', name: 'معلم مدرسة ب', userType: UserType.TEACHER, schoolCode: 99002, code: 2001 },
-  { email: 'student-b@test.invalid', password: 'test-student-123', name: 'طالب مدرسة ب', userType: UserType.STUDENT, schoolCode: 99002, code: 3001 },
+  // مدرسة أ (99001)
+  // تسجيل الدخول: كود المدرسة 99001 → الرقم المدرسي → كلمة المرور
+  { email: 'admin-a@test.invalid', password: '123456', name: 'مدير مدرسة أ', userType: UserType.ADMIN, schoolCode: 99001, code: 1 },
+  { email: 'teacher-a@test.invalid', password: '123456', name: 'معلم مدرسة أ', userType: UserType.TEACHER, schoolCode: 99001, code: 2 },
+  { email: 'student-a@test.invalid', password: '123456', name: 'طالب مدرسة أ', userType: UserType.STUDENT, schoolCode: 99001, code: 3 },
+  // ولي الأمر يسجل برقم الهاتف وليس الرقم المدرسي
+  { email: 'parent-a@test.invalid', password: '123456', name: 'ولي أمر مدرسة أ', userType: UserType.PARENT, schoolCode: 99001, phone: '777000001' },
+  // مدرسة ب (99002)
+  { email: 'admin-b@test.invalid', password: '123456', name: 'مدير مدرسة ب', userType: UserType.ADMIN, schoolCode: 99002, code: 1 },
+  { email: 'teacher-b@test.invalid', password: '123456', name: 'معلم مدرسة ب', userType: UserType.TEACHER, schoolCode: 99002, code: 2 },
+  { email: 'student-b@test.invalid', password: '123456', name: 'طالب مدرسة ب', userType: UserType.STUDENT, schoolCode: 99002, code: 3 },
 ];
 
 async function seedUsers(): Promise<void> {
@@ -379,6 +382,8 @@ async function seedAcademicStructure(): Promise<void> {
         yearId: year.id,
         name: 'الفصل الأول',
         orderIndex: 1,
+        startDate: new Date('2026-09-01'),
+        endDate: new Date('2027-01-31'),
         isCurrent: true,
       },
     });
@@ -452,15 +457,20 @@ async function main(): Promise<void> {
   console.log('✅ Staging seed complete!');
   console.log('════════════════════════════════════════════');
   console.log('');
-  console.log('Test accounts:');
-  console.log('  owner@test.invalid       / test-owner-123');
-  console.log('  admin-a@test.invalid     / test-admin-123');
-  console.log('  teacher-a@test.invalid   / test-teacher-123');
-  console.log('  student-a@test.invalid   / test-student-123');
-  console.log('  parent-a@test.invalid    / test-parent-123');
-  console.log('  admin-b@test.invalid     / test-admin-123');
-  console.log('  teacher-b@test.invalid   / test-teacher-123');
-  console.log('  student-b@test.invalid   / test-student-123');
+  console.log('Test accounts (كلمة المرور: 123456 للجميع):');
+  console.log('');
+  console.log('  📱 مدرسة أ (كود: 99001)');
+  console.log('  ──────────────────────────────');
+  console.log('  مدير     → كود 99001 → رقم مدرسي: 1 → كلمة المرور: 123456');
+  console.log('  معلم     → كود 99001 → رقم مدرسي: 2 → كلمة المرور: 123456');
+  console.log('  طالب     → كود 99001 → رقم مدرسي: 3 → كلمة المرور: 123456');
+  console.log('  ولي أمر  → كود 99001 → هاتف: 777000001  → كلمة المرور: 123456');
+  console.log('');
+  console.log('  📱 مدرسة ب (كود: 99002)');
+  console.log('  ──────────────────────────────');
+  console.log('  مدير     → كود 99002 → رقم مدرسي: 1 → كلمة المرور: 123456');
+  console.log('  معلم     → كود 99002 → رقم مدرسي: 2 → كلمة المرور: 123456');
+  console.log('  طالب     → كود 99002 → رقم مدرسي: 3 → كلمة المرور: 123456');
   console.log('');
 }
 
