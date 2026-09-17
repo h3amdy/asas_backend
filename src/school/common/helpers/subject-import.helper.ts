@@ -49,7 +49,7 @@ export async function autoImportSubjectsForGrade(
         });
         if (exists) continue;
 
-        // 4. إنشاء المادة مع وراثة البيانات من القاموس
+        // 4. إنشاء المادة مع وراثة البيانات من القاموس (بما فيها الغلاف)
         const subject = await tx.subject.create({
             data: {
                 schoolId,
@@ -58,6 +58,7 @@ export async function autoImportSubjectsForGrade(
                 displayName: dictSubject.defaultName,
                 shortName: dictSubject.shortName,
                 code: dictSubject.code,
+                coverMediaAssetId: dictSubject.coverMediaAssetId,
             },
         });
 
