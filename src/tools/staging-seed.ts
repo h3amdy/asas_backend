@@ -46,26 +46,45 @@ async function seedOwner(): Promise<void> {
     where: { email, userType: UserType.OWNER, isDeleted: false },
   });
 
-  if (exists) {
-    console.log('   ↳ OWNER already exists:', exists.email);
-    return;
-  }
-
   const passwordHash = await bcrypt.hash(password, 10);
 
-  await prisma.user.create({
-    data: {
-      userType: UserType.OWNER,
-      name,
-      email,
-      passwordHash,
-      isActive: true,
-      isDeleted: false,
-      schoolId: null,
-    },
+  if (exists) {
+    console.log('   ↳ OWNER already exists:', exists.email);
+  } else {
+    await prisma.user.create({
+      data: {
+        userType: UserType.OWNER,
+        name,
+        email,
+        passwordHash,
+        isActive: true,
+        isDeleted: false,
+        schoolId: null,
+      },
+    });
+    console.log('   ↳ OWNER created:', email);
+  }
+
+  // Seed PlatformUser (Required for the new admin_panel auth)
+  const platformExists = await prisma.platformUser.findFirst({
+    where: { email, isDeleted: false },
   });
 
-  console.log('   ↳ OWNER created:', email);
+  if (platformExists) {
+    console.log('   ↳ PLATFORM OWNER already exists:', email);
+  } else {
+    await prisma.platformUser.create({
+      data: {
+        email,
+        username: 'owner',
+        name,
+        passwordHash,
+        role: 'PLATFORM_ADMIN',
+        isActive: true,
+      },
+    });
+    console.log('   ↳ PLATFORM OWNER created:', email);
+  }
 }
 
 // ─────────────────────────────────────────────────
@@ -407,16 +426,41 @@ async function seedAcademicStructure(): Promise<void> {
       });
 
       // شعبة واحدة
-      await prisma.section.create({
+      const section = await prisma.section.create({
         data: {
           gradeId: schoolGrade.id,
           name: 'أ',
           orderIndex: 1,
         },
       });
+
+      // تسجيل الطلاب في الشعبة
+      const students = await prisma.user.findMany({
+        where: {
+          schoolId: school.id,
+          userType: UserType.STUDENT,
+          isDeleted: false,
+        },
+        select: { id: true },
+      });
+
+      for (const stu of students) {
+        await prisma.studentEnrollment.create({
+          data: {
+            studentId: stu.id,
+            yearId: year.id,
+            gradeId: schoolGrade.id,
+            sectionId: section.id,
+            isCurrent: true,
+            joinedAt: new Date('2026-09-01'),
+          },
+        });
+      }
+
+      console.log(`   ↳ Enrolled ${students.length} student(s) in section أ`);
     }
 
-    console.log(`   ↳ Academic structure for "${schoolDef.name}" created (year + term + grade + section)`);
+    console.log(`   ↳ Academic structure for "${schoolDef.name}" created (year + term + grade + section + enrollments)`);
   }
 }
 

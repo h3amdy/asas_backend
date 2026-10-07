@@ -1722,3 +1722,90 @@ enum BackupLogPhase {
   RESTORE_VERIFY
   RESTORE_ROLLBACK
 }
+
+// ─── G1: Reference Data — Province / District / Mafhoom Routing ───
+
+model Province {
+  id        Int        @id @default(autoincrement())
+  uuid      String     @unique @default(uuid())
+  name      String     @unique
+  sortOrder Int        @default(0) @map("sort_order")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  districts District[]
+
+  @@map("provinces")
+}
+
+model District {
+  id         Int                    @id @default(autoincrement())
+  uuid       String                 @unique @default(uuid())
+  provinceId Int                    @map("province_id")
+  name       String
+  sortOrder  Int                    @default(0) @map("sort_order")
+  createdAt  DateTime               @default(now()) @map("created_at")
+  updatedAt  DateTime               @updatedAt @map("updated_at")
+  province   Province               @relation(fields: [provinceId], references: [id])
+  routing    MafhoomDistrictRouting?
+
+  @@unique([provinceId, name])
+  @@index([provinceId])
+  @@map("districts")
+}
+
+model MafhoomDistrictRouting {
+  id            Int      @id @default(autoincrement())
+  uuid          String   @unique @default(uuid())
+  districtId    Int      @unique @map("district_id")
+  targetSection String   @map("target_section")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  district      District @relation(fields: [districtId], references: [id])
+
+  @@map("mafhoom_district_routing")
+}
+
+// ─── G2: OTP Verification for Student Self-Registration ───
+
+model OtpVerification {
+  id                            Int        @id @default(autoincrement())
+  uuid                          String     @unique @default(uuid())
+  phone                         String
+  codeHash                      String     @map("code_hash")
+  purpose                       OtpPurpose
+  channel                       OtpChannel
+  registrationRequestId         String     @unique @map("registration_request_id")
+  registrationTokenHash         String?    @map("registration_token_hash")
+  registrationTokenExpiresAt    DateTime?  @map("registration_token_expires_at")
+  attempts                      Int        @default(0)
+  maxAttempts                   Int        @default(5) @map("max_attempts")
+  status                        OtpStatus  @default(PENDING)
+  expiresAt                     DateTime   @map("expires_at")
+  verifiedAt                    DateTime?  @map("verified_at")
+  consumedAt                    DateTime?  @map("consumed_at")
+  createdAt                     DateTime   @default(now()) @map("created_at")
+  updatedAt                     DateTime   @updatedAt @map("updated_at")
+
+  @@index([phone, purpose, status])
+  @@index([expiresAt])
+  @@map("otp_verifications")
+}
+
+enum OtpPurpose {
+  STUDENT_REGISTRATION
+}
+
+enum OtpChannel {
+  WHATSAPP
+  SMS
+}
+
+enum OtpStatus {
+  PENDING
+  VERIFIED
+  CONSUMED
+  EXPIRED
+  BLOCKED
+  FAILED
+}
