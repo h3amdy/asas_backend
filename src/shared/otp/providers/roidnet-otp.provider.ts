@@ -26,7 +26,7 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
 
   constructor() {
     this.apiKey = process.env.ROIDNET_API_KEY || '';
-    this.baseUrl = process.env.ROIDNET_BASE_URL || 'https://api.roidnet.net';
+    this.baseUrl = process.env.ROIDNET_BASE_URL || 'https://otp.roidnet.com';
     this.timeoutMs = parseInt(process.env.ROIDNET_TIMEOUT_MS || '10000', 10);
 
     if (!this.apiKey) {
@@ -46,7 +46,7 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          'x-api-key': this.apiKey,
         },
         body: JSON.stringify({ phone }),
         signal: AbortSignal.timeout(this.timeoutMs),
@@ -88,7 +88,7 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          'x-api-key': this.apiKey,
         },
         body: JSON.stringify({ phone, code }),
         signal: AbortSignal.timeout(this.timeoutMs),
