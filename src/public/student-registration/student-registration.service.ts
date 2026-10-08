@@ -14,7 +14,8 @@ import { OtpService } from '../../shared/otp/otp.service';
 import { REGISTRATION_ERRORS, REGISTRATION_CONFIG } from './registration.constants';
 import { SCHOOL_AUTH_JWT } from '../../school/auth/constants';
 import { SessionsService } from '../../school/sessions/sessions.service';
-import { createHash } from 'crypto';
+import { createHmac } from 'crypto';
+import { OTP_DEFAULTS } from '../../shared/otp/otp.constants';
 import { OtpStatus } from '@prisma/client';
 import { randomToken } from '../../school/auth/utils/crypto.util';
 
@@ -35,7 +36,7 @@ export class StudentRegistrationService {
    * التحقق من Registration Token والحصول على الهاتف المُوثّق
    */
   private async validateRegistrationToken(token: string) {
-    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const tokenHash = createHmac('sha256', OTP_DEFAULTS.pepper).update(token).digest('hex');
 
     // ابحث بالـ hash (لا نخزن plaintext)
     // نستخدم raw query لأن Prisma لا يدعم findFirst على حقل non-unique بدون index
