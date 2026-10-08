@@ -272,6 +272,10 @@ export class StudentRegistrationService {
         },
       );
 
+      const refreshExpiresAt = new Date(
+        Date.now() + SCHOOL_AUTH_JWT.refreshTokenTtlSec * 1000,
+      );
+
       return {
         registered: true,
         autoLoginSuccess: true,
@@ -287,6 +291,7 @@ export class StudentRegistrationService {
         },
         accessToken,
         refreshToken: refreshPlain,
+        refreshExpiresAt: refreshExpiresAt.toISOString(),
         sessionId: session.uuid,
       };
     } catch (error) {
