@@ -264,7 +264,7 @@ async function main() {
   const phones = ['+967777661111', '+967777662222', '+967777663333'];
 
   // Create 3 OTP records for different phones
-  const otps = [];
+  const otps: { token: string; requestId: string }[] = [];
   for (const p of phones) {
     otps.push(await createVerifiedOtp(prisma, p));
   }
