@@ -27,7 +27,7 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
   constructor() {
     this.apiKey = process.env.ROIDNET_API_KEY || '';
     this.baseUrl = process.env.ROIDNET_BASE_URL || 'https://otp.roidnet.com';
-    this.timeoutMs = parseInt(process.env.ROIDNET_TIMEOUT_MS || '15000', 10);
+    this.timeoutMs = parseInt(process.env.ROIDNET_TIMEOUT_MS || '45000', 10);
 
     if (!this.apiKey) {
       throw new Error(
