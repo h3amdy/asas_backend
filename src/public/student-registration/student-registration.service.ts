@@ -18,7 +18,7 @@ import { createHmac } from 'crypto';
 import { OTP_DEFAULTS } from '../../shared/otp/otp.constants';
 import { OtpStatus } from '@prisma/client';
 import { randomToken } from '../../school/auth/utils/crypto.util';
-
+import { CheckPhoneDto } from './dto/check-phone.dto';
 @Injectable()
 export class StudentRegistrationService {
   private readonly logger = new Logger('StudentRegistrationService');
@@ -29,6 +29,51 @@ export class StudentRegistrationService {
     private readonly sessions: SessionsService,
     private readonly jwt: JwtService,
   ) {}
+
+  // ─── UX Phone Checking ───────────────────────────────────────
+
+  /**
+   * فحص سريع مبدئي (UX Optimization) لمعرفة ما إذا كان الرقم مسجل مسبقاً في مدرسة مفهوم.
+   * لا يحل هذا محل الفحص النهائي في completeRegistration.
+   */
+  async checkPhoneRegistration(dto: CheckPhoneDto) {
+    const normalizedPhone = this.otpService.normalizePhone(dto.phone);
+
+    const mafhoomSchool = await this.prisma.school.findFirst({
+      where: {
+        schoolCode: REGISTRATION_CONFIG.mafhoomSchoolCode,
+        isDeleted: false,
+      },
+    });
+
+    if (!mafhoomSchool) {
+      throw new InternalServerErrorException(REGISTRATION_ERRORS.MAFHOOM_SCHOOL_NOT_FOUND);
+    }
+
+    const existingStudent = await this.prisma.user.findFirst({
+      where: {
+        schoolId: mafhoomSchool.id,
+        userType: 'STUDENT',
+        phone: normalizedPhone,
+        isDeleted: false,
+      },
+      select: { id: true },
+    });
+
+    if (existingStudent) {
+      return {
+        registered: true,
+        school: {
+          uuid: mafhoomSchool.uuid,
+          displayName: mafhoomSchool.displayName,
+        },
+      };
+    }
+
+    return {
+      registered: false,
+    };
+  }
 
   // ─── Token Validation ──────────────────────────────────────
 
@@ -158,18 +203,18 @@ export class StudentRegistrationService {
       }
 
       // 5. Check: phone not already used by active STUDENT in Mafhoom
-      const existingStudent = await tx.$queryRawUnsafe<any[]>(
-        `SELECT id FROM users
-         WHERE school_id = $1
-           AND user_type = 'STUDENT'
-           AND phone = $2
-           AND is_deleted = false
-         LIMIT 1`,
-        mafhoomSchool.id,
-        normalizedPhone,
-      );
+      // استبدال $queryRawUnsafe بـ Prisma API بناءً على المراجعة الأمنية
+      const existingStudent = await tx.user.findFirst({
+        where: {
+          schoolId: mafhoomSchool.id,
+          userType: 'STUDENT',
+          phone: normalizedPhone,
+          isDeleted: false,
+        },
+        select: { id: true },
+      });
 
-      if (existingStudent && existingStudent.length > 0) {
+      if (existingStudent) {
         throw new ForbiddenException(REGISTRATION_ERRORS.PHONE_ALREADY_REGISTERED);
       }
 

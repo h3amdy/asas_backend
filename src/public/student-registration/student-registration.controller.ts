@@ -4,6 +4,7 @@ import { OtpService } from '../../shared/otp/otp.service';
 import { StudentRegistrationService } from './student-registration.service';
 import { RequestOtpDto } from '../../shared/otp/dto/request-otp.dto';
 import { VerifyOtpDto } from '../../shared/otp/dto/verify-otp.dto';
+import { CheckPhoneDto } from './dto/check-phone.dto';
 import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 
 /**
@@ -17,6 +18,15 @@ export class StudentRegistrationController {
     private readonly otpService: OtpService,
     private readonly registrationService: StudentRegistrationService,
   ) {}
+
+  /**
+   * فحص ما إذا كان الرقم مسجل مسبقاً في مدرسة مفهوم
+   */
+  @Post('check-phone')
+  @HttpCode(HttpStatus.OK)
+  async checkPhone(@Body() dto: CheckPhoneDto) {
+    return this.registrationService.checkPhoneRegistration(dto);
+  }
 
   /**
    * طلب رمز OTP لرقم الهاتف
