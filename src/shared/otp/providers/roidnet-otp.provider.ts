@@ -1,18 +1,18 @@
 // src/shared/otp/providers/roidnet-otp.provider.ts
 import { Logger } from '@nestjs/common';
+import * as https from 'https';
 import type { DelegatedOtpProvider, OtpSendResult, OtpVerifyResult } from './otp-provider.interface';
 
 /**
  * 🌐 RoidNet WhatsApp OTP Provider — Delegated
  *
- * RoidNet يولّد OTP بنفسه ويرسله عبر WhatsApp،
- * ثم يتحقق منه عبر /verify.
+ * يستخدم Node.js https module بدل fetch بسبب
+ * مشكلة توافق بين undici (fetch) و Cloudflare.
  *
  * عقد الأخطاء:
  *   send()   → success/failure (لا throw)
  *   verify() → { verified } للنتائج العادية
  *           → THROW للأخطاء الخارجية (timeout, 5xx, network)
- *             حتى لا يُعاقب المستخدم على فشل المزود
  */
 export class RoidNetOtpProvider implements DelegatedOtpProvider {
   private readonly logger = new Logger('RoidNetOtpProvider');
@@ -27,7 +27,7 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
   constructor() {
     this.apiKey = process.env.ROIDNET_API_KEY || '';
     this.baseUrl = process.env.ROIDNET_BASE_URL || 'https://otp.roidnet.com';
-    this.timeoutMs = parseInt(process.env.ROIDNET_TIMEOUT_MS || '10000', 10);
+    this.timeoutMs = parseInt(process.env.ROIDNET_TIMEOUT_MS || '15000', 10);
 
     if (!this.apiKey) {
       throw new Error(
@@ -38,27 +38,58 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
     this.logger.log(`RoidNet provider initialized → ${this.baseUrl}`);
   }
 
-  // ─── Send OTP ──────────────────────────────────────────
+  // ─── HTTP Helper ───────────────────────────────────────
 
-  async send(phone: string): Promise<OtpSendResult> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/v1/otp/send`, {
+  private request(path: string, body: Record<string, unknown>): Promise<{ status: number; data: Record<string, unknown> }> {
+    return new Promise((resolve, reject) => {
+      const jsonBody = JSON.stringify(body);
+      const url = new URL(path, this.baseUrl);
+
+      const req = https.request(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': this.apiKey,
+          'Content-Length': Buffer.byteLength(jsonBody),
         },
-        body: JSON.stringify({ phone }),
-        signal: AbortSignal.timeout(this.timeoutMs),
+      }, (res) => {
+        let responseBody = '';
+        res.on('data', (chunk) => { responseBody += chunk; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(responseBody) as Record<string, unknown>;
+            resolve({ status: res.statusCode ?? 0, data });
+          } catch {
+            reject(new Error(`ROIDNET_INVALID_JSON: ${responseBody.substring(0, 200)}`));
+          }
+        });
       });
 
-      if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        this.logger.error(`RoidNet send failed: HTTP ${response.status} — ${body}`);
-        return { success: false, error: `RoidNet HTTP ${response.status}` };
+      req.on('error', (err) => {
+        reject(new Error(`ROIDNET_NETWORK_ERROR: ${err.message}`));
+      });
+
+      req.setTimeout(this.timeoutMs, () => {
+        req.destroy();
+        reject(new Error(`ROIDNET_TIMEOUT: ${this.timeoutMs}ms`));
+      });
+
+      req.write(jsonBody);
+      req.end();
+    });
+  }
+
+  // ─── Send OTP ──────────────────────────────────────────
+
+  async send(phone: string): Promise<OtpSendResult> {
+    try {
+      const { status, data } = await this.request('/api/v1/otp/send', { phone });
+
+      if (status >= 400) {
+        this.logger.error(`RoidNet send failed: HTTP ${status} — ${JSON.stringify(data)}`);
+        return { success: false, error: `RoidNet HTTP ${status}` };
       }
 
-      const data = await response.json() as Record<string, unknown>;
       const success = data.success === true;
 
       if (!success) {
@@ -81,18 +112,13 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
   //
 
   async verify(phone: string, code: string): Promise<OtpVerifyResult> {
-    let response: Response;
+    let status: number;
+    let data: Record<string, unknown>;
 
     try {
-      response = await fetch(`${this.baseUrl}/api/v1/otp/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-        },
-        body: JSON.stringify({ phone, code }),
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
+      const result = await this.request('/api/v1/otp/verify', { phone, code });
+      status = result.status;
+      data = result.data;
     } catch (error: unknown) {
       // Network failure / timeout → THROW → no penalty
       const msg = error instanceof Error ? error.message : String(error);
@@ -101,21 +127,12 @@ export class RoidNetOtpProvider implements DelegatedOtpProvider {
     }
 
     // HTTP 5xx → server error → THROW → no penalty
-    if (response.status >= 500) {
-      const body = await response.text().catch(() => '');
-      this.logger.error(`RoidNet verify server error: HTTP ${response.status} — ${body}`);
-      throw new Error(`ROIDNET_VERIFY_SERVER_ERROR: HTTP ${response.status}`);
+    if (status >= 500) {
+      this.logger.error(`RoidNet verify server error: HTTP ${status} — ${JSON.stringify(data)}`);
+      throw new Error(`ROIDNET_VERIFY_SERVER_ERROR: HTTP ${status}`);
     }
 
-    // HTTP 2xx/4xx → parse response → verified or not
-    let data: Record<string, unknown>;
-    try {
-      data = await response.json() as Record<string, unknown>;
-    } catch {
-      this.logger.error(`RoidNet verify: invalid JSON response`);
-      throw new Error('ROIDNET_VERIFY_INVALID_RESPONSE');
-    }
-
+    // HTTP 2xx/4xx → verified or not
     const verified = data.verified === true;
 
     if (!verified) {
