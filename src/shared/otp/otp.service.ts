@@ -212,7 +212,7 @@ export class OtpService {
 
     return {
       registrationRequestId: otp.registrationRequestId,
-      expiresAt: otp.expiresAt,
+      expiresInSeconds: Math.max(0, Math.floor((otp.expiresAt.getTime() - Date.now()) / 1000)),
       channel: otp.channel,
     };
   }
@@ -325,7 +325,7 @@ export class OtpService {
       return {
         registrationRequestId,
         registrationToken: registrationTokenPlain,
-        registrationTokenExpiresAt,
+        expiresInMinutes: Math.max(0, Math.floor((registrationTokenExpiresAt.getTime() - Date.now()) / 60000)),
       };
     });
   }
@@ -473,7 +473,7 @@ export class OtpService {
         return {
           registrationRequestId,
           registrationToken: registrationTokenPlain,
-          registrationTokenExpiresAt,
+          expiresInMinutes: Math.max(0, Math.floor((registrationTokenExpiresAt.getTime() - Date.now()) / 60000)),
         };
       } else {
         // ❌ كود خاطئ — نفس semantics G2
