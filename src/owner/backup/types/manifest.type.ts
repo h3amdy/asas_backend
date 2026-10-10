@@ -67,10 +67,13 @@ export interface ManifestMediaComponent {
 }
 
 export interface ManifestConfigComponent {
-  included: true;
+  included: boolean;
   directory: string;
   files: string[];
   sizeBytes: number;
+  failedRequired?: string[];
+  skippedOptional?: string[];
+  error?: string;
 }
 
 export interface ManifestConsistency {

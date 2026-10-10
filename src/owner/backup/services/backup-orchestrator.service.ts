@@ -26,6 +26,7 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import { resolveProjectRoot } from '../utils/resolve-project-root';
 
 const execFileAsync = promisify(execFile);
 
@@ -257,21 +258,32 @@ export class BackupOrchestratorService {
       }
 
       // ── 5. CONFIG COPY ──
-      const projectRoot =
-        process.env.PROJECT_ROOT ??
-        path.resolve(__dirname, '../../../../');
+      const projectRoot = resolveProjectRoot();
       const configResult = await this.configEngine.execute(
         workDir,
         projectRoot,
       );
 
-      await this.backupLogger.info(
-        jobId,
-        'CONFIG_COPY',
-        `Config copy: ${configResult.details.files.length} files`,
-        { files: configResult.details.files },
-        configResult.durationMs,
-      );
+      const configHasRequiredFailure =
+        (configResult.details.failedRequired?.length ?? 0) > 0;
+      const configEngineFailedCompletely =
+        !configResult.success && configResult.details.failedRequired?.length === 0;
+
+      await this.backupLogger.logBackupEvent({
+        backupJobId: jobId,
+        level: configHasRequiredFailure || configEngineFailedCompletely ? 'WARN' : 'INFO',
+        phase: 'CONFIG_COPY',
+        message: configHasRequiredFailure
+          ? `Config copy completed with required files missing: ${configResult.details.failedRequired?.join(', ')}`
+          : `Config copy: ${configResult.details.files.length} files`,
+        metadata: {
+          files: configResult.details.files,
+          ...(configResult.details.failedRequired?.length ? { failedRequired: configResult.details.failedRequired } : {}),
+          ...(configResult.details.skippedOptional?.length ? { skippedOptional: configResult.details.skippedOptional } : {}),
+          ...(configResult.errorMessage ? { error: configResult.errorMessage } : {}),
+        },
+        durationMs: configResult.durationMs,
+      });
 
       // ── 6. BUILD MANIFEST ──
       const manifestStart = Date.now();
@@ -305,6 +317,13 @@ export class BackupOrchestratorService {
         this.logger.warn('Could not capture content stats for manifest');
       }
 
+      // حساب الحالة الشاملة — يُستخدم في manifest و instanceStatus
+      // يشمل: فشل ملف مطلوب (failedRequired) أو فشل المحرك بالكامل (success=false)
+      const overallConsistency: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'FAILED' =
+        mediaStatus === 'PARTIAL_SUCCESS' || configHasRequiredFailure || configEngineFailedCompletely
+          ? 'PARTIAL_SUCCESS'
+          : 'SUCCESS';
+
       const manifest = this.buildManifest(
         job.uuid,
         category,
@@ -312,7 +331,7 @@ export class BackupOrchestratorService {
         dbResult,
         mediaResult,
         configResult,
-        mediaStatus,
+        overallConsistency,
         contentStats,
       );
 
@@ -432,10 +451,7 @@ export class BackupOrchestratorService {
         'utf-8',
       );
 
-      const instanceStatus: BackupInstanceStatus =
-        mediaStatus === 'PARTIAL_SUCCESS'
-          ? 'PARTIAL_SUCCESS'
-          : 'SUCCESS';
+      const instanceStatus: BackupInstanceStatus = overallConsistency;
 
       // ⚠️ إنشاء Instance + تحديث Job في Transaction واحد
       // لمنع حالة Instance بدون Job أو العكس
@@ -468,10 +484,21 @@ export class BackupOrchestratorService {
           },
         });
 
+        const jobErrorMessage =
+          overallConsistency === 'PARTIAL_SUCCESS'
+            ? [
+                ...(configResult.errorMessage ? [configResult.errorMessage] : []),
+                ...(mediaStatus === 'PARTIAL_SUCCESS'
+                  ? [`Media backup completed with ${missingCount} missing files`]
+                  : []),
+              ].join('; ') || 'Completed with partial consistency'
+            : undefined;
+
         await tx.backupJob.update({
           where: { id: jobId },
           data: {
             status: 'COMPLETED',
+            errorMessage: jobErrorMessage,
             backupInstanceId: instance.id,
             finishedAt: new Date(),
           },
@@ -585,12 +612,21 @@ export class BackupOrchestratorService {
               sizeBytes: Number(mediaResult.sizeBytes),
             }
           : null,
-        config: configResult.success
+        config: configResult.details.files.length > 0 || (configResult.details.failedRequired?.length ?? 0) > 0
           ? {
-              included: true,
+              included: configResult.details.files.length > 0,
               directory: 'config/',
               files: configResult.details.files,
               sizeBytes: Number(configResult.sizeBytes),
+              ...(configResult.details.failedRequired?.length
+                ? {
+                    failedRequired: configResult.details.failedRequired,
+                    error: configResult.errorMessage,
+                  }
+                : {}),
+              ...(configResult.details.skippedOptional?.length
+                ? { skippedOptional: configResult.details.skippedOptional }
+                : {}),
             }
           : null,
       },

@@ -62,9 +62,13 @@ export class DbRestoreEngine {
 
       try {
         const cleanDbUrl = this.sanitizeDatabaseUrl(databaseUrl);
-        await execFileAsync('psql', [cleanDbUrl, '-f', sqlPath], {
-          maxBuffer: 100 * 1024 * 1024, // 100MB buffer للإخراج
-        });
+        await execFileAsync(
+          'psql',
+          ['-v', 'ON_ERROR_STOP=1', cleanDbUrl, '-f', sqlPath],
+          {
+            maxBuffer: 100 * 1024 * 1024, // 100MB buffer للإخراج
+          },
+        );
       } finally {
         // 4. حذف الملف المفكوك (تنظيف)
         try {

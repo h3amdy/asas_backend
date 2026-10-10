@@ -13,15 +13,17 @@ interface ConfigFileEntry {
   name: string;
   /** المسار الكامل للملف المصدر */
   sourcePath: string;
+  /** هل هو مطلوب أم اختياري؟ */
+  required: boolean;
 }
 
 /**
  * محرك نسخ الإعدادات (DEC-001)
  *
  * ينسخ ملفات الإعدادات المعتمدة فقط (Whitelist):
- * - .env
- * - nginx.conf (إعدادات Nginx)
- * - pm2.config.js (إعدادات PM2)
+ * - .env (مطلوب — يحتوي إعدادات التطبيق الأساسية)
+ * - nginx config (اختياري — يعتمد على بيئة التشغيل)
+ * - pm2 config (اختياري — فقط إذا وُجد في المشروع)
  *
  * لا ينسخ أي ملفات تنفيذية أو كود التطبيق.
  */
@@ -31,23 +33,46 @@ export class ConfigBackupEngine {
 
   /**
    * بناء قائمة الملفات المعتمدة للنسخ
-   * مصدر واحد للحقيقة — لا تكرار
+   * يميّز بين الملفات المطلوبة والاختيارية
    */
   private getConfigFiles(projectRoot: string): ConfigFileEntry[] {
-    return [
+    const files: ConfigFileEntry[] = [
+      // .env — مطلوب دائماً
       {
         name: '.env',
         sourcePath: path.join(projectRoot, '.env'),
-      },
-      {
-        name: 'nginx.conf',
-        sourcePath: '/etc/nginx/sites-available/asas',
-      },
-      {
-        name: 'pm2.config.js',
-        sourcePath: path.join(projectRoot, 'pm2.config.js'),
+        required: true,
       },
     ];
+
+    // Nginx — اختياري، يُضبط عبر NGINX_CONFIG_PATH
+    const nginxPath = process.env.NGINX_CONFIG_PATH;
+    if (nginxPath) {
+      files.push({
+        name: 'nginx.conf',
+        sourcePath: nginxPath,
+        required: false,
+      });
+    }
+
+    // PM2 — اختياري، فقط إذا وُجد فعلاً في المشروع
+    const pm2Candidates = ['pm2.config.js', 'ecosystem.config.js'];
+    for (const candidate of pm2Candidates) {
+      const candidatePath = path.join(projectRoot, candidate);
+      try {
+        require('fs').accessSync(candidatePath);
+        files.push({
+          name: candidate,
+          sourcePath: candidatePath,
+          required: false,
+        });
+        break;
+      } catch {
+        // الملف غير موجود — نتخطاه بصمت
+      }
+    }
+
+    return files;
   }
 
   /**
@@ -67,11 +92,12 @@ export class ConfigBackupEngine {
 
       const filesToCopy = this.getConfigFiles(projectRoot);
       const copiedFiles: string[] = [];
+      const failedRequired: string[] = [];
+      const skippedOptional: string[] = [];
       let totalSize = BigInt(0);
 
-      for (const { name, sourcePath } of filesToCopy) {
+      for (const { name, sourcePath, required } of filesToCopy) {
         try {
-          // نسخ مباشرة — بدون access() منفصلة (توفير I/O)
           const destPath = path.join(configDir, name);
           await fsp.copyFile(sourcePath, destPath);
 
@@ -87,36 +113,68 @@ export class ConfigBackupEngine {
               : undefined;
 
           if (errCode === 'ENOENT') {
-            this.logger.warn(
-              `Config file not found (skipped): ${name} at ${sourcePath}`,
-            );
+            if (required) {
+              failedRequired.push(name);
+              this.logger.error(
+                `Required config file not found: ${name} at ${sourcePath}`,
+              );
+            } else {
+              skippedOptional.push(name);
+              this.logger.debug(
+                `Optional config file not found (skipped): ${name}`,
+              );
+            }
           } else if (errCode === 'EACCES') {
-            this.logger.warn(
-              `Config file not accessible (skipped): ${name} at ${sourcePath}`,
-            );
+            if (required) {
+              failedRequired.push(name);
+              this.logger.error(
+                `Required config file not accessible: ${name} at ${sourcePath}`,
+              );
+            } else {
+              skippedOptional.push(name);
+              this.logger.warn(
+                `Optional config file not accessible (skipped): ${name}`,
+              );
+            }
           } else {
             const errMsg =
               error instanceof Error ? error.message : String(error);
-            this.logger.warn(
-              `Failed to copy config file ${name}: ${errMsg}`,
-            );
+            if (required) {
+              failedRequired.push(name);
+              this.logger.error(`Failed to copy required config ${name}: ${errMsg}`);
+            } else {
+              skippedOptional.push(name);
+              this.logger.warn(`Failed to copy optional config ${name}: ${errMsg}`);
+            }
           }
-          // لا نفشل العملية — نسجل ونكمل
         }
       }
 
       const durationMs = Date.now() - startTime;
+      const success = failedRequired.length === 0;
+
       this.logger.log(
-        `Config backup completed: ${copiedFiles.length}/${filesToCopy.length} files in ${durationMs}ms`,
+        `Config backup completed: ${copiedFiles.length}/${filesToCopy.length} files in ${durationMs}ms` +
+          (failedRequired.length > 0
+            ? ` (${failedRequired.length} required FAILED: ${failedRequired.join(', ')})`
+            : '') +
+          (skippedOptional.length > 0
+            ? ` (${skippedOptional.length} optional skipped: ${skippedOptional.join(', ')})`
+            : ''),
       );
 
       return {
-        success: copiedFiles.length > 0,
+        success,
         outputPath: configDir,
         sizeBytes: totalSize,
         durationMs,
+        errorMessage: failedRequired.length > 0
+          ? `Required config files missing: ${failedRequired.join(', ')}`
+          : undefined,
         details: {
           files: copiedFiles,
+          failedRequired,
+          skippedOptional,
         },
       };
     } catch (error) {
@@ -133,6 +191,8 @@ export class ConfigBackupEngine {
         errorMessage: errorMsg,
         details: {
           files: [],
+          failedRequired: [],
+          skippedOptional: [],
         },
       };
     }

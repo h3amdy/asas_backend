@@ -47,5 +47,9 @@ export interface MediaBackupResult extends BackupEngineResult {
 export interface ConfigBackupResult extends BackupEngineResult {
   details: {
     files: string[];
+    /** ملفات مطلوبة فشل نسخها */
+    failedRequired?: string[];
+    /** ملفات اختيارية تم تخطيها */
+    skippedOptional?: string[];
   };
 }

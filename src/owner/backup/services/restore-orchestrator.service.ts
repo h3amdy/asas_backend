@@ -15,6 +15,8 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import { resolveProjectRoot } from '../utils/resolve-project-root';
+import { restoreConfigFiles } from '../utils/safe-copy';
 
 const execFileAsync = promisify(execFile);
 
@@ -141,6 +143,13 @@ export class RestoreOrchestratorService {
       `restore-${job.uuid}`,
     );
 
+    let dbRestored = false;
+    let dbTouched = false;
+    let mediaRestored = false;
+    let rollbackAttempted = false;
+    let safetyBackupId: number | null = null;
+    let safetyStoragePath: string | null = null;
+
     try {
       await this.prisma.restoreJob.update({
         where: { id: jobId },
@@ -159,7 +168,6 @@ export class RestoreOrchestratorService {
       });
 
       // ── 2. SAFETY BACKUP (DEC-013) ──
-      let safetyBackupId: number | null = null;
       if (params.restoreDatabase) {
         const safetyStart = Date.now();
         this.logger.log('Creating safety backup before restore...');
@@ -181,6 +189,12 @@ export class RestoreOrchestratorService {
           if (!safetyBackupId) {
             throw new Error('Safety backup did not complete in time');
           }
+
+          // قراءة مسار الأرشيف قبل استبدال قاعدة البيانات لحفظه في الذاكرة
+          const safetyInstance = await this.prisma.backupInstance.findUnique({
+            where: { id: safetyBackupId },
+          });
+          safetyStoragePath = safetyInstance?.storagePath ?? null;
 
           // تثبيت Safety Backup تلقائياً
           await this.prisma.backupInstance.update({
@@ -300,6 +314,7 @@ export class RestoreOrchestratorService {
         this.logger.warn(
           '⚠️ DATABASE RESTORE — POINT OF NO RETURN',
         );
+        dbTouched = true;
         const dbResult = await this.dbRestoreEngine.execute(
           dbFile,
           databaseUrl,
@@ -338,10 +353,26 @@ export class RestoreOrchestratorService {
             this.logger.error(
               'Database restore failed — attempting rollback from safety backup',
             );
-            await this.attemptRollback(jobId, safetyBackupId, workDir);
+            rollbackAttempted = true;
+            await this.attemptRollback({
+              jobId,
+              jobUuid: job.uuid,
+              initiatedByUserUuid: job.initiatedByUserUuid,
+              startedAt: job.startedAt ?? undefined,
+              safetyBackupId,
+              safetyStoragePath,
+              workDir,
+              rollbackDatabase: true,
+              rollbackMedia: mediaRestored,
+              rollbackConfig: false,
+              originalError: dbResult.errorMessage ?? 'Database restore failed',
+            });
           }
           return;
         }
+
+        // تم استعادة قاعدة البيانات بنجاح
+        dbRestored = true;
 
         // ── إعادة بناء حالة DB بعد الاستعادة ──
         // 1. تنظيف Jobs العالقة (كانت RUNNING وقت أخذ النسخة)
@@ -446,7 +477,10 @@ export class RestoreOrchestratorService {
             await fsp.mkdir(path.dirname(resolvedDest), { recursive: true });
             await fsp.copyFile(src, resolvedDest);
             filesCopied++;
+            mediaRestored = true;
           }
+
+          mediaRestored = filesCopied > 0;
 
           await this.backupLogger.writeLog({
             restoreJobId: currentJobId,
@@ -469,6 +503,9 @@ export class RestoreOrchestratorService {
         }
       }
 
+      let hasRequiredConfigFailure = false;
+      let configFailureMessage = '';
+
       // ── 7. RESTORE CONFIG ──
       if (
         params.restoreConfiguration &&
@@ -479,50 +516,62 @@ export class RestoreOrchestratorService {
           workDir,
           manifest.components.config.directory,
         );
-        const projectRoot =
-          process.env.PROJECT_ROOT ??
-          path.resolve(__dirname, '../../../../');
+        const projectRoot = resolveProjectRoot();
 
         try {
-          for (const fileName of manifest.components.config.files) {
-            const src = path.join(configDir, fileName);
-            let dest: string;
+          const configRestoreResult = await restoreConfigFiles(
+            configDir,
+            projectRoot,
+            manifest.components.config.files,
+          );
 
-            if (fileName === 'nginx.conf') {
-              dest = '/etc/nginx/sites-available/asas';
-            } else {
-              dest = path.join(projectRoot, fileName);
-            }
+          // فحص هل فشل استعادة أي ملف مطلوب (مثل .env)
+          const failedRequiredFiles = configRestoreResult.files.filter(
+            (f) => f.fileName === '.env' && f.status !== 'restored',
+          );
+          if (failedRequiredFiles.length > 0) {
+            hasRequiredConfigFailure = true;
+            configFailureMessage = `Required config file failed to restore: ${failedRequiredFiles.map((f) => `${f.fileName} (${f.error ?? f.status})`).join(', ')}`;
+          }
 
-            try {
-              await fsp.copyFile(src, dest);
-              this.logger.log(`Config restored: ${fileName}`);
-            } catch (error) {
-              const msg =
-                error instanceof Error
-                  ? error.message
-                  : String(error);
+          // تسجيل تفاصيل كل ملف
+          for (const fileResult of configRestoreResult.files) {
+            if (fileResult.status === 'restored') {
+              this.logger.log(`Config restored: ${fileResult.fileName}`);
+            } else if (fileResult.status === 'review') {
+              const nginxLivePath = process.env.NGINX_CONFIG_PATH ?? '(not configured)';
               this.logger.warn(
-                `Config restore skipped ${fileName}: ${msg}`,
+                `⚠️ ${fileResult.fileName} extracted to review: ${fileResult.destPath}\n` +
+                `  To apply: diff ${fileResult.destPath} ${nginxLivePath}\n` +
+                `  Then: cp ${fileResult.destPath} ${nginxLivePath} && nginx -t && systemctl reload nginx`,
               );
+            } else {
+              const msg = `Config restore ${fileResult.status}: ${fileResult.fileName} — ${fileResult.error ?? 'unknown'}`;
+              if (fileResult.error?.includes('CRITICAL')) {
+                this.logger.error(`🚨 ${msg}`);
+              } else {
+                this.logger.warn(msg);
+              }
             }
           }
 
           await this.backupLogger.writeLog({
             restoreJobId: currentJobId,
-            level: 'INFO',
+            level: hasRequiredConfigFailure ? 'ERROR' : configRestoreResult.level,
             phase: 'RESTORE_CONFIG',
-            message: `Config restored`,
+            message: configFailureMessage || configRestoreResult.message,
             durationMs: Date.now() - configStart,
           });
         } catch (error) {
           const msg =
             error instanceof Error ? error.message : String(error);
+          hasRequiredConfigFailure = true;
+          configFailureMessage = `Config restore failed: ${msg}`;
           await this.backupLogger.writeLog({
             restoreJobId: currentJobId,
-            level: 'WARN',
+            level: 'ERROR',
             phase: 'RESTORE_CONFIG',
-            message: `Config restore failed: ${msg}`,
+            message: configFailureMessage,
             durationMs: Date.now() - configStart,
           });
         }
@@ -569,20 +618,63 @@ export class RestoreOrchestratorService {
         });
       }
 
-      // ── 9. CLEANUP + SUCCESS ──
+      // ── 9. CLEANUP + FINAL STATUS ──
       await this.storage.deleteDirectory(workDir);
 
-      try {
-        await this.prisma.restoreJob.update({
-          where: { id: currentJobId },
-          data: {
-            status: 'COMPLETED',
-            finishedAt: new Date(),
-          },
-        });
-      } catch {
-        this.logger.warn('Could not mark restore job as COMPLETED (record may not exist)');
+      if (hasRequiredConfigFailure) {
+        // إذا كانت قاعدة البيانات أو الوسائط قد استُعيدت بنجاح قبل فشل .env:
+        // يجب استدعاء Rollback لإلغاء التغييرات وحماية النظام من الحالة المشوهة
+        if (dbRestored || mediaRestored) {
+          if (!rollbackAttempted) {
+            rollbackAttempted = true;
+            this.logger.error(
+              `Required config restore failed after database/media restore — initiating rollback`,
+            );
+            await this.attemptRollback({
+              jobId: currentJobId,
+              jobUuid: job.uuid,
+              initiatedByUserUuid: job.initiatedByUserUuid,
+              startedAt: job.startedAt ?? undefined,
+              safetyBackupId,
+              safetyStoragePath,
+              workDir,
+              rollbackDatabase: dbRestored,
+              rollbackMedia: mediaRestored,
+              rollbackConfig: false,
+              originalError: configFailureMessage,
+            });
+          }
+        } else {
+          // لم تتغير قاعدة البيانات ولا الوسائط (فشل قبل أي تغيير في البيانات)
+          await this.prisma.restoreJob.updateMany({
+            where: { uuid: job.uuid },
+            data: {
+              status: 'FAILED',
+              errorMessage: configFailureMessage,
+              finishedAt: new Date(),
+            },
+          });
+
+          await this.backupLogger.writeLog({
+            restoreJobId: currentJobId,
+            level: 'ERROR',
+            phase: 'CLEANUP',
+            message: `Restore finished with FAILED status: ${configFailureMessage}`,
+          });
+
+          this.logger.error(`❌ Restore completed with FAILED status: ${configFailureMessage}`);
+        }
+        return;
       }
+
+      // النجاح التام فقط إذا لم يكن هناك أي فشل في مكوّن مطلوب
+      await this.prisma.restoreJob.updateMany({
+        where: { uuid: job.uuid },
+        data: {
+          status: 'COMPLETED',
+          finishedAt: new Date(),
+        },
+      });
 
       // تحديث النسخة — تم استخدامها (بالـ UUID لأن الـ ID قد يتغير بعد restore)
       try {
@@ -608,7 +700,24 @@ export class RestoreOrchestratorService {
       this.logger.error(
         `Restore pipeline failed: ${msg}`,
       );
-      await this.failJob(currentJobId, msg, workDir);
+      if ((dbTouched || dbRestored || mediaRestored) && !rollbackAttempted) {
+        rollbackAttempted = true;
+        await this.attemptRollback({
+          jobId: currentJobId,
+          jobUuid: job.uuid,
+          initiatedByUserUuid: job.initiatedByUserUuid,
+          startedAt: job.startedAt ?? undefined,
+          safetyBackupId,
+          safetyStoragePath,
+          workDir,
+          rollbackDatabase: dbTouched || dbRestored,
+          rollbackMedia: mediaRestored,
+          rollbackConfig: false,
+          originalError: msg,
+        });
+      } else if (!rollbackAttempted) {
+        await this.failJob(currentJobId, msg, workDir);
+      }
     }
   }
 
@@ -885,18 +994,39 @@ export class RestoreOrchestratorService {
   /**
    * محاولة Rollback من Safety Backup
    */
-  private async attemptRollback(
-    jobId: number,
-    safetyBackupId: number | null,
-    workDir?: string,
-  ): Promise<void> {
-    if (!safetyBackupId) {
-      await this.prisma.restoreJob.update({
-        where: { id: jobId },
+  private async attemptRollback(params: {
+    jobId: number;
+    jobUuid: string;
+    initiatedByUserUuid?: string;
+    startedAt?: Date;
+    safetyBackupId: number | null;
+    safetyStoragePath: string | null;
+    workDir?: string;
+    rollbackDatabase: boolean;
+    rollbackMedia: boolean;
+    rollbackConfig: boolean;
+    originalError: string;
+  }): Promise<void> {
+    const {
+      jobId,
+      jobUuid,
+      initiatedByUserUuid,
+      startedAt,
+      safetyBackupId,
+      safetyStoragePath,
+      workDir,
+      rollbackDatabase,
+      rollbackMedia,
+      rollbackConfig,
+      originalError,
+    } = params;
+
+    if (!safetyBackupId && !safetyStoragePath) {
+      await this.prisma.restoreJob.updateMany({
+        where: { uuid: jobUuid },
         data: {
           status: 'CRITICAL_FAILURE',
-          errorMessage:
-            'Database restore failed and no safety backup available for rollback',
+          errorMessage: `Restore failed: ${originalError} (no safety backup available for rollback)`,
           finishedAt: new Date(),
         },
       });
@@ -906,15 +1036,23 @@ export class RestoreOrchestratorService {
     try {
       this.logger.warn('🔄 Attempting rollback from safety backup...');
 
-      const safetyInstance = await this.prisma.backupInstance.findUnique(
-        { where: { id: safetyBackupId } },
-      );
-
-      if (!safetyInstance) {
-        throw new Error('Safety backup instance not found');
+      // تحديد مسار أرشيف الأمان:
+      // الأولوية لمسار الملف المحفوظ في الذاكرة لضمان العمل حتى بعد استبدال قاعدة البيانات
+      let archivePath = safetyStoragePath;
+      if (!archivePath && safetyBackupId) {
+        const safetyInstance = await this.prisma.backupInstance.findUnique({
+          where: { id: safetyBackupId },
+        });
+        archivePath = safetyInstance?.storagePath ?? null;
       }
 
-      // فك الأرشيف واستعادة DB فقط
+      if (!archivePath) {
+        throw new Error('Safety backup archive not found');
+      }
+
+      await fsp.access(archivePath);
+
+      // فك الأرشيف في مجلد rollback مخصص
       const rollbackDir = workDir
         ? `${workDir}-rollback`
         : `/tmp/restore-rollback-${Date.now()}`;
@@ -922,15 +1060,10 @@ export class RestoreOrchestratorService {
 
       await execFileAsync('tar', [
         '-xzf',
-        safetyInstance.storagePath,
+        archivePath,
         '-C',
         rollbackDir,
       ]);
-
-      const databaseUrl = process.env.DATABASE_URL;
-      if (!databaseUrl) {
-        throw new Error('DATABASE_URL not configured for rollback');
-      }
 
       const rollbackManifest: BackupManifest = JSON.parse(
         await fsp.readFile(
@@ -939,42 +1072,104 @@ export class RestoreOrchestratorService {
         ),
       );
 
-      if (!rollbackManifest.components.database) {
-        throw new Error('Safety backup has no database component');
+      // 1. تراجع قاعدة البيانات إذا كانت قد استُعيدت
+      if (rollbackDatabase) {
+        if (!rollbackManifest.components.database) {
+          throw new Error('Safety backup has no database component');
+        }
+        const databaseUrl = process.env.DATABASE_URL;
+        if (!databaseUrl) {
+          throw new Error('DATABASE_URL not configured for rollback');
+        }
+        const dbFile = path.join(
+          rollbackDir,
+          rollbackManifest.components.database.file,
+        );
+        const rollbackResult = await this.dbRestoreEngine.execute(
+          dbFile,
+          databaseUrl,
+        );
+        if (!rollbackResult.success) {
+          throw new Error(`Database rollback failed: ${rollbackResult.errorMessage}`);
+        }
       }
 
-      const dbFile = path.join(
-        rollbackDir,
-        rollbackManifest.components.database.file,
-      );
-      const rollbackResult = await this.dbRestoreEngine.execute(
-        dbFile,
-        databaseUrl,
-      );
+      // 2. تراجع الوسائط إذا كانت قد استُعيدت وتغيرت
+      if (rollbackMedia && rollbackManifest.components.media) {
+        const mediaBasePath = path.resolve(process.env.MEDIA_STORAGE_PATH ?? './storage');
+        const mediaDir = path.join(rollbackDir, rollbackManifest.components.media.directory);
+        const mediaFiles = await this.listFilesRecursive(mediaDir);
+        for (const relPath of mediaFiles) {
+          const resolvedDest = path.resolve(mediaBasePath, relPath);
+          if (!resolvedDest.startsWith(mediaBasePath)) continue;
+          const src = path.join(mediaDir, relPath);
+          await fsp.mkdir(path.dirname(resolvedDest), { recursive: true });
+          await fsp.copyFile(src, resolvedDest);
+        }
+        this.logger.log(`Media rolled back from safety backup`);
+      }
+
+      // 3. تراجع الإعدادات إذا كانت قد استُعيدت
+      if (rollbackConfig && rollbackManifest.components.config) {
+        const projectRoot = resolveProjectRoot();
+        const configDir = path.join(rollbackDir, rollbackManifest.components.config.directory);
+        await restoreConfigFiles(
+          configDir,
+          projectRoot,
+          rollbackManifest.components.config.files,
+        );
+        this.logger.log(`Config rolled back from safety backup`);
+      }
 
       // تنظيف
       await this.storage.deleteDirectory(rollbackDir);
 
-      if (rollbackResult.success) {
-        await this.backupLogger.writeLog({
-          restoreJobId: jobId,
-          level: 'WARN',
-          phase: 'RESTORE_ROLLBACK',
-          message: 'Rollback from safety backup succeeded',
-          durationMs: rollbackResult.durationMs,
-        });
+      await this.backupLogger.writeLog({
+        restoreJobId: jobId,
+        level: 'WARN',
+        phase: 'RESTORE_ROLLBACK',
+        message: 'Rollback from safety backup succeeded',
+      });
 
-        await this.prisma.restoreJob.update({
-          where: { id: jobId },
+      // استخدام updateMany على uuid لضمان الوصول للسجل بعد استعادة DB
+      try {
+        const updateResult = await this.prisma.restoreJob.updateMany({
+          where: { uuid: jobUuid },
           data: {
             status: 'ROLLBACK_COMPLETED',
-            errorMessage: 'Restore failed — rolled back to safety backup',
+            errorMessage: `Restore failed: ${originalError} — rolled back to safety backup`,
             finishedAt: new Date(),
           },
         });
-      } else {
+
+        // إذا لم يكن السجل موجوداً في قاعدة البيانات المستعادة، ننشئه وفق مخطط Prisma الفعلي
+        if (updateResult.count === 0) {
+          this.logger.warn(
+            `Restore job record ${jobUuid} not found in rolled-back DB — creating record to guarantee persistence`,
+          );
+          await this.prisma.restoreJob.create({
+            data: {
+              uuid: jobUuid,
+              restoreDatabase: rollbackDatabase,
+              restoreMedia: rollbackMedia,
+              restoreConfiguration: rollbackConfig,
+              initiatedByUserUuid: initiatedByUserUuid ?? 'system-rollback',
+              status: 'ROLLBACK_COMPLETED',
+              errorMessage: `Restore failed: ${originalError} — rolled back to safety backup`,
+              startedAt: startedAt ?? new Date(),
+              finishedAt: new Date(),
+            },
+          });
+        }
+      } catch (dbUpdateErr) {
+        const dbErrText = dbUpdateErr instanceof Error ? dbUpdateErr.message : String(dbUpdateErr);
+        this.logger.error(`Failed to update restoreJob status in DB: ${dbErrText}`);
+        process.stderr.write(
+          `[CRITICAL OPERATIONAL FAILURE] Failed to persist restoreJob ${jobUuid} to ROLLBACK_COMPLETED in DB: ${dbErrText}\n` +
+          `Original error: ${originalError}\n`,
+        );
         throw new Error(
-          `Rollback failed: ${rollbackResult.errorMessage}`,
+          `CRITICAL_OPERATIONAL_FAILURE: Database connection failed during rollback status persistence: ${dbErrText}`,
         );
       }
     } catch (error) {
@@ -989,14 +1184,47 @@ export class RestoreOrchestratorService {
         message: `CRITICAL — Rollback failed: ${msg}`,
       });
 
-      await this.prisma.restoreJob.update({
-        where: { id: jobId },
-        data: {
-          status: 'CRITICAL_FAILURE',
-          errorMessage: `Restore and rollback both failed: ${msg}`,
-          finishedAt: new Date(),
-        },
-      });
+      // حفظ تفاصيل الخطأ الأصلي وخطأ التراجع معاً
+      try {
+        const critResult = await this.prisma.restoreJob.updateMany({
+          where: { uuid: jobUuid },
+          data: {
+            status: 'CRITICAL_FAILURE',
+            errorMessage: `Restore failed: ${originalError} — Rollback failed: ${msg}`,
+            finishedAt: new Date(),
+          },
+        });
+
+        // إذا لم يكن السجل موجوداً في قاعدة البيانات المستعادة، ننشئه لتوثيق الفشل الحرج
+        if (critResult.count === 0) {
+          this.logger.warn(
+            `Restore job record ${jobUuid} not found in rolled-back DB — creating critical failure record`,
+          );
+          await this.prisma.restoreJob.create({
+            data: {
+              uuid: jobUuid,
+              restoreDatabase: rollbackDatabase,
+              restoreMedia: rollbackMedia,
+              restoreConfiguration: rollbackConfig,
+              initiatedByUserUuid: initiatedByUserUuid ?? 'system-rollback',
+              status: 'CRITICAL_FAILURE',
+              errorMessage: `Restore failed: ${originalError} — Rollback failed: ${msg}`,
+              startedAt: startedAt ?? new Date(),
+              finishedAt: new Date(),
+            },
+          });
+        }
+      } catch (dbCritErr) {
+        const dbErrText = dbCritErr instanceof Error ? dbCritErr.message : String(dbCritErr);
+        this.logger.error(`Failed to update restoreJob to CRITICAL_FAILURE in DB: ${dbErrText}`);
+        process.stderr.write(
+          `[CRITICAL OPERATIONAL FAILURE] Failed to persist CRITICAL_FAILURE for restoreJob ${jobUuid} in DB: ${dbErrText}\n` +
+          `Original error: ${originalError}\nRollback error: ${msg}\n`,
+        );
+        throw new Error(
+          `CRITICAL_OPERATIONAL_FAILURE: Database connection failed during critical failure status persistence: ${dbErrText}`,
+        );
+      }
     }
 
     // تنظيف workDir الأصلي
