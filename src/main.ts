@@ -23,6 +23,11 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: '5mb' });
   app.useBodyParser('raw', { limit: '100mb' });
 
+  // 🛡️ Trust proxy: Nginx على نفس الخادم يمرر X-Real-IP و X-Forwarded-For
+  // 'loopback' = نثق فقط بالطلبات من 127.0.0.1 (Nginx المحلي)
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 'loopback');
+
   // ✅ تفعيل CORS عشان Flutter (وحتى لو صار عندك Web)
   app.enableCors({
     origin: '*', // لاحقاً ممكن نحدد الدومينات بدلاً من النجمة

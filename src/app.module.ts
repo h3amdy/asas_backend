@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +22,14 @@ import { RequestLoggerMiddleware } from './common/middleware/request-logger.midd
   imports: [
     PrismaModule,
     ScheduleModule.forRoot(),
+
+    // 🛡️ Rate Limiting — حماية الـ public endpoints من الإساءة
+    // يُطبّق فقط على الـ endpoints التي تستخدم @UseGuards(ThrottlerGuard)
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 60000, limit: 5 },    // 5 طلبات لكل IP في الدقيقة
+      { name: 'long', ttl: 3600000, limit: 20 },   // 20 طلب لكل IP في الساعة
+    ]),
+
     SchoolsModule,
     GradesModule,
 

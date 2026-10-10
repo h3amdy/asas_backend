@@ -1,5 +1,6 @@
 // src/public/student-registration/student-registration.controller.ts
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { OtpService } from '../../shared/otp/otp.service';
 import { StudentRegistrationService } from './student-registration.service';
 import { RequestOtpDto } from '../../shared/otp/dto/request-otp.dto';
@@ -21,9 +22,15 @@ export class StudentRegistrationController {
 
   /**
    * فحص ما إذا كان الرقم مسجل مسبقاً في مدرسة مفهوم
+   * 🛡️ محمي بـ Rate Limiting: 5/دقيقة + 20/ساعة لكل IP
    */
   @Post('check-phone')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    short: { ttl: 60000, limit: 5 },
+    long: { ttl: 3600000, limit: 20 },
+  })
   async checkPhone(@Body() dto: CheckPhoneDto) {
     return this.registrationService.checkPhoneRegistration(dto);
   }
