@@ -8,10 +8,6 @@ import {
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
-const execFileAsync = promisify(execFile);
 
 /** المسار الافتراضي — يقرأ من البيئة أو يستعمل ./backups */
 function getDefaultStoragePath(): string {
@@ -70,17 +66,9 @@ export class LocalStorageProvider implements StorageProvider, OnModuleInit {
 
   async getAvailableSpace(basePath: string): Promise<bigint> {
     try {
-      // df --output=avail -B1 <path> → يعطي المساحة المتاحة بالبايت
-      const { stdout } = await execFileAsync('df', [
-        '--output=avail',
-        '-B1',
-        basePath,
-      ]);
-      const lines = stdout.trim().split('\n');
-      // السطر الثاني يحتوي الرقم
-      const availableStr = lines[lines.length - 1].trim();
-      return BigInt(availableStr);
-    } catch (error) {
+      const stats = await fsp.statfs(basePath);
+      return BigInt(stats.bavail) * BigInt(stats.bsize);
+    } catch (error: any) {
       this.logger.warn(
         `Failed to get disk space for ${basePath}: ${error.message}`,
       );

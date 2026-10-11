@@ -34,7 +34,7 @@ export interface PreflightResult {
  * يتحقق من:
  * - مساحة القرص المتاحة
  * - صلاحيات الكتابة
- * - توفر أدوات النظام (pg_dump, tar, gzip, sha256sum)
+ * - توفر أدوات النظام (pg_dump, tar, gzip)
  * - اتصال قاعدة البيانات
  * - عدم وجود عملية نسخ أخرى قيد التنفيذ
  *
@@ -52,7 +52,6 @@ export class PreflightValidatorService {
     'pg_dump',
     'tar',
     'gzip',
-    'sha256sum',
   ];
 
   constructor(

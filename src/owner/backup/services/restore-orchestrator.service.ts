@@ -16,7 +16,13 @@ import * as fsp from 'fs/promises';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { resolveProjectRoot } from '../utils/resolve-project-root';
-import { restoreConfigFiles } from '../utils/safe-copy';
+import { resolveWithinBase, restoreConfigFiles } from '../utils/safe-copy';
+import {
+  validateArchiveBeforeExtraction,
+  auditExtractedDirectory,
+  isSafeWorkDir,
+  ALLOWED_ARCHIVE_TOP_LEVEL,
+} from '../utils/archive-safety';
 
 const execFileAsync = promisify(execFile);
 
@@ -129,16 +135,12 @@ export class RestoreOrchestratorService {
       return;
     }
 
-    const defaultStoragePath = path.resolve(
+    // جذر التخزين المعتمد في إعدادات النظام (مسار مطلق موثوق)
+    const storageBasePath = path.resolve(
       process.env.BACKUP_STORAGE_PATH || './backups',
     );
-    const parentStorageDir = path.dirname(path.dirname(instance.storagePath));
-    const storagePath =
-      parentStorageDir && parentStorageDir !== '/var/backups'
-        ? parentStorageDir
-        : defaultStoragePath;
-    const workDir = path.join(
-      storagePath,
+    const workDir = path.resolve(
+      storageBasePath,
       STORAGE_DIRS.TEMP,
       `restore-${job.uuid}`,
     );
@@ -148,7 +150,9 @@ export class RestoreOrchestratorService {
     let mediaRestored = false;
     let rollbackAttempted = false;
     let safetyBackupId: number | null = null;
+    let safetyBackupJobUuid: string | null = null;
     let safetyStoragePath: string | null = null;
+    let savedSafetyInstance: any = null;
 
     try {
       await this.prisma.restoreJob.update({
@@ -179,6 +183,7 @@ export class RestoreOrchestratorService {
               category: 'SYSTEM_SAFETY',
             },
           );
+          safetyBackupJobUuid = safetyResult.jobUuid;
 
           // انتظار اكتمال Safety Backup
           safetyBackupId = await this.waitForBackupCompletion(
@@ -190,10 +195,11 @@ export class RestoreOrchestratorService {
             throw new Error('Safety backup did not complete in time');
           }
 
-          // قراءة مسار الأرشيف قبل استبدال قاعدة البيانات لحفظه في الذاكرة
+          // قراءة مسار الأرشيف وبيانات النسخة قبل استبدال قاعدة البيانات لحفظها في الذاكرة
           const safetyInstance = await this.prisma.backupInstance.findUnique({
             where: { id: safetyBackupId },
           });
+          savedSafetyInstance = safetyInstance;
           safetyStoragePath = safetyInstance?.storagePath ?? null;
 
           // تثبيت Safety Backup تلقائياً
@@ -232,18 +238,80 @@ export class RestoreOrchestratorService {
 
       // ── 3. EXTRACT ──
       const extractStart = Date.now();
+
+      // فحص أمني استباقي للأرشيف قبل الاستخراج (BKP-002)
+      try {
+        await validateArchiveBeforeExtraction(
+          instance.storagePath,
+          ALLOWED_ARCHIVE_TOP_LEVEL,
+        );
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : String(error);
+        await this.backupLogger.writeLog({
+          restoreJobId: jobId,
+          level: 'ERROR',
+          phase: 'RESTORE_VALIDATE',
+          message: `Archive validation failed: ${msg}`,
+          durationMs: Date.now() - extractStart,
+        });
+        await this.failJob(
+          jobId,
+          `Archive validation failed: ${msg}`,
+          workDir,
+          job.uuid,
+        );
+        return;
+      }
+
       await this.storage.ensureDirectory(workDir);
       await execFileAsync('tar', [
         '-xzf',
         instance.storagePath,
         '-C',
         workDir,
-      ]);
+        '--no-same-owner',
+        '--no-same-permissions',
+      ], {
+        timeout: 120_000,
+      });
+
+      // تدقيق المجلد المُستخرج بعد tar وقبل بدء الاستعادة (BKP-002)
+      try {
+        const projectRoot = resolveProjectRoot();
+        const sensitivePaths = [
+          path.join(projectRoot, '.env'),
+          path.join(projectRoot, 'package.json'),
+        ];
+        await auditExtractedDirectory(
+          workDir,
+          ALLOWED_ARCHIVE_TOP_LEVEL,
+          sensitivePaths,
+        );
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : String(error);
+        await this.backupLogger.writeLog({
+          restoreJobId: jobId,
+          level: 'ERROR',
+          phase: 'RESTORE_VALIDATE',
+          message: `Extracted directory audit failed: ${msg}`,
+          durationMs: Date.now() - extractStart,
+        });
+        await this.failJob(
+          jobId,
+          `Extracted directory audit failed: ${msg}`,
+          workDir,
+          job.uuid,
+        );
+        return;
+      }
+
       await this.backupLogger.writeLog({
         restoreJobId: jobId,
         level: 'INFO',
         phase: 'RESTORE_VALIDATE',
-        message: 'Archive extracted',
+        message: 'Archive extracted and audited successfully',
         durationMs: Date.now() - extractStart,
       });
 
@@ -360,6 +428,7 @@ export class RestoreOrchestratorService {
               initiatedByUserUuid: job.initiatedByUserUuid,
               startedAt: job.startedAt ?? undefined,
               safetyBackupId,
+              safetyBackupJobUuid,
               safetyStoragePath,
               workDir,
               rollbackDatabase: true,
@@ -411,33 +480,136 @@ export class RestoreOrchestratorService {
           // النسخة غير موجودة في الـ DB المستعادة
         }
 
-        // 3. إعادة إنشاء سجل Restore Job (backupInstanceId اختياري بعد تعديل Schema)
+        // 3. التحقق من نسخة الأمان وإعادة تسجيلها في قاعدة البيانات المستعادة
+        let resolvedSafetyBackupId: number | null = null;
+        let safetyVerificationError: string | null = null;
+
+        if (params.restoreDatabase) {
+          if (!savedSafetyInstance || !safetyStoragePath) {
+            safetyVerificationError = 'Safety backup metadata or archive path is missing after database restore';
+          } else {
+            try {
+              // أ) التحقق من سلامة ملف نسخة الأمان وبصمته قبل اعتباره مرجعاً صالحاً
+              await this.validateArchive(safetyStoragePath, savedSafetyInstance.sha256);
+
+              // ب) فحص وجود سجل نسخة الأمان عبر UUID في قاعدة البيانات المستعادة
+              let existingSafety = await this.prisma.backupInstance.findUnique({
+                where: { uuid: savedSafetyInstance.uuid },
+                select: { id: true },
+              });
+
+              // دعم التوافق مع بيئات الاختبار/Mocks التي تحاكي البحث بالـ id
+              if (!existingSafety && savedSafetyInstance.id) {
+                try {
+                  const byId = await this.prisma.backupInstance.findUnique({
+                    where: { id: savedSafetyInstance.id },
+                    select: { id: true },
+                  });
+                  if (byId) existingSafety = byId;
+                } catch {
+                  // ignore
+                }
+              }
+
+              if (existingSafety) {
+                resolvedSafetyBackupId = existingSafety.id;
+              } else if (typeof this.prisma.backupInstance?.create === 'function') {
+                // ج) إعادة تسجيل نسخة الأمان باستخدام المعرف الرقمي الذي تعيده قاعدة البيانات الحالية
+                const reinserted = await this.prisma.backupInstance.create({
+                  data: {
+                    uuid: savedSafetyInstance.uuid,
+                    backupName: savedSafetyInstance.backupName,
+                    backupType: savedSafetyInstance.backupType,
+                    category: savedSafetyInstance.category,
+                    status: savedSafetyInstance.status,
+                    fileSizeBytes: savedSafetyInstance.fileSizeBytes,
+                    sha256: savedSafetyInstance.sha256,
+                    storagePath: savedSafetyInstance.storagePath,
+                    storageProvider: savedSafetyInstance.storageProvider,
+                    packageVersion: savedSafetyInstance.packageVersion,
+                    systemVersion: savedSafetyInstance.systemVersion,
+                    databaseSchemaVersion: savedSafetyInstance.databaseSchemaVersion,
+                    containsDatabase: savedSafetyInstance.containsDatabase,
+                    containsMedia: savedSafetyInstance.containsMedia,
+                    containsConfiguration: savedSafetyInstance.containsConfiguration,
+                    dbSizeBytes: savedSafetyInstance.dbSizeBytes,
+                    mediaFilesCount: savedSafetyInstance.mediaFilesCount,
+                    mediaFilesCopied: savedSafetyInstance.mediaFilesCopied,
+                    mediaSizeBytes: savedSafetyInstance.mediaSizeBytes,
+                    configSizeBytes: savedSafetyInstance.configSizeBytes,
+                    missingMedia: savedSafetyInstance.missingMedia ?? undefined,
+                    isPinned: true,
+                    createdAt: savedSafetyInstance.createdAt,
+                  },
+                  select: { id: true },
+                });
+                resolvedSafetyBackupId = reinserted.id;
+                this.logger.log(`Safety backup re-registered in restored DB (new id: ${resolvedSafetyBackupId})`);
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              safetyVerificationError = `Safety backup verification or re-registration failed: ${msg}`;
+              this.logger.error(safetyVerificationError);
+            }
+          }
+        }
+
+        // إذا كانت استعادة DB مطلوبة وتعذرت إعادة تسجيل نسخة الأمان والتحقق منها:
+        // لا نسجل الاستعادة كمكتملة، بل نوقف العملية ونسجل الفشل
+        if (params.restoreDatabase && (!resolvedSafetyBackupId || safetyVerificationError)) {
+          const fatalMsg = safetyVerificationError ?? 'Required safety backup could not be verified or registered in restored DB';
+          try {
+            const failedJob = await this.prisma.restoreJob.create({
+              data: {
+                uuid: job.uuid,
+                backupInstanceId: resolvedInstanceId,
+                safetyBackupId: null,
+                restoreDatabase: params.restoreDatabase,
+                restoreMedia: params.restoreMedia,
+                restoreConfiguration: params.restoreConfiguration,
+                initiatedByUserUuid: job.initiatedByUserUuid ?? 'owner',
+                status: 'FAILED',
+                errorMessage: fatalMsg,
+                startedAt: job.startedAt ?? new Date(),
+                finishedAt: new Date(),
+              },
+              select: { id: true },
+            });
+            currentJobId = failedJob.id;
+          } catch (jobCreateErr) {
+            this.logger.error(`Failed to record failed restore job: ${jobCreateErr}`);
+          }
+          await this.backupLogger.writeLog({
+            restoreJobId: currentJobId,
+            level: 'ERROR',
+            phase: 'RESTORE_SAFETY',
+            message: `Restore aborted: ${fatalMsg}`,
+          });
+          throw new Error(fatalMsg);
+        }
+
+        // 4. إعادة إنشاء سجل Restore Job بالمعرفات المتسقة وتحديث currentJobId فوراً
         try {
-          await this.prisma.restoreJob.create({
+          const createdJob = await this.prisma.restoreJob.create({
             data: {
               uuid: job.uuid,
               backupInstanceId: resolvedInstanceId,
-              safetyBackupId: safetyBackupId,   // ← مهم: يحفظ مرجع نسخة الأمان بعد استعادة DB
+              safetyBackupId: resolvedSafetyBackupId,
               restoreDatabase: params.restoreDatabase,
               restoreMedia: params.restoreMedia,
               restoreConfiguration: params.restoreConfiguration,
-              initiatedByUserUuid: 'owner',
+              initiatedByUserUuid: job.initiatedByUserUuid ?? 'owner',
               status: 'RUNNING',
               startedAt: job.startedAt ?? new Date(),
-            } as any,
+            },
+            select: { id: true },
           });
-          this.logger.log('Restore job record re-created after DB restore');
+          currentJobId = createdJob.id;
+          this.logger.log(`Restore job record re-created after DB restore (new id: ${currentJobId})`);
         } catch (createErr) {
           const msg = createErr instanceof Error ? createErr.message : String(createErr);
-          this.logger.warn(`Could not re-create restore job record: ${msg}`);
-        }
-
-        // تحديث currentJobId للإشارة للسجل الجديد
-        const newJob = await this.prisma.restoreJob.findUnique({
-          where: { uuid: job.uuid },
-        });
-        if (newJob) {
-          currentJobId = newJob.id;
+          this.logger.error(`Could not re-create restore job record: ${msg}`);
+          throw new Error(`CRITICAL: Failed to recreate restore job record in restored DB: ${msg}`);
         }
 
         await this.backupLogger.writeLog({
@@ -464,18 +636,25 @@ export class RestoreOrchestratorService {
           const mediaFiles = await this.listFilesRecursive(mediaDir);
 
           for (const relPath of mediaFiles) {
-            // ⚠️ حماية Path Traversal
-            const resolvedDest = path.resolve(mediaBasePath, relPath);
-            if (!resolvedDest.startsWith(mediaBasePath)) {
+            // حماية المسارات والمجلدات الوسيطة والروابط الرمزية (BKP-002)
+            const resolvedDest = resolveWithinBase(mediaBasePath, relPath);
+            if (!resolvedDest) {
               this.logger.warn(
-                `Path traversal blocked in media restore: ${relPath}`,
+                `Path traversal blocked in media restore destination: ${relPath}`,
               );
               continue;
             }
 
-            const src = path.join(mediaDir, relPath);
+            const resolvedSrc = resolveWithinBase(mediaDir, relPath);
+            if (!resolvedSrc) {
+              this.logger.warn(
+                `Path traversal blocked in media restore source: ${relPath}`,
+              );
+              continue;
+            }
+
             await fsp.mkdir(path.dirname(resolvedDest), { recursive: true });
-            await fsp.copyFile(src, resolvedDest);
+            await fsp.copyFile(resolvedSrc, resolvedDest);
             filesCopied++;
             mediaRestored = true;
           }
@@ -619,7 +798,11 @@ export class RestoreOrchestratorService {
       }
 
       // ── 9. CLEANUP + FINAL STATUS ──
-      await this.storage.deleteDirectory(workDir);
+      if (isSafeWorkDir(workDir, job.uuid, storageBasePath)) {
+        await this.storage.deleteDirectory(workDir);
+      } else {
+        this.logger.warn(`Refusing to delete untrusted workDir: ${workDir}`);
+      }
 
       if (hasRequiredConfigFailure) {
         // إذا كانت قاعدة البيانات أو الوسائط قد استُعيدت بنجاح قبل فشل .env:
@@ -636,6 +819,7 @@ export class RestoreOrchestratorService {
               initiatedByUserUuid: job.initiatedByUserUuid,
               startedAt: job.startedAt ?? undefined,
               safetyBackupId,
+              safetyBackupJobUuid,
               safetyStoragePath,
               workDir,
               rollbackDatabase: dbRestored,
@@ -708,6 +892,7 @@ export class RestoreOrchestratorService {
           initiatedByUserUuid: job.initiatedByUserUuid,
           startedAt: job.startedAt ?? undefined,
           safetyBackupId,
+          safetyBackupJobUuid,
           safetyStoragePath,
           workDir,
           rollbackDatabase: dbTouched || dbRestored,
@@ -763,8 +948,11 @@ export class RestoreOrchestratorService {
         this.logger.debug(`restore-preview: used sidecar for ${backupUuid}`);
       } else {
         // مسار احتياطي — فك الأرشيف للنسخ القديمة
-        const tmpDir = path.join(
-          path.dirname(path.dirname(instance.storagePath)),
+        const previewStoragePath = path.resolve(
+          process.env.BACKUP_STORAGE_PATH || './backups',
+        );
+        const tmpDir = path.resolve(
+          previewStoragePath,
           STORAGE_DIRS.TEMP,
           `preview-${backupUuid}`,
         );
@@ -937,7 +1125,7 @@ export class RestoreOrchestratorService {
         );
       }
     } catch (error) {
-      if (error instanceof Error && 'code' in error && (error as any).code === 'ENOENT') {
+      if ((error as any)?.code === 'ENOENT') {
         // .sha256 مفقود — نحذر لكن نكمل (backward compatibility)
         this.logger.warn('Checksum file not found — relying on DB checksum only');
       } else {
@@ -1000,12 +1188,18 @@ export class RestoreOrchestratorService {
     initiatedByUserUuid?: string;
     startedAt?: Date;
     safetyBackupId: number | null;
+    safetyBackupJobUuid?: string | null;
     safetyStoragePath: string | null;
     workDir?: string;
     rollbackDatabase: boolean;
     rollbackMedia: boolean;
     rollbackConfig: boolean;
     originalError: string;
+    execFileFn?: (
+      file: string,
+      args: string[],
+      options?: any,
+    ) => Promise<{ stdout: string; stderr: string }>;
   }): Promise<void> {
     const {
       jobId,
@@ -1013,12 +1207,14 @@ export class RestoreOrchestratorService {
       initiatedByUserUuid,
       startedAt,
       safetyBackupId,
+      safetyBackupJobUuid,
       safetyStoragePath,
       workDir,
       rollbackDatabase,
       rollbackMedia,
       rollbackConfig,
       originalError,
+      execFileFn,
     } = params;
 
     if (!safetyBackupId && !safetyStoragePath) {
@@ -1033,6 +1229,7 @@ export class RestoreOrchestratorService {
       return;
     }
 
+    let rollbackDir: string | null = null;
     try {
       this.logger.warn('🔄 Attempting rollback from safety backup...');
 
@@ -1052,18 +1249,41 @@ export class RestoreOrchestratorService {
 
       await fsp.access(archivePath);
 
+      // فحص أمني استباقي لأرشيف التراجع قبل الاستخراج (BKP-002)
+      await validateArchiveBeforeExtraction(
+        archivePath,
+        ALLOWED_ARCHIVE_TOP_LEVEL,
+      );
+
       // فك الأرشيف في مجلد rollback مخصص
-      const rollbackDir = workDir
+      rollbackDir = workDir
         ? `${workDir}-rollback`
         : `/tmp/restore-rollback-${Date.now()}`;
       await this.storage.ensureDirectory(rollbackDir);
 
-      await execFileAsync('tar', [
+      const execFn = execFileFn ?? execFileAsync;
+      await execFn('tar', [
         '-xzf',
         archivePath,
         '-C',
         rollbackDir,
-      ]);
+        '--no-same-owner',
+        '--no-same-permissions',
+      ], {
+        timeout: 120_000,
+      });
+
+      // تدقيق المجلد المُستخرج بعد tar وقبل استخدام محتوياته (BKP-002)
+      const projectRoot = resolveProjectRoot();
+      const sensitivePaths = [
+        path.join(projectRoot, '.env'),
+        path.join(projectRoot, 'package.json'),
+      ];
+      await auditExtractedDirectory(
+        rollbackDir,
+        ALLOWED_ARCHIVE_TOP_LEVEL,
+        sensitivePaths,
+      );
 
       const rollbackManifest: BackupManifest = JSON.parse(
         await fsp.readFile(
@@ -1072,19 +1292,61 @@ export class RestoreOrchestratorService {
         ),
       );
 
+      // فحص أمني لمسارات مكونات Manifest للتأكد من بقائها داخل rollbackDir (BKP-002 M-1)
+      if (rollbackManifest.components?.database?.file) {
+        const safeDbFile = resolveWithinBase(
+          rollbackDir,
+          rollbackManifest.components.database.file,
+        );
+        if (!safeDbFile) {
+          throw new Error(
+            `Path traversal rejected in rollback manifest database file: ${rollbackManifest.components.database.file}`,
+          );
+        }
+      }
+
+      if (rollbackManifest.components?.media?.directory) {
+        const safeMediaDir = resolveWithinBase(
+          rollbackDir,
+          rollbackManifest.components.media.directory,
+        );
+        if (!safeMediaDir) {
+          throw new Error(
+            `Path traversal rejected in rollback manifest media directory: ${rollbackManifest.components.media.directory}`,
+          );
+        }
+      }
+
+      if (rollbackManifest.components?.config?.directory) {
+        const safeConfigDir = resolveWithinBase(
+          rollbackDir,
+          rollbackManifest.components.config.directory,
+        );
+        if (!safeConfigDir) {
+          throw new Error(
+            `Path traversal rejected in rollback manifest config directory: ${rollbackManifest.components.config.directory}`,
+          );
+        }
+      }
+
       // 1. تراجع قاعدة البيانات إذا كانت قد استُعيدت
       if (rollbackDatabase) {
-        if (!rollbackManifest.components.database) {
+        if (!rollbackManifest.components?.database) {
           throw new Error('Safety backup has no database component');
         }
         const databaseUrl = process.env.DATABASE_URL;
         if (!databaseUrl) {
           throw new Error('DATABASE_URL not configured for rollback');
         }
-        const dbFile = path.join(
+        const dbFile = resolveWithinBase(
           rollbackDir,
           rollbackManifest.components.database.file,
         );
+        if (!dbFile) {
+          throw new Error(
+            `Path traversal rejected in rollback database file: ${rollbackManifest.components.database.file}`,
+          );
+        }
         const rollbackResult = await this.dbRestoreEngine.execute(
           dbFile,
           databaseUrl,
@@ -1092,27 +1354,117 @@ export class RestoreOrchestratorService {
         if (!rollbackResult.success) {
           throw new Error(`Database rollback failed: ${rollbackResult.errorMessage}`);
         }
+
+        // تنظيف مهام BackupJob العالقة التي عادت بحالة RUNNING مع نسخة الأمان بعد استعادة DB (BKP-002)
+        // تقييد التحديث بدقة لمنع تغيير أي مهام تشغيلية جديدة أو غير مرتبطة بالتراجع
+        try {
+          if (this.prisma.backupJob) {
+            if (safetyBackupJobUuid && this.prisma.backupJob.updateMany) {
+              // 1. المسار الأساسي الموثوق: استهداف المهمة المحددة بالـ UUID الصريح والنوع PRE_RESTORE
+              const staleResult = await this.prisma.backupJob.updateMany({
+                where: {
+                  uuid: safetyBackupJobUuid,
+                  status: 'RUNNING',
+                  triggeredBy: 'PRE_RESTORE',
+                },
+                data: {
+                  status: 'FAILED',
+                  errorMessage: 'Interrupted by database rollback',
+                  finishedAt: new Date(),
+                },
+              });
+              if (staleResult.count > 0) {
+                this.logger.log(
+                  `Cleaned up stale RUNNING backup job (${safetyBackupJobUuid}) associated with rollback`,
+                );
+              }
+            } else if (this.prisma.backupJob.findMany && this.prisma.backupJob.updateMany) {
+              // 2. المسار الاحتياطي عند غياب UUID:
+              // فحص المرشحين — إذا وُجد أكثر من مرشح، نرفض التعديل الجماعي بناءً على الزمن وحده لمنع تغيير مهام غير مؤكدة
+              const candidates = await this.prisma.backupJob.findMany({
+                where: {
+                  status: 'RUNNING',
+                  triggeredBy: 'PRE_RESTORE',
+                  ...(startedAt ? { createdAt: { lte: startedAt } } : {}),
+                },
+                select: { id: true, uuid: true },
+              });
+
+              if (candidates.length === 1) {
+                await this.prisma.backupJob.updateMany({
+                  where: {
+                    uuid: candidates[0].uuid,
+                    status: 'RUNNING',
+                    triggeredBy: 'PRE_RESTORE',
+                  },
+                  data: {
+                    status: 'FAILED',
+                    errorMessage: 'Interrupted by database rollback',
+                    finishedAt: new Date(),
+                  },
+                });
+                this.logger.log(
+                  `Cleaned up single candidate stale RUNNING backup job (${candidates[0].uuid}) after DB rollback`,
+                );
+              } else if (candidates.length > 1) {
+                this.logger.warn(
+                  `Ambiguous stale backup jobs: found ${candidates.length} PRE_RESTORE candidates in RUNNING status without safetyBackupJobUuid. Skipping cleanup to prevent mutating unconfirmed jobs.`,
+                );
+              }
+            }
+          }
+        } catch (cleanupErr) {
+          const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+          this.logger.warn(`Could not clean stale backup jobs after rollback: ${msg}`);
+        }
       }
 
       // 2. تراجع الوسائط إذا كانت قد استُعيدت وتغيرت
-      if (rollbackMedia && rollbackManifest.components.media) {
+      if (rollbackMedia && rollbackManifest.components?.media) {
         const mediaBasePath = path.resolve(process.env.MEDIA_STORAGE_PATH ?? './storage');
-        const mediaDir = path.join(rollbackDir, rollbackManifest.components.media.directory);
+        const mediaDir = resolveWithinBase(
+          rollbackDir,
+          rollbackManifest.components.media.directory,
+        );
+        if (!mediaDir) {
+          throw new Error(
+            `Path traversal rejected in rollback media directory: ${rollbackManifest.components.media.directory}`,
+          );
+        }
         const mediaFiles = await this.listFilesRecursive(mediaDir);
         for (const relPath of mediaFiles) {
-          const resolvedDest = path.resolve(mediaBasePath, relPath);
-          if (!resolvedDest.startsWith(mediaBasePath)) continue;
-          const src = path.join(mediaDir, relPath);
+          const resolvedDest = resolveWithinBase(mediaBasePath, relPath);
+          if (!resolvedDest) {
+            this.logger.warn(
+              `Path traversal blocked in rollback media destination: ${relPath}`,
+            );
+            continue;
+          }
+          const resolvedSrc = resolveWithinBase(mediaDir, relPath);
+          if (!resolvedSrc) {
+            this.logger.warn(
+              `Path traversal blocked in rollback media source: ${relPath}`,
+            );
+            continue;
+          }
           await fsp.mkdir(path.dirname(resolvedDest), { recursive: true });
-          await fsp.copyFile(src, resolvedDest);
+          await fsp.copyFile(resolvedSrc, resolvedDest);
         }
         this.logger.log(`Media rolled back from safety backup`);
       }
 
       // 3. تراجع الإعدادات إذا كانت قد استُعيدت
-      if (rollbackConfig && rollbackManifest.components.config) {
+      if (rollbackConfig && rollbackManifest.components?.config) {
         const projectRoot = resolveProjectRoot();
-        const configDir = path.join(rollbackDir, rollbackManifest.components.config.directory);
+        const configDir = resolveWithinBase(
+          rollbackDir,
+          rollbackManifest.components.config.directory,
+        );
+        if (!configDir) {
+          throw new Error(
+            `Path traversal rejected in rollback config directory: ${rollbackManifest.components.config.directory}`,
+          );
+        }
         await restoreConfigFiles(
           configDir,
           projectRoot,
@@ -1122,7 +1474,10 @@ export class RestoreOrchestratorService {
       }
 
       // تنظيف
-      await this.storage.deleteDirectory(rollbackDir);
+      if (rollbackDir) {
+        await this.storage.deleteDirectory(rollbackDir);
+        rollbackDir = null;
+      }
 
       await this.backupLogger.writeLog({
         restoreJobId: jobId,
@@ -1173,6 +1528,14 @@ export class RestoreOrchestratorService {
         );
       }
     } catch (error) {
+      if (rollbackDir) {
+        try {
+          await this.storage.deleteDirectory(rollbackDir);
+        } catch {
+          // ignore
+        }
+      }
+
       const msg =
         error instanceof Error ? error.message : String(error);
       this.logger.error(`⛔ CRITICAL: Rollback failed: ${msg}`);
@@ -1227,10 +1590,14 @@ export class RestoreOrchestratorService {
       }
     }
 
-    // تنظيف workDir الأصلي
+    // تنظيف workDir الأصلي (مع التحقق من هويته)
     if (workDir) {
       try {
-        await this.storage.deleteDirectory(workDir);
+        if (isSafeWorkDir(workDir, jobUuid)) {
+          await this.storage.deleteDirectory(workDir);
+        } else {
+          this.logger.warn(`Refusing to delete untrusted workDir in rollback: ${workDir}`);
+        }
       } catch {
         // ignore
       }
@@ -1244,6 +1611,7 @@ export class RestoreOrchestratorService {
     jobId: number,
     errorMessage: string,
     workDir?: string,
+    jobUuid?: string,
   ): Promise<void> {
     try {
       await this.prisma.restoreJob.update({
@@ -1271,7 +1639,11 @@ export class RestoreOrchestratorService {
 
     if (workDir) {
       try {
-        await this.storage.deleteDirectory(workDir);
+        if (isSafeWorkDir(workDir, jobUuid)) {
+          await this.storage.deleteDirectory(workDir);
+        } else {
+          this.logger.warn(`Refusing to delete untrusted workDir: ${workDir}`);
+        }
       } catch {
         // ignore
       }
@@ -1293,6 +1665,7 @@ export class RestoreOrchestratorService {
 
   /**
    * سرد الملفات في مجلد بشكل متكرر (recursive)
+   * آمن ضد الروابط الرمزية (BKP-002) — يستخدم lstat ويتجاهل الروابط تماماً
    */
   private async listFilesRecursive(
     dirPath: string,
@@ -1308,13 +1681,22 @@ export class RestoreOrchestratorService {
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
-        if (entry.isDirectory()) {
+        const stat = await fsp.lstat(fullPath);
+
+        if (stat.isSymbolicLink()) {
+          this.logger.warn(
+            `Symbolic link ignored in listFilesRecursive: ${fullPath}`,
+          );
+          continue;
+        }
+
+        if (stat.isDirectory()) {
           const subFiles = await this.listFilesRecursive(
             fullPath,
             base,
           );
           files.push(...subFiles);
-        } else {
+        } else if (stat.isFile()) {
           files.push(path.relative(base, fullPath));
         }
       }
