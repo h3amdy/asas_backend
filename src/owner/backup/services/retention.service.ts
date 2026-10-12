@@ -2,6 +2,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { BackupCategory } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { LocalStorageProvider } from '../storage/local-storage.provider';
 
@@ -55,8 +56,7 @@ export class RetentionService {
         const deleted = await this.applyRetentionForPlan(plan);
         totalDeleted += deleted;
       } catch (error) {
-        const errorMsg =
-          error instanceof Error ? error.message : String(error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
         this.logger.error(
           `Retention failed for plan "${plan.name}": ${errorMsg}`,
         );
@@ -81,12 +81,12 @@ export class RetentionService {
     maxBackups: number;
     maxAgeDays: number;
   }): Promise<number> {
-    // جمع IDs المرشحة للحذف
-    const idsToDelete: number[] = [];
-
     // الحد الفعلي المعمول به = الأكبر بين إعداد الخطة و MIN_SAFE_BACKUPS
     // يمنع هذا حذف نسخ تُبقي النظام بأقل من الحد الآمن
-    const effectiveMaxBackups = Math.max(plan.maxBackups, this.MIN_SAFE_BACKUPS);
+    const effectiveMaxBackups = Math.max(
+      plan.maxBackups,
+      this.MIN_SAFE_BACKUPS,
+    );
 
     // 1. حذف بالعمر (maxAgeDays)
     const cutoffDate = new Date(
@@ -101,11 +101,11 @@ export class RetentionService {
         category: 'NORMAL',
         createdAt: { lt: cutoffDate },
       },
-      select: { id: true },
+      select: { id: true, status: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    idsToDelete.push(...oldInstances.map((i) => i.id));
+    const oldIds = oldInstances.map((i) => i.id);
 
     // 2. حذف بالعدد — يستخدم effectiveMaxBackups بدلاً من plan.maxBackups
     const activeCount = await this.prisma.backupInstance.count({
@@ -118,48 +118,71 @@ export class RetentionService {
     });
 
     // نحسب العدد المتبقي بعد حذف القديمة
-    const remainingAfterAge = activeCount - idsToDelete.length;
+    const remainingAfterAge = activeCount - oldIds.length;
+    let excessInstances: { id: number; status: any }[] = [];
     if (remainingAfterAge > effectiveMaxBackups) {
       const excess = remainingAfterAge - effectiveMaxBackups;
-      const excessInstances = await this.prisma.backupInstance.findMany({
+      excessInstances = await this.prisma.backupInstance.findMany({
         where: {
           planId: plan.id,
           isDeleted: false,
           isPinned: false,
           category: 'NORMAL',
-          id: { notIn: idsToDelete }, // استبعاد المحذوفة بالعمر
+          id: { notIn: oldIds }, // استبعاد المحذوفة بالعمر
         },
-        select: { id: true },
+        select: { id: true, status: true },
         orderBy: { createdAt: 'asc' },
         take: excess,
       });
-
-      idsToDelete.push(...excessInstances.map((i) => i.id));
     }
 
-    if (idsToDelete.length === 0) return 0;
+    const candidateInstances = [...oldInstances, ...excessInstances];
+    if (candidateInstances.length === 0) return 0;
 
     // ── حماية نهائية: التحقق من عدد النسخ الناجحة على مستوى النظام كله ──
-    // حتى لو اجتمعت عدة خطط تحذف في نفس الوقت، نضمن بقاء MIN_SAFE_BACKUPS
+    // العد يشمل فقط النسخ SUCCESS وغير المحذوفة منطقياً
     const globalSuccessCount = await this.prisma.backupInstance.count({
       where: { isDeleted: false, status: 'SUCCESS' },
     });
 
-    if (globalSuccessCount - idsToDelete.length < this.MIN_SAFE_BACKUPS) {
-      // نُقلّص قائمة الحذف لتحافظ على الحد الأدنى
-      const allowedToDelete = Math.max(0, globalSuccessCount - this.MIN_SAFE_BACKUPS);
-      if (allowedToDelete === 0) {
-        this.logger.warn(
-          `Retention for "${plan.name}": skipped — would drop below MIN_SAFE_BACKUPS (${this.MIN_SAFE_BACKUPS})`,
-        );
-        return 0;
-      }
-      // احذف فقط القدر المسموح به (الأقدم أولاً — ترتيب idsToDelete)
-      idsToDelete.splice(allowedToDelete);
+    const successCandidates = candidateInstances.filter(
+      (i) => i.status === 'SUCCESS',
+    );
+    const nonSuccessCandidates = candidateInstances.filter(
+      (i) => i.status !== 'SUCCESS',
+    );
+
+    // الحد الأقصى للنسخ الناجحة المسموح بحذفها دون النزول عن MIN_SAFE_BACKUPS
+    const maxSuccessToDelete = Math.max(
+      0,
+      globalSuccessCount - this.MIN_SAFE_BACKUPS,
+    );
+
+    let allowedSuccessCandidates = successCandidates;
+    if (successCandidates.length > maxSuccessToDelete) {
+      // نُقلّص النسخ الناجحة المرشحة للحذف لتحافظ على الحد الأدنى (الأقدم أولاً)
+      allowedSuccessCandidates = successCandidates.slice(0, maxSuccessToDelete);
+      const protectedCount =
+        successCandidates.length - allowedSuccessCandidates.length;
       this.logger.warn(
-        `Retention for "${plan.name}": trimmed to ${allowedToDelete} deletions to preserve MIN_SAFE_BACKUPS`,
+        `Retention for "${plan.name}": protected ${protectedCount} successful backup(s) to preserve MIN_SAFE_BACKUPS (${this.MIN_SAFE_BACKUPS})`,
       );
     }
+
+    // القائمة النهائية للحذف: النسخ الناجحة المسموح بحذفها + النسخ غير الناجحة المرشحة
+    const finalCandidates = [
+      ...allowedSuccessCandidates,
+      ...nonSuccessCandidates,
+    ];
+
+    if (finalCandidates.length === 0) {
+      this.logger.warn(
+        `Retention for "${plan.name}": skipped — no eligible backups to delete after safety checks`,
+      );
+      return 0;
+    }
+
+    const idsToDelete = finalCandidates.map((i) => i.id);
 
     // ⚠️ تنفيذ كل الحذف في Transaction واحد
     await this.prisma.$transaction(async (tx) => {
@@ -199,20 +222,31 @@ export class RetentionService {
       where: {
         isDeleted: true,
         deletedAt: { lt: cutoff },
+        isPinned: false,
+        category: { not: BackupCategory.SYSTEM_SAFETY },
       },
     });
 
     let purgedCount = 0;
 
     for (const instance of toPurge) {
+      // حماية دفاعية مضاعفة: استثناء صريح لأي نسخة مثبتة أو أمان
+      if (
+        instance.isPinned ||
+        instance.category === BackupCategory.SYSTEM_SAFETY
+      ) {
+        this.logger.warn(
+          `Skipping purge for protected instance: ${instance.backupName} (isPinned=${instance.isPinned}, category=${instance.category})`,
+        );
+        continue;
+      }
+
       try {
         if (instance.storagePath) {
           // 1. حذف الملفات الجانبية (checksum + sidecar manifest)
           for (const suffix of ['.sha256', '.manifest.json']) {
             try {
-              await this.storage.deleteFile(
-                `${instance.storagePath}${suffix}`,
-              );
+              await this.storage.deleteFile(`${instance.storagePath}${suffix}`);
             } catch {
               // ملف جانبي مفقود — مقبول
             }
@@ -241,16 +275,12 @@ export class RetentionService {
         purgedCount++;
         this.logger.debug(`Purged from disk: ${instance.backupName}`);
       } catch (error) {
-        const errorMsg =
-          error instanceof Error ? error.message : String(error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
         // لا نحذف السجل — سيُعاد المحاولة في الدورة القادمة
-        this.logger.warn(
-          `Failed to purge ${instance.backupName}: ${errorMsg}`,
-        );
+        this.logger.warn(`Failed to purge ${instance.backupName}: ${errorMsg}`);
       }
     }
 
     return purgedCount;
   }
-
 }
