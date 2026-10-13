@@ -16,6 +16,10 @@ export const REGISTRATION_ERRORS = {
   ROUTING_NOT_FOUND: 'ROUTING_NOT_FOUND',
   REGISTRATION_FAILED: 'REGISTRATION_FAILED',
   SESSION_CREATION_FAILED: 'SESSION_CREATION_FAILED',
+  /** يُرجَع عند محاولة تجاوز OTP والنظام مضبوط بحيث OTP مفعّل */
+  OTP_BYPASS_NOT_ALLOWED: 'OTP_BYPASS_NOT_ALLOWED',
+  /** يُرجَع عند تجاوز الحد الأقصى لمحاولات التسجيل لكل رقم هاتف */
+  PHONE_RATE_LIMITED: 'PHONE_RATE_LIMITED',
 };
 
 /**
@@ -24,4 +28,8 @@ export const REGISTRATION_ERRORS = {
 export const REGISTRATION_CONFIG = {
   /** رمز مدرسة مفهوم */
   mafhoomSchoolCode: parseInt(process.env.MAFHOOM_SCHOOL_CODE || '0', 10),
+  /** أقصى عدد محاولات إكمال تسجيل بدون OTP لكل هاتف في الساعة (الافتراضي: 5) */
+  phoneRateLimitPerHour: parseInt(process.env.REGISTRATION_PHONE_RATE_LIMIT || '5', 10),
+  /** نافذة تحديد المعدل بالثواني (الافتراضي: 3600 = 1 ساعة) */
+  phoneRateLimitTtlSeconds: parseInt(process.env.REGISTRATION_PHONE_RATE_TTL_SECONDS || '3600', 10),
 };

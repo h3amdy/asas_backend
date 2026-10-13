@@ -46,4 +46,22 @@ export const OTP_DEFAULTS = {
 
   /** HMAC pepper secret — يجب أن يكون مختلفًا عن JWT_SECRET */
   pepper: process.env.OTP_PEPPER || '',
+
+  /**
+   * هل التحقق عبر OTP مفعّل في مسار تسجيل الطلاب الذاتي؟
+   * القيمة الافتراضية: true (OTP مفعّل)
+   * لتعطيله مؤقتاً: ضبط STUDENT_REGISTRATION_OTP_ENABLED=false في .env
+   * ⚠️ أي قيمة أخرى غير 'false' تُعامَل كـ true (الوضع الآمن الافتراضي)
+   * مُعرَّف كـ getter لتقييم process.env ديناميكياً في كل استدعاء دون التجمّد عند تحميل الموديول
+   */
+  get isStudentRegistrationOtpEnabled(): boolean {
+    return process.env.STUDENT_REGISTRATION_OTP_ENABLED !== 'false';
+  },
 };
+
+/**
+ * دالة مساعدة للتحقق من حالة تفعيل OTP ديناميكياً
+ */
+export function isStudentRegistrationOtpEnabled(): boolean {
+  return OTP_DEFAULTS.isStudentRegistrationOtpEnabled;
+}

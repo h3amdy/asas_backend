@@ -19,6 +19,38 @@ import { OTP_DEFAULTS } from '../../shared/otp/otp.constants';
 import { OtpStatus } from '@prisma/client';
 import { randomToken } from '../../school/auth/utils/crypto.util';
 import { CheckPhoneDto } from './dto/check-phone.dto';
+import { CompleteWithoutOtpDto } from './dto/complete-without-otp.dto';
+import { PhoneRateLimiterService } from './phone-rate-limiter.service';
+
+// ─── Internal shared types ────────────────────────────────────
+
+/**
+ * الحقول المشتركة بين مساري complete و complete-without-otp
+ */
+interface RegistrationPayload {
+  phone: string;          // رقم مُعيَّر (normalized)
+  name: string;
+  gender: string;
+  provinceId: number;
+  districtId: number;
+  gradeId: number;
+  password: string;
+}
+
+/**
+ * نتيجة الخطوة داخل المعاملة قبل إنشاء الـ Session
+ */
+interface TransactionResult {
+  userId: number;
+  userUuid: string;
+  code: number;
+  displayName: string;
+  schoolId: number;
+  schoolUuid: string;
+  schoolDisplayName: string;
+  schoolCode: number;
+}
+
 @Injectable()
 export class StudentRegistrationService {
   private readonly logger = new Logger('StudentRegistrationService');
@@ -28,6 +60,7 @@ export class StudentRegistrationService {
     private readonly otpService: OtpService,
     private readonly sessions: SessionsService,
     private readonly jwt: JwtService,
+    private readonly phoneRateLimiter: PhoneRateLimiterService,
   ) {}
 
   // ─── UX Phone Checking ───────────────────────────────────────
@@ -75,6 +108,19 @@ export class StudentRegistrationService {
     };
   }
 
+  // ─── Config ──────────────────────────────────────────────────
+
+  /**
+   * إعادة وضع تشغيل OTP في مسار التسجيل الذاتي.
+   * يُستخدم من Flutter لاتخاذ قرار عرض/إخفاء شاشة OTP.
+   * الافتراضي الآمن: true (OTP مفعّل) عند غياب المتغير.
+   */
+  getRegistrationConfig() {
+    return {
+      otpEnabled: OTP_DEFAULTS.isStudentRegistrationOtpEnabled,
+    };
+  }
+
   // ─── Token Validation ──────────────────────────────────────
 
   /**
@@ -115,33 +161,23 @@ export class StudentRegistrationService {
     };
   }
 
-  // ─── Complete Registration ─────────────────────────────────
+  // ─── Shared: Pre-transaction Validation ───────────────────
 
-  async completeRegistration(dto: {
-    registrationToken: string;
-    name: string;
-    gender: string;
-    provinceId: number;
-    districtId: number;
-    gradeId: number;
-    password: string;
-  }) {
-    // ── Step 1: Validate token (outside transaction) ──
-    const { otpId, phone } = await this.validateRegistrationToken(dto.registrationToken);
-    const normalizedPhone = this.otpService.normalizePhone(phone);
-
-    // ── Step 2: Validate province + district (outside transaction) ──
+  /**
+   * التحقق من المحافظة والمديرية ومدرسة مفهوم (خارج المعاملة — لا تعديل على DB)
+   * مشترك بين completeRegistration و completeWithoutOtp
+   */
+  private async resolvePreconditions(payload: Pick<RegistrationPayload, 'provinceId' | 'districtId'>) {
     const province = await this.prisma.province.findUnique({
-      where: { id: dto.provinceId },
+      where: { id: payload.provinceId },
     });
     if (!province) throw new NotFoundException(REGISTRATION_ERRORS.PROVINCE_NOT_FOUND);
 
     const district = await this.prisma.district.findFirst({
-      where: { id: dto.districtId, provinceId: dto.provinceId },
+      where: { id: payload.districtId, provinceId: payload.provinceId },
     });
     if (!district) throw new NotFoundException(REGISTRATION_ERRORS.DISTRICT_NOT_FOUND);
 
-    // ── Step 3: Resolve Mafhoom school ──
     const mafhoomSchool = await this.prisma.school.findFirst({
       where: {
         schoolCode: REGISTRATION_CONFIG.mafhoomSchoolCode,
@@ -152,25 +188,38 @@ export class StudentRegistrationService {
       throw new InternalServerErrorException(REGISTRATION_ERRORS.MAFHOOM_SCHOOL_NOT_FOUND);
     }
 
-    // ── Step 4: Resolve routing (district → section target) ──
     const routing = await this.prisma.mafhoomDistrictRouting.findUnique({
-      where: { districtId: dto.districtId },
+      where: { districtId: payload.districtId },
     });
     if (!routing || !routing.isActive) {
       throw new NotFoundException(REGISTRATION_ERRORS.ROUTING_NOT_FOUND);
     }
 
-    // ── Step 5: Password hash (outside transaction — CPU intensive) ──
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    return { province, district, mafhoomSchool, routing };
+  }
 
-    // ══════════════════════════════════════════════════════════
-    // ══ TRANSACTION: All critical operations inside ══════════
-    // ══════════════════════════════════════════════════════════
-    const registrationResult = await this.prisma.$transaction(async (tx) => {
+  // ─── Shared: Atomic Transaction ───────────────────────────
+
+  /**
+   * المعاملة الذرية الموحَّدة لإنشاء الحساب والتسجيل المدرسي.
+   * تُستخدم من كلا المسارين (OTP + بدون OTP).
+   *
+   * @param payload   بيانات الطالب (رقم الهاتف مُعيَّر مسبقاً)
+   * @param otpId     معرف سجل OTP إذا كان المسار عبر OTP، أو null في المسار المباشر
+   */
+  private async executeRegistrationTransaction(
+    payload: RegistrationPayload,
+    preconditions: Awaited<ReturnType<typeof StudentRegistrationService.prototype.resolvePreconditions>>,
+    passwordHash: string,
+    otpId: number | null,
+  ): Promise<TransactionResult> {
+    const { province, district, mafhoomSchool, routing } = preconditions;
+
+    return this.prisma.$transaction(async (tx) => {
       // 1. Advisory Lock on (mafhoomSchoolId, normalizedPhone)
       await tx.$executeRawUnsafe(
         `SELECT pg_advisory_xact_lock(hashtext($1))`,
-        `reg:${mafhoomSchool.id}:${normalizedPhone}`,
+        `reg:${mafhoomSchool.id}:${payload.phone}`,
       );
 
       // 2. Re-validate current year (inside transaction per chat155 requirement)
@@ -183,7 +232,7 @@ export class StudentRegistrationService {
 
       // 3. Re-validate grade exists for Mafhoom school
       const grade = await tx.schoolGrade.findFirst({
-        where: { id: dto.gradeId, schoolId: mafhoomSchool.id, isActive: true, isDeleted: false },
+        where: { id: payload.gradeId, schoolId: mafhoomSchool.id, isActive: true, isDeleted: false },
       });
       if (!grade) {
         throw new NotFoundException(REGISTRATION_ERRORS.GRADE_NOT_FOUND);
@@ -192,8 +241,8 @@ export class StudentRegistrationService {
       // 4. Resolve section by grade + targetSection from routing
       const section = await tx.section.findFirst({
         where: {
-          gradeId: dto.gradeId,
-          name: routing.targetSection, // "أ" or "ب"
+          gradeId: payload.gradeId,
+          name: routing.targetSection,
           isActive: true,
           isDeleted: false,
         },
@@ -203,22 +252,20 @@ export class StudentRegistrationService {
       }
 
       // 5. Check: phone not already used by active STUDENT in Mafhoom
-      // استبدال $queryRawUnsafe بـ Prisma API بناءً على المراجعة الأمنية
       const existingStudent = await tx.user.findFirst({
         where: {
           schoolId: mafhoomSchool.id,
           userType: 'STUDENT',
-          phone: normalizedPhone,
+          phone: payload.phone,
           isDeleted: false,
         },
         select: { id: true },
       });
-
       if (existingStudent) {
         throw new ForbiddenException(REGISTRATION_ERRORS.PHONE_ALREADY_REGISTERED);
       }
 
-      // 6. Generate school number (same mechanism as existing)
+      // 6. Generate school number (atomic increment)
       const updatedSchool = await tx.school.update({
         where: { id: mafhoomSchool.id },
         data: { nextUserCode: { increment: 1 } },
@@ -232,10 +279,10 @@ export class StudentRegistrationService {
           schoolId: mafhoomSchool.id,
           userType: 'STUDENT',
           code,
-          name: dto.name,
-          displayName: dto.name,
-          gender: dto.gender,
-          phone: normalizedPhone,
+          name: payload.name,
+          displayName: payload.name,
+          gender: payload.gender,
+          phone: payload.phone,
           province: province.name,
           district: district.name,
           passwordHash,
@@ -253,7 +300,7 @@ export class StudentRegistrationService {
         data: {
           studentId: user.id,
           yearId: currentYear.id,
-          gradeId: dto.gradeId,
+          gradeId: payload.gradeId,
           sectionId: section.id,
           status: 'ACTIVE',
           isCurrent: true,
@@ -261,14 +308,16 @@ export class StudentRegistrationService {
         },
       });
 
-      // 10. Consume OTP (mark as CONSUMED)
-      await tx.otpVerification.updateMany({
-        where: { id: otpId, status: OtpStatus.VERIFIED },
-        data: { status: OtpStatus.CONSUMED, consumedAt: new Date() },
-      });
+      // 10. Consume OTP if applicable (mark as CONSUMED)
+      if (otpId !== null) {
+        await tx.otpVerification.updateMany({
+          where: { id: otpId, status: OtpStatus.VERIFIED },
+          data: { status: OtpStatus.CONSUMED, consumedAt: new Date() },
+        });
+      }
 
       this.logger.log(
-        `Student registered: ${user.uuid} [code=${code}] phone=${normalizedPhone}`,
+        `Student registered: ${user.uuid} [code=${code}] phone=${payload.phone} via=${otpId !== null ? 'otp' : 'direct'}`,
       );
 
       return {
@@ -282,33 +331,38 @@ export class StudentRegistrationService {
         schoolCode: mafhoomSchool.schoolCode,
       };
     });
+  }
 
-    // ══════════════════════════════════════════════════════════
-    // ══ AuthSession: Outside transaction (per chat155) ═══════
-    // ══════════════════════════════════════════════════════════
+  // ─── Shared: Session & JWT ────────────────────────────────
+
+  /**
+   * إنشاء Session وتوليد JWT بعد نجاح التسجيل.
+   * مشترك بين المسارين. عند فشل Session لا نُلغي التسجيل.
+   */
+  private async buildRegistrationResponse(result: TransactionResult) {
     try {
       const refreshPlain = randomToken(48);
 
       const device = await this.sessions.upsertDevice({
-        userId: registrationResult.userId,
-        deviceFingerprint: `self-reg-${registrationResult.userUuid}`,
+        userId: result.userId,
+        deviceFingerprint: `self-reg-${result.userUuid}`,
         deviceType: 'ANDROID',
       });
 
       const session = await this.sessions.createSession({
-        userId: registrationResult.userId,
-        schoolId: registrationResult.schoolId,
+        userId: result.userId,
+        schoolId: result.schoolId,
         deviceId: device.id,
         refreshTokenPlain: refreshPlain,
       });
 
       const accessToken = this.jwt.sign(
         {
-          sub: registrationResult.userUuid,
+          sub: result.userUuid,
           ut: 'STUDENT',
-          sc: registrationResult.schoolUuid,
+          sc: result.schoolUuid,
           sid: session.uuid,
-          uc: registrationResult.code,
+          uc: result.code,
         },
         {
           expiresIn: SCHOOL_AUTH_JWT.accessTokenTtlSec,
@@ -325,14 +379,14 @@ export class StudentRegistrationService {
         registered: true,
         autoLoginSuccess: true,
         user: {
-          uuid: registrationResult.userUuid,
-          code: registrationResult.code,
-          displayName: registrationResult.displayName,
+          uuid: result.userUuid,
+          code: result.code,
+          displayName: result.displayName,
         },
         school: {
-          uuid: registrationResult.schoolUuid,
-          displayName: registrationResult.schoolDisplayName,
-          schoolCode: registrationResult.schoolCode,
+          uuid: result.schoolUuid,
+          displayName: result.schoolDisplayName,
+          schoolCode: result.schoolCode,
         },
         accessToken,
         refreshToken: refreshPlain,
@@ -341,26 +395,116 @@ export class StudentRegistrationService {
       };
     } catch (error) {
       // التسجيل نجح لكن إنشاء Session فشل
-      // لا نريد أن يظن المستخدم أن التسجيل فشل
       this.logger.error(
-        `Registration succeeded but AuthSession failed for ${registrationResult.userUuid}: ${error}`,
+        `Registration succeeded but AuthSession failed for ${result.userUuid}: ${error}`,
       );
 
       return {
         registered: true,
         autoLoginSuccess: false,
         user: {
-          uuid: registrationResult.userUuid,
-          code: registrationResult.code,
-          displayName: registrationResult.displayName,
+          uuid: result.userUuid,
+          code: result.code,
+          displayName: result.displayName,
         },
         school: {
-          uuid: registrationResult.schoolUuid,
-          displayName: registrationResult.schoolDisplayName,
-          schoolCode: registrationResult.schoolCode,
+          uuid: result.schoolUuid,
+          displayName: result.schoolDisplayName,
+          schoolCode: result.schoolCode,
         },
         message: 'تم إنشاء الحساب بنجاح. يرجى تسجيل الدخول يدويًا.',
       };
     }
+  }
+
+  // ─── Complete Registration (OTP path — unchanged contract) ──
+
+  async completeRegistration(dto: {
+    registrationToken: string;
+    name: string;
+    gender: string;
+    provinceId: number;
+    districtId: number;
+    gradeId: number;
+    password: string;
+  }) {
+    // ── Step 1: Validate token (outside transaction) ──
+    const { otpId, phone } = await this.validateRegistrationToken(dto.registrationToken);
+    const normalizedPhone = this.otpService.normalizePhone(phone);
+
+    // ── Step 2: Validate province + district + school + routing ──
+    const preconditions = await this.resolvePreconditions({
+      provinceId: dto.provinceId,
+      districtId: dto.districtId,
+    });
+
+    // ── Step 3: Password hash (CPU intensive — outside transaction) ──
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    // ── Step 4: Atomic transaction ──
+    const registrationResult = await this.executeRegistrationTransaction(
+      {
+        phone: normalizedPhone,
+        name: dto.name,
+        gender: dto.gender,
+        provinceId: dto.provinceId,
+        districtId: dto.districtId,
+        gradeId: dto.gradeId,
+        password: dto.password,
+      },
+      preconditions,
+      passwordHash,
+      otpId,
+    );
+
+    // ── Step 5: Build response with Session ──
+    return this.buildRegistrationResponse(registrationResult);
+  }
+
+  // ─── Complete Registration Without OTP ───────────────────
+
+  /**
+   * مسار التسجيل المباشر بدون OTP.
+   *
+   * ⚠️  يرفض الطلب بـ 403 OTP_BYPASS_NOT_ALLOWED إذا كان OTP مفعّلاً.
+   * ⚠️  Rate Limiting حسب IP وحسب رقم الهاتف يُطبَّق على مستوى Controller.
+   */
+  async completeRegistrationWithoutOtp(dto: CompleteWithoutOtpDto) {
+    // ── Guard: تحقق أن OTP معطّل فعلاً ──
+    if (OTP_DEFAULTS.isStudentRegistrationOtpEnabled) {
+      throw new ForbiddenException(REGISTRATION_ERRORS.OTP_BYPASS_NOT_ALLOWED);
+    }
+
+    const normalizedPhone = this.otpService.normalizePhone(dto.phone);
+
+    // ── Check Rate Limit by Phone (قبل فحص الشروط المسبقة وقبل الـ transaction) ──
+    await this.phoneRateLimiter.checkRateLimit(normalizedPhone);
+
+    // ── Validate preconditions (outside transaction) ──
+    const preconditions = await this.resolvePreconditions({
+      provinceId: dto.provinceId,
+      districtId: dto.districtId,
+    });
+
+    // ── Password hash (outside transaction) ──
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    // ── Atomic transaction (بدون otpId) ──
+    const registrationResult = await this.executeRegistrationTransaction(
+      {
+        phone: normalizedPhone,
+        name: dto.name,
+        gender: dto.gender,
+        provinceId: dto.provinceId,
+        districtId: dto.districtId,
+        gradeId: dto.gradeId,
+        password: dto.password,
+      },
+      preconditions,
+      passwordHash,
+      null, // لا OTP للاستهلاك
+    );
+
+    return this.buildRegistrationResponse(registrationResult);
   }
 }

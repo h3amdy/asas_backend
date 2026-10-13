@@ -7,14 +7,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StudentRegistrationService } from './student-registration.service';
 import { StudentRegistrationModule } from './student-registration.module';
 import { OtpService } from '../../shared/otp/otp.service';
-import { createHash, randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
+import { OTP_DEFAULTS } from '../../shared/otp/otp.constants';
 import * as bcrypt from 'bcrypt';
 
 // ─── Helpers ──────────────────────────────────────────
 
 async function createVerifiedOtp(prisma: PrismaService, phone: string) {
   const token = randomUUID() + randomUUID(); // long random token
-  const tokenHash = createHash('sha256').update(token).digest('hex');
+  // يجب استخدام HMAC+pepper مطابقةً لـ validateRegistrationToken في الـ Service
+  const tokenHash = createHmac('sha256', OTP_DEFAULTS.pepper).update(token).digest('hex');
   const requestId = randomUUID();
 
   await prisma.otpVerification.create({
