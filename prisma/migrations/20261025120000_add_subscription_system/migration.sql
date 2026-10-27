@@ -179,26 +179,11 @@ CREATE INDEX "idempotency_records_status_created_idx" ON "idempotency_records"("
 -- CreateIndex
 CREATE INDEX "idempotency_records_expires_status_idx" ON "idempotency_records"("expires_at", "status");
 
--- CreateIndex
-CREATE UNIQUE INDEX "lesson_contents_template_order_idx" ON "lesson_contents"("template_id", "order_index");
-
--- CreateIndex
-CREATE UNIQUE INDEX "lesson_templates_unit_order_idx" ON "lesson_templates"("unit_id", "order_index");
-
--- CreateIndex
-CREATE UNIQUE INDEX "fill_blanks_question_order_idx" ON "question_fill_blanks"("question_id", "order_index");
-
--- CreateIndex
-CREATE UNIQUE INDEX "ordering_items_order_idx" ON "question_ordering_items"("question_id", "order_index");
-
--- CreateIndex
-CREATE UNIQUE INDEX "questions_template_order_idx" ON "questions"("template_id", "order_index");
-
--- CreateIndex
-CREATE UNIQUE INDEX "units_subject_order_idx" ON "units"("subject_id", "order_index");
-
--- CreateIndex
-CREATE UNIQUE INDEX "units_subject_dict_order_idx" ON "units"("subject_dictionary_id", "order_index");
+-- ⚠️ أُزيلت 7 فهارس UNIQUE على order_index (lesson_contents, lesson_templates,
+-- question_fill_blanks, question_ordering_items, questions, units ×2).
+-- كانت drift قديماً في schema.prisma التقطه `migrate dev`، ولا علاقة لها بالاشتراكات.
+-- بيانات الإنتاج تحتوي تكرارات في order_index فيفشل إنشاؤها (P3018 / 23505).
+-- تُعالج لاحقاً في ترحيل مستقل بعد تنظيف البيانات.
 
 
 -- AddForeignKey
