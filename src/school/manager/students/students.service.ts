@@ -10,10 +10,14 @@ import {
     SectionTransferDto, GradeTransferDto,
     DropEnrollmentDto, ReEnrollDto, ResetPasswordDto,
 } from './dto/students.dto';
+import { SubscriptionTrialService } from '../../common/subscription/subscription-trial.service';
 
 @Injectable()
 export class StudentsService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly trialService: SubscriptionTrialService,
+    ) { }
 
     // ─── Helpers ────────────────────────────────────────────────
 
@@ -222,6 +226,9 @@ export class StudentsService {
                     data: { parentId: dto.parentId, studentId: user.id },
                 });
             }
+
+            // Step 6: إنشاء فترة تجربة للطالب الجديد (إن كان نظام الاشتراك مفعّلاً + التجربة مفعّلة)
+            await this.trialService.createTrialForNewStudentTx(tx, schoolId, user.id, new Date());
 
             return user;
         });

@@ -9,6 +9,7 @@ import { UserType } from '@prisma/client';
 import { normalizeImportName } from './utils/import-name.normalizer';
 import { normalizeSection, normalizeAssignmentSections } from './utils/import-section.normalizer';
 import { PERSON } from '../../shared/validation/person';
+import { SubscriptionTrialService } from '../../school/common/subscription/subscription-trial.service';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -33,7 +34,10 @@ export interface CredentialEntry {
 @Injectable()
 export class ImportsService {
     private readonly logger = new Logger(ImportsService.name);
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly trialService: SubscriptionTrialService,
+    ) {}
 
     // ─── Password Mode ──────────────────────────────────────────
     // true = كلمة مرور عشوائية (6 أرقام)، false = الرقم المدرسي
@@ -804,6 +808,9 @@ export class ImportsService {
                     joinedAt: new Date(),
                 },
             });
+
+            // إنشاء فترة تجربة للطالب الجديد (إن كان نظام الاشتراك مفعّلاً + التجربة مفعّلة)
+            await this.trialService.createTrialForNewStudentTx(tx, school.id, user.id, new Date());
 
             // Create parent if provided
             if (studentData.parent && parentName) {

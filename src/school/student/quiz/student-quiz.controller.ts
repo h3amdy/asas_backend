@@ -4,6 +4,7 @@ import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { ParentStudentContextGuard } from '../../common/guards/parent-student-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
+import { SubscriptionGuard } from '../../common/guards/subscription.guard';
 
 /**
  * 📝 Student Quiz Controller (STD-050 → STD-071)
@@ -23,6 +24,7 @@ export class StudentQuizController {
      * جلب أسئلة الدرس مع الإجابات الصحيحة (DEC: أمان أقل + تفاعلية أعلى)
      */
     @Get('lesson/:lessonUuid/questions')
+    @UseGuards(SubscriptionGuard)
     getQuestions(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,
@@ -38,6 +40,7 @@ export class StudentQuizController {
      * تصحيح إجابة واحدة فورياً (بعد كل سؤال)
      */
     @Post('lesson/:lessonUuid/check-answer')
+    @UseGuards(SubscriptionGuard)
     checkAnswer(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,
@@ -56,6 +59,7 @@ export class StudentQuizController {
      * إنهاء المحاولة + حفظ النتيجة النهائية
      */
     @Post('lesson/:lessonUuid/submit-quiz')
+    @UseGuards(SubscriptionGuard)
     submitQuiz(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,
@@ -92,6 +96,7 @@ export class StudentQuizController {
      * مراجعة الإجابات (STD-071) — الأسئلة + إجابات الطالب + الصحيحة + الشرح
      */
     @Get('lesson/:lessonUuid/review')
+    @UseGuards(SubscriptionGuard)
     getReview(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,
@@ -107,6 +112,7 @@ export class StudentQuizController {
      * تأكيد قراءة درس بدون أسئلة — يسمح للطالب بالتقدم
      */
     @Post('lesson/:lessonUuid/mark-read')
+    @UseGuards(SubscriptionGuard)
     markLessonRead(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,

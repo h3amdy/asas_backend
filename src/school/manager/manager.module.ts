@@ -36,12 +36,14 @@ import { DashboardService } from './dashboard/dashboard.service';
 import { RolloverController } from './rollover/rollover.controller';
 import { RolloverService } from './rollover/rollover.service';
 
+import { SubscriptionModule } from './subscription/subscription.module';
+
 /**
  * 🏫 وحدة المدير — تجمع كل APIs إدارة المدرسة
  * جميع الـ endpoints تتطلب دور ADMIN
  */
 @Module({
-    imports: [PrismaModule, SchoolCommonModule],
+    imports: [PrismaModule, SchoolCommonModule, SubscriptionModule],
     controllers: [
         SchoolInfoController,
         GradesController,

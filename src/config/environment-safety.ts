@@ -256,5 +256,15 @@ function runValidation(): ValidationResult {
     );
   }
 
+  // مفاتيح رموز التفعيل (نظام الاشتراكات) — بدونها يفشل إنشاء الدفعات وتفعيل الرموز
+  for (const name of ['ACTIVATION_CODE_ENC_KEY_V1', 'ACTIVATION_CODE_HMAC_KEY_V1']) {
+    const raw = process.env[name];
+    if (!raw) {
+      warnings.push(`${name} غير محدد — إنشاء دفعات الرموز وتفعيلها سيفشل. أنشئه بـ: openssl rand -base64 32`);
+    } else if (Buffer.from(raw, 'base64').length !== 32) {
+      warnings.push(`${name} يجب أن يكون 32 بايت بترميز base64 (openssl rand -base64 32).`);
+    }
+  }
+
   return { valid: errors.length === 0, errors, warnings };
 }

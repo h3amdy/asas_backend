@@ -49,6 +49,85 @@ export class MediaService {
     }
 
     /**
+     * SRS-SUB-005 §8.0 — هل الأصل مرتبط بمحتوى تعليمي محمي؟
+     *
+     * نعيد `true` إذا كان الأصل مرتبطاً بأي من:
+     *   - محتوى درس (LessonContent / LessonBlockItem)
+     *   - كتاب (SchoolBook PDF أو غلاف)
+     *   - أسئلة (Question / QuestionOption / MatchingPair / OrderingItem)
+     *
+     * الشعارات والصور الرمزية وأغلفة المواد → لا.
+     *
+     * الاستعلام خفيف: يبحث فقط عن وجود صف واحد (findFirst → limit 1).
+     */
+    async isEducationalAsset(assetId: number): Promise<boolean> {
+        // 1. محتوى درس
+        const inLesson = await this.prisma.lessonContent.findFirst({
+            where: { mediaAssetId: assetId },
+            select: { id: true },
+        });
+        if (inLesson) return true;
+
+        // 2. كتلة محتوى
+        const inBlock = await this.prisma.lessonBlockItem.findFirst({
+            where: { mediaAssetId: assetId },
+            select: { id: true },
+        });
+        if (inBlock) return true;
+
+        // 3. كتاب (PDF أو غلاف)
+        const inBook = await this.prisma.schoolBook.findFirst({
+            where: { OR: [{ pdfMediaAssetId: assetId }, { coverMediaAssetId: assetId }] },
+            select: { id: true },
+        });
+        if (inBook) return true;
+
+        // 4. أسئلة — explanationAudio/Image, questionAudio/Image
+        const inQuestion = await this.prisma.question.findFirst({
+            where: {
+                OR: [
+                    { explanationAudioAssetId: assetId },
+                    { explanationImageAssetId: assetId },
+                    { questionAudioAssetId: assetId },
+                    { questionImageAssetId: assetId },
+                ],
+            },
+            select: { id: true },
+        });
+        if (inQuestion) return true;
+
+        // 5. خيارات الأسئلة
+        const inOption = await this.prisma.questionOption.findFirst({
+            where: { OR: [{ audioAssetId: assetId }, { imageAssetId: assetId }] },
+            select: { id: true },
+        });
+        if (inOption) return true;
+
+        // 6. أزواج المطابقة
+        const inPair = await this.prisma.questionMatchingPair.findFirst({
+            where: {
+                OR: [
+                    { leftAudioAssetId: assetId },
+                    { leftImageAssetId: assetId },
+                    { rightAudioAssetId: assetId },
+                    { rightImageAssetId: assetId },
+                ],
+            },
+            select: { id: true },
+        });
+        if (inPair) return true;
+
+        // 7. عناصر الترتيب
+        const inOrdering = await this.prisma.questionOrderingItem.findFirst({
+            where: { OR: [{ audioAssetId: assetId }, { imageAssetId: assetId }] },
+            select: { id: true },
+        });
+        if (inOrdering) return true;
+
+        return false;
+    }
+
+    /**
      * Get asset metadata for client (used by /meta endpoint)
      */
     async getAssetMeta(assetUuid: string, schoolId: number) {

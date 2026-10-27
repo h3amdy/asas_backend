@@ -13,13 +13,14 @@ import { StudentBooksService } from './books/student-books.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchoolCommonModule } from '../common/school-common.module';
 import { StudentSyncModule } from './sync/student-sync.module';
+import { StudentSubscriptionModule } from './subscription/student-subscription.module';
 
 /**
  * 🧑‍🎓 وحدة الطالب
  * تجمع كل الـ endpoints الخاصة بصلاحيات الطالب
  */
 @Module({
-    imports: [PrismaModule, SchoolCommonModule, StudentSyncModule],
+    imports: [PrismaModule, SchoolCommonModule, StudentSyncModule, StudentSubscriptionModule],
     controllers: [
         StudentSubjectsController,
         StudentTimetableController,

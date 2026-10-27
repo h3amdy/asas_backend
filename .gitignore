@@ -66,3 +66,8 @@ tsconfig.build.tsbuildinfo
 prisma/*.js
 prisma/*.d.ts
 prisma/*.js.map
+
+# Local data — never commit (DB dumps, local backups, scratch scripts)
+/backups/
+/database/
+/scratch/

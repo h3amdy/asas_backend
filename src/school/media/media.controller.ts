@@ -1,13 +1,13 @@
-// src/school/media/media.controller.ts
 import {
     Controller, Get, Param, Query, Req, Res, UseGuards,
-    NotFoundException, Headers, StreamableFile,
+    NotFoundException, ForbiddenException, Headers, StreamableFile,
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
 import { MediaService } from './media.service';
 import { SchoolJwtAuthGuard } from '../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../common/guards/school-context.guard';
 import { StorageService } from '../../shared/media/storage.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * 📥 Media Download Controller
@@ -21,6 +21,7 @@ export class MediaController {
     constructor(
         private readonly mediaService: MediaService,
         private readonly storage: StorageService,
+        private readonly prisma: PrismaService,
     ) { }
 
     /**
@@ -28,6 +29,9 @@ export class MediaController {
      * - Supports Range header (206 Partial Content)
      * - Supports If-None-Match (304 Not Modified)
      * - Default variant: medium (IMAGE) / low (AUDIO)
+     *
+     * SRS-SUB-005 §8.0 — محمي شرطياً: إذا كان المستدعي طالباً/ولي أمر
+     * والأصل تعليمي (درس/كتاب/سؤال) → فحص الاشتراك.
      */
     @Get(':uuid')
     async download(
@@ -42,6 +46,9 @@ export class MediaController {
 
         // Determine default variant from asset kind
         const asset = await this.mediaService.getAsset(uuid, schoolId);
+
+        // ── SRS-SUB-005 §8.0 — فحص الاشتراك الشرطي ──
+        await this.checkMediaSubscription(req, schoolId, asset.id);
         const defaultVariant = asset.kind === 'IMAGE' ? 'medium'
             : asset.kind === 'DOCUMENT' ? 'original'
             : 'low';
@@ -109,6 +116,59 @@ export class MediaController {
     @Get(':uuid/meta')
     async getMeta(@Param('uuid') uuid: string, @Req() req: any) {
         const schoolId = req.schoolContext.id;
+        const asset = await this.mediaService.getAsset(uuid, schoolId);
+
+        // ── SRS-SUB-005 §8.0 — فحص الاشتراك الشرطي ──
+        await this.checkMediaSubscription(req, schoolId, asset.id);
+
         return this.mediaService.getAssetMeta(uuid, schoolId);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  SRS-SUB-005 §8.0 — فحص الاشتراك الشرطي للوسائط
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * يتحقق من استحقاق المحتوى فقط إذا:
+     *  1) المستدعي طالب أو ولي أمر
+     *  2) المدرسة فعّلت نظام الاشتراكات
+     *  3) الأصل مرتبط بمحتوى تعليمي (درس/كتاب/سؤال)
+     *
+     * الشعارات والصور الرمزية وأغلفة المواد ← لا تُحجب.
+     */
+    private async checkMediaSubscription(req: any, schoolId: number, assetId: number): Promise<void> {
+        // 1) فقط الطالب/ولي الأمر — المعلمون والمشرفون لا يُحجبون
+        const role: string = req.user?.role ?? req.user?.userType ?? '';
+        const studentRoles = ['STUDENT', 'PARENT', 'student', 'parent'];
+        if (!studentRoles.includes(role)) return;
+
+        // 2) هل المدرسة فعّلت الاشتراكات أصلاً؟
+        const settings = await this.prisma.schoolSubscriptionSettings.findUnique({
+            where: { schoolId },
+            select: { isActivated: true },
+        });
+        if (!settings?.isActivated) return; // مدرسة مجانية
+
+        // 3) هل الأصل تعليمي؟
+        const isEdu = await this.mediaService.isEducationalAsset(assetId);
+        if (!isEdu) return; // شعار/صورة رمزية — لا حجب
+
+        // 4) هل الطالب لديه فترة وصول سارية؟
+        const userId = req.user?.userId ?? req.user?.id;
+        if (!userId) throw new ForbiddenException('SUBSCRIPTION_REQUIRED');
+
+        const now = new Date();
+        const active = await this.prisma.studentAccessPeriod.findFirst({
+            where: {
+                schoolId,
+                studentUserId: userId,
+                endedEarlyAt: null,
+                expiresAt: { gt: now },
+            },
+            select: { id: true },
+        });
+        if (!active) {
+            throw new ForbiddenException('SUBSCRIPTION_REQUIRED');
+        }
     }
 }

@@ -8,37 +8,41 @@ datasource db {
 }
 
 model User {
-  id                     Int                  @id @default(autoincrement())
-  uuid                   String               @unique @default(uuid())
-  schoolId               Int?                 @map("school_id")
-  userType               UserType             @map("user_type")
-  code                   Int?
-  name                   String
-  displayName            String?              @map("display_name")
-  gender                 String?
-  phone                  String?
-  email                  String?
-  province               String?
-  district               String?
-  addressArea            String?              @map("address_area")
-  addressDetails         String?              @map("address_details")
-  passwordHash           String               @map("password_hash")
-  isActive               Boolean              @map("is_active")
-  createdAt              DateTime             @default(now()) @map("created_at")
-  updatedAt              DateTime             @updatedAt @map("updated_at")
-  isDeleted              Boolean              @default(false) @map("is_deleted")
-  deletedAt              DateTime?            @map("deleted_at")
-  avatarMediaAssetId     Int?                 @map("avatar_media_asset_id")
-  sessions               AuthSession[]
-  lessonDeliveryLogs     LessonDeliveryLog[]  @relation("LessonDeliveryActor")
-  lessonTemplatesCreated LessonTemplate[]     @relation("LessonTemplateCreator")
-  uploadSessions         MediaUploadSession[]
-  parent                 Parent?
-  student                Student?
-  teacher                Teacher?
-  devices                UserDevice[]
-  avatarMediaAsset       MediaAsset?          @relation("UserAvatar", fields: [avatarMediaAssetId], references: [id])
-  school                 School?              @relation(fields: [schoolId], references: [id])
+  id                      Int                   @id @default(autoincrement())
+  uuid                    String                @unique @default(uuid())
+  schoolId                Int?                  @map("school_id")
+  userType                UserType              @map("user_type")
+  code                    Int?
+  name                    String
+  displayName             String?               @map("display_name")
+  gender                  String?
+  phone                   String?
+  email                   String?
+  province                String?
+  district                String?
+  addressArea             String?               @map("address_area")
+  addressDetails          String?               @map("address_details")
+  passwordHash            String                @map("password_hash")
+  isActive                Boolean               @map("is_active")
+  createdAt               DateTime              @default(now()) @map("created_at")
+  updatedAt               DateTime              @updatedAt @map("updated_at")
+  isDeleted               Boolean               @default(false) @map("is_deleted")
+  deletedAt               DateTime?             @map("deleted_at")
+  avatarMediaAssetId      Int?                  @map("avatar_media_asset_id")
+  sessions                AuthSession[]
+  lessonDeliveryLogs      LessonDeliveryLog[]   @relation("LessonDeliveryActor")
+  lessonTemplatesCreated  LessonTemplate[]      @relation("LessonTemplateCreator")
+  uploadSessions          MediaUploadSession[]
+  parent                  Parent?
+  student                 Student?
+  teacher                 Teacher?
+  devices                 UserDevice[]
+  avatarMediaAsset        MediaAsset?           @relation("UserAvatar", fields: [avatarMediaAssetId], references: [id])
+  school                  School?               @relation(fields: [schoolId], references: [id])
+  // نظام الاشتراكات — علاقات عكسية فقط (لا أعمدة جديدة)
+  studentAccessPeriods    StudentAccessPeriod[] @relation("StudentAccessPeriods")
+  createdCodeBatches      ActivationCodeBatch[] @relation("ActivationCodeBatchCreator")
+  consumedActivationCodes ActivationCode[]      @relation("ActivationCodeConsumer")
 
   @@index([schoolId])
   @@index([avatarMediaAssetId])
@@ -46,11 +50,11 @@ model User {
 }
 
 model School {
-  id                       Int                       @id @default(autoincrement())
-  uuid                     String                    @unique @default(uuid())
+  id                       Int                         @id @default(autoincrement())
+  uuid                     String                      @unique @default(uuid())
   name                     String
   displayName              String?
-  schoolCode               Int                       @unique
+  schoolCode               Int                         @unique
   appType                  AppType
   phone                    String?
   email                    String?
@@ -60,18 +64,18 @@ model School {
   addressArea              String?
   educationType            String?
   ownerNotes               String?
-  nextUserCode             Int                       @default(1)
+  nextUserCode             Int                         @default(1)
   primaryColor             String?
   secondaryColor           String?
   backgroundColor          String?
-  deliveryPolicy           DeliveryPolicy            @default(OPEN)
-  isActive                 Boolean                   @default(true)
-  isDeleted                Boolean                   @default(false)
+  deliveryPolicy           DeliveryPolicy              @default(OPEN)
+  isActive                 Boolean                     @default(true)
+  isDeleted                Boolean                     @default(false)
   deletedAt                DateTime?
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
-  logoMediaAssetId         Int?                      @map("logo_media_asset_id")
-  logoMediaAsset           MediaAsset?               @relation("SchoolLogo", fields: [logoMediaAssetId], references: [id])
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+  logoMediaAssetId         Int?                        @map("logo_media_asset_id")
+  logoMediaAsset           MediaAsset?                 @relation("SchoolLogo", fields: [logoMediaAssetId], references: [id])
   apps                     App[]
   authSessions             AuthSession[]
   contentDistributions     ContentDistribution[]
@@ -79,14 +83,20 @@ model School {
   importSessions           ImportSession[]
   lessonTemplates          LessonTemplate[]
   lessons                  Lesson[]
-  mediaAssets              MediaAsset[]              @relation("SchoolMediaAssets")
-  uploadSessions           MediaUploadSession[]      @relation("SchoolUploadSessions")
+  mediaAssets              MediaAsset[]                @relation("SchoolMediaAssets")
+  uploadSessions           MediaUploadSession[]        @relation("SchoolUploadSessions")
   schoolGrades             SchoolGrade[]
   schoolReleaseAssignments SchoolReleaseAssignment[]
   subjects                 Subject[]
   units                    Unit[]
   users                    User[]
   years                    Year[]
+  // نظام الاشتراكات — علاقات عكسية فقط (لا أعمدة جديدة)
+  subscriptionSettings     SchoolSubscriptionSettings?
+  paymentMethods           SchoolPaymentMethod[]
+  studentAccessPeriods     StudentAccessPeriod[]
+  activationCodeBatches    ActivationCodeBatch[]
+  activationCodes          ActivationCode[]
 }
 
 model GradeDictionary {
@@ -632,8 +642,8 @@ model LessonTemplate {
   status                  String                @default("DRAFT")
   coverMediaAssetId       Int?                  @map("cover_media_asset_id")
   templateVersion         Int                   @default(1) @map("template_version")
-  contentRevision          Int                   @default(1) @map("content_revision")
-  questionsRevision        Int                   @default(1) @map("questions_revision")
+  contentRevision         Int                   @default(1) @map("content_revision")
+  questionsRevision       Int                   @default(1) @map("questions_revision")
   sourceTemplateId        Int?                  @map("source_template_id")
   createdByUserId         Int?                  @map("created_by_user_id")
   isActive                Boolean               @default(true) @map("is_active")
@@ -1017,26 +1027,26 @@ model StudentLessonProgress {
 }
 
 model StudentLessonResult {
-  id               Int             @id @default(autoincrement())
-  uuid             String          @unique @default(uuid())
-  studentId        Int             @map("student_id")
-  lessonId         Int             @map("lesson_id")
-  totalQuestions   Int             @map("total_questions")
-  correctQuestions Int             @map("correct_questions")
-  totalPoints      Float           @map("total_points")
-  earnedPoints     Float           @map("earned_points")
-  percent          Float
-  gradeLabel       String          @map("grade_label")
-  calculatedAt     DateTime        @map("calculated_at")
-  version          Int             @default(1)
-  questionsRevisionAtSubmit Int?  @map("questions_revision_at_submit")
-  createdAt        DateTime        @default(now()) @map("created_at")
-  updatedAt        DateTime        @updatedAt @map("updated_at")
-  isDeleted        Boolean         @default(false) @map("is_deleted")
-  deletedAt        DateTime?       @map("deleted_at")
-  answers          StudentAnswer[]
-  lesson           Lesson          @relation(fields: [lessonId], references: [id])
-  student          Student         @relation(fields: [studentId], references: [userId])
+  id                        Int             @id @default(autoincrement())
+  uuid                      String          @unique @default(uuid())
+  studentId                 Int             @map("student_id")
+  lessonId                  Int             @map("lesson_id")
+  totalQuestions            Int             @map("total_questions")
+  correctQuestions          Int             @map("correct_questions")
+  totalPoints               Float           @map("total_points")
+  earnedPoints              Float           @map("earned_points")
+  percent                   Float
+  gradeLabel                String          @map("grade_label")
+  calculatedAt              DateTime        @map("calculated_at")
+  version                   Int             @default(1)
+  questionsRevisionAtSubmit Int?            @map("questions_revision_at_submit")
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
+  isDeleted                 Boolean         @default(false) @map("is_deleted")
+  deletedAt                 DateTime?       @map("deleted_at")
+  answers                   StudentAnswer[]
+  lesson                    Lesson          @relation(fields: [lessonId], references: [id])
+  student                   Student         @relation(fields: [studentId], references: [userId])
 
   @@index([studentId, lessonId], map: "student_lesson_results_student_lesson_idx")
   @@map("student_lesson_results")
@@ -1484,7 +1494,7 @@ model RestoreJob {
   finishedAt           DateTime?        @map("finished_at")
   createdAt            DateTime         @default(now()) @map("created_at")
   logs                 BackupLog[]
-  backupInstance       BackupInstance?   @relation("RestoredFrom", fields: [backupInstanceId], references: [id])
+  backupInstance       BackupInstance?  @relation("RestoredFrom", fields: [backupInstanceId], references: [id])
   safetyBackup         BackupInstance?  @relation("SafetyBackup", fields: [safetyBackupId], references: [id])
 
   @@index([status])
@@ -1738,14 +1748,14 @@ model Province {
 }
 
 model District {
-  id         Int                    @id @default(autoincrement())
-  uuid       String                 @unique @default(uuid())
-  provinceId Int                    @map("province_id")
+  id         Int                     @id @default(autoincrement())
+  uuid       String                  @unique @default(uuid())
+  provinceId Int                     @map("province_id")
   name       String
-  sortOrder  Int                    @default(0) @map("sort_order")
-  createdAt  DateTime               @default(now()) @map("created_at")
-  updatedAt  DateTime               @updatedAt @map("updated_at")
-  province   Province               @relation(fields: [provinceId], references: [id])
+  sortOrder  Int                     @default(0) @map("sort_order")
+  createdAt  DateTime                @default(now()) @map("created_at")
+  updatedAt  DateTime                @updatedAt @map("updated_at")
+  province   Province                @relation(fields: [provinceId], references: [id])
   routing    MafhoomDistrictRouting?
 
   @@unique([provinceId, name])
@@ -1769,23 +1779,23 @@ model MafhoomDistrictRouting {
 // ─── G2: OTP Verification for Student Self-Registration ───
 
 model OtpVerification {
-  id                            Int        @id @default(autoincrement())
-  uuid                          String     @unique @default(uuid())
-  phone                         String
-  codeHash                      String     @map("code_hash")
-  purpose                       OtpPurpose
-  channel                       OtpChannel
-  registrationRequestId         String     @unique @map("registration_request_id")
-  registrationTokenHash         String?    @map("registration_token_hash")
-  registrationTokenExpiresAt    DateTime?  @map("registration_token_expires_at")
-  attempts                      Int        @default(0)
-  maxAttempts                   Int        @default(5) @map("max_attempts")
-  status                        OtpStatus  @default(PENDING)
-  expiresAt                     DateTime   @map("expires_at")
-  verifiedAt                    DateTime?  @map("verified_at")
-  consumedAt                    DateTime?  @map("consumed_at")
-  createdAt                     DateTime   @default(now()) @map("created_at")
-  updatedAt                     DateTime   @updatedAt @map("updated_at")
+  id                         Int        @id @default(autoincrement())
+  uuid                       String     @unique @default(uuid())
+  phone                      String
+  codeHash                   String     @map("code_hash")
+  purpose                    OtpPurpose
+  channel                    OtpChannel
+  registrationRequestId      String     @unique @map("registration_request_id")
+  registrationTokenHash      String?    @map("registration_token_hash")
+  registrationTokenExpiresAt DateTime?  @map("registration_token_expires_at")
+  attempts                   Int        @default(0)
+  maxAttempts                Int        @default(5) @map("max_attempts")
+  status                     OtpStatus  @default(PENDING)
+  expiresAt                  DateTime   @map("expires_at")
+  verifiedAt                 DateTime?  @map("verified_at")
+  consumedAt                 DateTime?  @map("consumed_at")
+  createdAt                  DateTime   @default(now()) @map("created_at")
+  updatedAt                  DateTime   @updatedAt @map("updated_at")
 
   @@index([phone, purpose, status])
   @@index([expiresAt])
@@ -1808,4 +1818,170 @@ enum OtpStatus {
   EXPIRED
   BLOCKED
   FAILED
+}
+
+// ═══════════════════════════════════════════════════════════════
+// نظام الاشتراكات — SRS-SUB-002 §3 / SUB-IMPLEMENTATION-PLAN v1.1 المرحلة 1
+// قيود CHECK تُضاف يدوياً في migration.sql (Prisma لا يدعمها في المخطط)
+// ═══════════════════════════════════════════════════════════════
+
+/// إعدادات الاشتراك — سجل واحد لكل مدرسة (SRS-SUB-002 §3.1)
+model SchoolSubscriptionSettings {
+  id                Int       @id @default(autoincrement())
+  schoolId          Int       @unique @map("school_id")
+  isActivated       Boolean   @default(false) @map("is_activated")
+  activatedAt       DateTime? @map("activated_at")
+  isTrialEnabled    Boolean   @default(true) @map("is_trial_enabled")
+  trialDurationDays Int?      @map("trial_duration_days")
+  subscriptionPrice Decimal?  @map("subscription_price") @db.Decimal(12, 2)
+  contactNumber     String?   @map("contact_number")
+  nextCodeSerial    Int       @default(1) @map("next_code_serial")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  school            School    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
+  @@map("school_subscription_settings")
+}
+
+/// طرق الدفع — حذف منطقي، حد 10 فعّالة يُفرض في التطبيق (SRS-SUB-002 §3.2)
+model SchoolPaymentMethod {
+  id             Int       @id @default(autoincrement())
+  uuid           String    @unique @default(uuid())
+  schoolId       Int       @map("school_id")
+  name           String
+  paymentDetails String    @map("payment_details")
+  instructions   String?
+  sortOrder      Int       @default(0) @map("sort_order")
+  isDeleted      Boolean   @default(false) @map("is_deleted")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  school         School    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, isDeleted, sortOrder], map: "school_payment_methods_school_active_idx")
+  @@map("school_payment_methods")
+}
+
+/// فترات وصول الطالب — سجل لكل فترة (SRS-SUB-002 §3.3)
+/// منع تداخل PAID: pg_advisory_xact_lock(school_id, user_id) — SRS-SUB-004 §3.5
+model StudentAccessPeriod {
+  id               Int              @id @default(autoincrement())
+  schoolId         Int              @map("school_id")
+  studentUserId    Int              @map("student_user_id")
+  periodType       AccessPeriodType @map("period_type")
+  startedAt        DateTime         @map("started_at")
+  expiresAt        DateTime         @map("expires_at")
+  endedEarlyAt     DateTime?        @map("ended_early_at")
+  activationCodeId Int?             @unique @map("activation_code_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  school           School           @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  student          User             @relation("StudentAccessPeriods", fields: [studentUserId], references: [id], onDelete: Restrict)
+  /// FK مركّبة: الرمز يجب أن يكون من مدرسة الفترة نفسها
+  activationCode   ActivationCode?  @relation(fields: [activationCodeId, schoolId], references: [id, schoolId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([activationCodeId, schoolId], map: "student_access_periods_code_school_key")
+  @@index([schoolId, studentUserId, periodType], map: "student_access_periods_school_student_type_idx")
+  @@index([studentUserId], map: "student_access_periods_student_idx")
+  @@map("student_access_periods")
+}
+
+/// دفعات الرموز (SRS-SUB-002 §3.4)
+model ActivationCodeBatch {
+  id              Int              @id @default(autoincrement())
+  uuid            String           @unique @db.Uuid
+  schoolId        Int              @map("school_id")
+  codeCount       Int              @map("code_count")
+  serialStart     Int              @map("serial_start")
+  serialEnd       Int              @map("serial_end")
+  createdByUserId Int              @map("created_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  createdBy       User             @relation("ActivationCodeBatchCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  codes           ActivationCode[]
+
+  /// هدف FK المركّبة من activation_codes
+  @@unique([id, schoolId], map: "activation_code_batches_id_school_key")
+  @@index([schoolId, createdAt], map: "activation_code_batches_school_created_idx")
+  @@map("activation_code_batches")
+}
+
+/// رموز التفعيل — النص مشفّر AES-256-GCM، البحث عبر HMAC (SRS-SUB-002 §3.5، SRS-SUB-003 §3)
+model ActivationCode {
+  id               Int                  @id @default(autoincrement())
+  /// يُولَّد في التطبيق قبل التشفير — جزء من AAD (SRS-SUB-003 §3.3)
+  uuid             String               @unique @db.Uuid
+  schoolId         Int                  @map("school_id")
+  batchId          Int                  @map("batch_id")
+  serialNumber     Int                  @map("serial_number")
+  codeCiphertext   Bytes                @map("code_ciphertext")
+  codeLookupHash   String               @unique @map("code_lookup_hash")
+  encKeyVersion    Int                  @map("enc_key_version")
+  hmacKeyVersion   Int                  @map("hmac_key_version")
+  status           ActivationCodeStatus @default(UNUSED)
+  consumedAt       DateTime?            @map("consumed_at")
+  consumedByUserId Int?                 @map("consumed_by_user_id")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  school           School               @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  /// FK مركّبة: الدفعة يجب أن تكون من مدرسة الرمز نفسها
+  batch            ActivationCodeBatch  @relation(fields: [batchId, schoolId], references: [id, schoolId], onDelete: Restrict, onUpdate: Restrict)
+  consumedBy       User?                @relation("ActivationCodeConsumer", fields: [consumedByUserId], references: [id], onDelete: Restrict)
+  accessPeriod     StudentAccessPeriod?
+
+  @@unique([schoolId, serialNumber], map: "activation_codes_school_serial_key")
+  /// هدف FK المركّبة من student_access_periods
+  @@unique([id, schoolId], map: "activation_codes_id_school_key")
+  @@index([batchId, status, serialNumber], map: "activation_codes_batch_status_serial_idx")
+  @@index([consumedByUserId], map: "activation_codes_consumer_idx")
+  @@map("activation_codes")
+}
+
+/// سجل تدقيق الاشتراكات — تاريخي، لا يُعدّل، لا FK للمستخدمين (SRS-SUB-002 §3.6، §6.1)
+model SubscriptionAuditEvent {
+  id           Int      @id @default(autoincrement())
+  schoolId     Int      @map("school_id")
+  eventType    String   @map("event_type")
+  actorUserId  Int?     @map("actor_user_id")
+  targetUserId Int?     @map("target_user_id")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([schoolId, createdAt], map: "subscription_audit_events_school_created_idx")
+  @@index([eventType], map: "subscription_audit_events_type_idx")
+  @@map("subscription_audit_events")
+}
+
+/// سجل Idempotency — SRS-SUB-004 §2.3
+model IdempotencyRecord {
+  idempotencyKey     String            @id @map("idempotency_key") @db.Uuid
+  schoolId           Int               @map("school_id")
+  actorUserId        Int               @map("actor_user_id")
+  endpoint           String
+  requestHash        String            @map("request_hash")
+  status             IdempotencyStatus
+  responseStatusCode Int?              @map("response_status_code")
+  responseBody       Json?             @map("response_body")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  expiresAt          DateTime          @map("expires_at")
+
+  @@index([status, createdAt], map: "idempotency_records_status_created_idx")
+  @@index([expiresAt, status], map: "idempotency_records_expires_status_idx")
+  @@map("idempotency_records")
+}
+
+enum AccessPeriodType {
+  TRIAL
+  PAID
+}
+
+enum ActivationCodeStatus {
+  UNUSED
+  USED
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+  FAILED_BUSINESS
+  FAILED_TRANSIENT
+  EXPIRED
 }

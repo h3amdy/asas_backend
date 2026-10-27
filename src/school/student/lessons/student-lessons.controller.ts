@@ -4,6 +4,7 @@ import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { ParentStudentContextGuard } from '../../common/guards/parent-student-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
+import { SubscriptionGuard } from '../../common/guards/subscription.guard';
 
 /**
  * 📖 Student Lessons Controller
@@ -30,6 +31,7 @@ export class StudentLessonsController {
     }
 
     @Get('lesson/:lessonUuid')
+    @UseGuards(SubscriptionGuard)
     getLessonDetail(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,

@@ -82,15 +82,41 @@ export class StudentSyncService {
         };
     }
 
+    /**
+     * SRS-SUB-005 §3.4 — هل الطالب يحق له المحتوى؟
+     * true عند: مدرسة مجانية أو فترة وصول سارية.
+     */
+    private async hasContentAccess(schoolId: number, studentId: number): Promise<boolean> {
+        const settings = await this.prisma.schoolSubscriptionSettings.findUnique({
+            where: { schoolId },
+            select: { isActivated: true },
+        });
+        if (!settings?.isActivated) return true; // مدرسة مجانية
+
+        const now = new Date();
+        const active = await this.prisma.studentAccessPeriod.findFirst({
+            where: {
+                schoolId,
+                studentUserId: studentId,
+                endedEarlyAt: null,
+                expiresAt: { gt: now },
+            },
+            select: { id: true },
+        });
+        return !!active;
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // MANIFEST — معلومات المزامنة
     // ═══════════════════════════════════════════════════════════════
 
     async getManifest(schoolId: number, userUuid: string) {
         const ctx = await this.getStudentContext(schoolId, userUuid);
+        const contentEntitled = await this.hasContentAccess(schoolId, ctx.studentId);
         return {
             serverTime: new Date(),
             academicSnapshot: ctx.academicSnapshot,
+            contentEntitled,
         };
     }
 
@@ -103,6 +129,9 @@ export class StudentSyncService {
         const limit = dto.limit ?? 200;
         const serverTime = new Date();
         const data: Record<string, any> = {};
+
+        // SRS-SUB-005 §8.0 — فحص استحقاق المحتوى مرة واحدة
+        const contentEntitled = await this.hasContentAccess(schoolId, ctx.studentId);
 
         for (const [entity, cursorStr] of Object.entries(dto.cursors)) {
             if (!VALID_PULL_ENTITIES.includes(entity as PullEntity)) {
@@ -117,10 +146,12 @@ export class StudentSyncService {
                     data.subjects = await this.pullSubjects(schoolId, ctx, cursor, limit);
                     break;
                 case 'lessons':
-                    data.lessons = await this.pullLessons(schoolId, ctx, cursor, limit);
+                    data.lessons = await this.pullLessons(schoolId, ctx, cursor, limit, contentEntitled);
                     break;
                 case 'questions':
-                    data.questions = await this.pullQuestions(schoolId, ctx, cursor, limit);
+                    data.questions = contentEntitled
+                        ? await this.pullQuestions(schoolId, ctx, cursor, limit)
+                        : { items: [], hasMore: false, cursor: null };
                     break;
                 case 'progress':
                     data.progress = await this.pullProgress(ctx, cursor, limit);
@@ -134,6 +165,7 @@ export class StudentSyncService {
         return {
             serverTime,
             academicSnapshot: ctx.academicSnapshot,
+            contentEntitled,
             data,
         };
     }
@@ -196,6 +228,7 @@ export class StudentSyncService {
         ctx: Awaited<ReturnType<typeof this.getStudentContext>>,
         cursor: { updatedAt: Date; uuid: string } | null,
         limit: number,
+        contentEntitled: boolean = true,
     ) {
         const where: any = {
             schoolId,
@@ -273,25 +306,30 @@ export class StudentSyncService {
                 isActive: lesson.isActive,
                 isDeleted: lesson.isDeleted,
                 updatedAt: lesson.updatedAt,
-                // محتوى الدرس
-                contentBlocks: lesson.template.contentBlocks.map(b => ({
-                    uuid: b.uuid,
-                    title: b.title,
-                    orderIndex: b.orderIndex,
-                    items: b.items.map(item => ({
-                        uuid: item.uuid,
-                        itemType: item.itemType,
-                        orderIndex: item.orderIndex,
-                        textContent: item.textContent,
-                        caption: item.caption,
-                        mediaAssetUuid: item.mediaAsset?.uuid ?? null,
-                        mediaAssetKind: item.mediaAsset?.kind ?? null,
-                        contentType: item.mediaAsset?.contentType ?? null,
-                        durationSec: item.mediaAsset?.durationSec ?? null,
-                    })),
-                })),
+                // محتوى الدرس — يُحذف لغير المشترك (SRS-SUB-005 §8.0)
+                contentBlocks: contentEntitled
+                    ? lesson.template.contentBlocks.map(b => ({
+                        uuid: b.uuid,
+                        title: b.title,
+                        orderIndex: b.orderIndex,
+                        items: b.items.map(item => ({
+                            uuid: item.uuid,
+                            itemType: item.itemType,
+                            orderIndex: item.orderIndex,
+                            textContent: item.textContent,
+                            caption: item.caption,
+                            mediaAssetUuid: item.mediaAsset?.uuid ?? null,
+                            mediaAssetKind: item.mediaAsset?.kind ?? null,
+                            contentType: item.mediaAsset?.contentType ?? null,
+                            durationSec: item.mediaAsset?.durationSec ?? null,
+                        })),
+                    }))
+                    : [],
                 // قائمة UUIDs الوسائط للتحميل المسبق
-                mediaAssetUuids: this.extractMediaUuids(lesson.template.contentBlocks, lesson.template.coverMediaAsset?.uuid),
+                mediaAssetUuids: contentEntitled
+                    ? this.extractMediaUuids(lesson.template.contentBlocks, lesson.template.coverMediaAsset?.uuid)
+                    : (lesson.template.coverMediaAsset?.uuid ? [lesson.template.coverMediaAsset.uuid] : []),
+                contentLocked: !contentEntitled,
             })),
             limit,
         );
