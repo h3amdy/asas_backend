@@ -188,10 +188,11 @@ export class SubjectsService {
                 where: { subjectId, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
             }),
-            // تحديث updatedAt للدروس حتى تلتقطها مزامنة الطلاب (cursor) وتُحذف من الكاش المحلي
+            // حذف منطقي للدروس — التقارير والتقدم تفلتر isDeleted:false فتستبعدها تلقائياً
+            // updatedAt يتحدث لتلتقطها المزامنة التفاضلية وتحذفها من كاش الأجهزة
             this.prisma.lesson.updateMany({
-                where: { subjectId },
-                data: { updatedAt: now },
+                where: { subjectId, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now, updatedAt: now },
             }),
         ]);
         return { success: true };
