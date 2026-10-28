@@ -184,7 +184,7 @@ export class CodeBatchService {
                     },
                 });
 
-                return {
+                const response = {
                     id: batch.id,
                     uuid: batch.uuid,
                     codeCount: batch.codeCount,
@@ -192,14 +192,16 @@ export class CodeBatchService {
                     serialEnd: batch.serialEnd,
                     createdAt: batch.createdAt.toISOString(),
                 };
+
+                // 8. تسجيل idempotency داخل المعاملة — يُثبَّت مع الدفعة ذرياً
+                if (idempotencyKey) {
+                    await this.idempotencyService.markCompletedTx(tx, idempotencyKey, 201, response);
+                }
+
+                return response;
             }, {
                 timeout: 60_000, // دفعة 1000 رمز قد تستغرق وقتاً
             });
-
-            // 8. تحديث idempotency
-            if (idempotencyKey) {
-                await this.idempotencyService.markCompleted(idempotencyKey, 201, result);
-            }
 
             return result;
 

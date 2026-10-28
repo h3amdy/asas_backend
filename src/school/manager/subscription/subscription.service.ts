@@ -15,6 +15,7 @@ import {
     SubscriptionSettingsResponse, ActivateSubscriptionResponse,
 } from './types/subscription-settings.types';
 import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
 
 /**
  * 📋 خدمة اشتراكات المدير — المرحلة 2
@@ -222,21 +223,23 @@ export class SubscriptionService {
                     },
                 });
 
-                return {
+                const response = {
                     isActivated: true,
                     activatedAt: now.toISOString(),
                     trialPeriodsCreated,
                     paymentMethodsCreated: dto.paymentMethods.length,
                 } satisfies ActivateSubscriptionResponse;
+
+                // 6. تسجيل idempotency داخل المعاملة — يُثبَّت مع التفعيل ذرياً
+                if (idempotencyKey) {
+                    await this.idempotencyService.markCompletedTx(tx, idempotencyKey, 201, response);
+                }
+
+                return response;
             }, {
                 // معاملة طويلة محتملة (bulk trial insert)
                 timeout: 30_000,
             });
-
-            // 6. تحديث idempotency بنجاح
-            if (idempotencyKey) {
-                await this.idempotencyService.markCompleted(idempotencyKey, 201, result);
-            }
 
             return result;
 
@@ -331,13 +334,7 @@ export class SubscriptionService {
     async createPaymentMethod(schoolId: number, dto: CreatePaymentMethodDto) {
         return this.prisma.$transaction(async (tx) => {
             // قفل صف الإعدادات — يسلسل إضافة/حذف طرق الدفع ويمنع تجاوز الحد
-            const [settings] = await tx.$queryRawUnsafe<Array<{ is_activated: boolean }>>(
-                `SELECT is_activated FROM "school_subscription_settings" WHERE school_id = $1 FOR UPDATE`,
-                schoolId,
-            );
-            if (!settings?.is_activated) {
-                throw new ForbiddenException('SUBSCRIPTION_NOT_ACTIVATED');
-            }
+            await this.lockActivatedSettingsTx(tx, schoolId);
 
             // حد 10 فعّالة
             const activeCount = await tx.schoolPaymentMethod.count({
@@ -375,39 +372,38 @@ export class SubscriptionService {
     }
 
     async updatePaymentMethod(schoolId: number, id: number, dto: UpdatePaymentMethodDto) {
-        const method = await this.prisma.schoolPaymentMethod.findFirst({
-            where: { id, schoolId, isDeleted: false },
-        });
-        if (!method) throw new NotFoundException('PAYMENT_METHOD_NOT_FOUND');
+        return this.prisma.$transaction(async (tx) => {
+            // نفس القفل المشترك — يمنع تعديل طريقة تُحذف بالتوازي
+            await this.lockActivatedSettingsTx(tx, schoolId);
 
-        return this.prisma.schoolPaymentMethod.update({
-            where: { id },
-            data: {
-                name: dto.name ?? method.name,
-                paymentDetails: dto.paymentDetails ?? method.paymentDetails,
-                instructions: dto.instructions !== undefined ? (dto.instructions ?? null) : method.instructions,
-            },
-            select: {
-                id: true,
-                uuid: true,
-                name: true,
-                paymentDetails: true,
-                instructions: true,
-                sortOrder: true,
-            },
+            const method = await tx.schoolPaymentMethod.findFirst({
+                where: { id, schoolId, isDeleted: false },
+            });
+            if (!method) throw new NotFoundException('PAYMENT_METHOD_NOT_FOUND');
+
+            return tx.schoolPaymentMethod.update({
+                where: { id },
+                data: {
+                    name: dto.name ?? method.name,
+                    paymentDetails: dto.paymentDetails ?? method.paymentDetails,
+                    instructions: dto.instructions !== undefined ? (dto.instructions ?? null) : method.instructions,
+                },
+                select: {
+                    id: true,
+                    uuid: true,
+                    name: true,
+                    paymentDetails: true,
+                    instructions: true,
+                    sortOrder: true,
+                },
+            });
         });
     }
 
     async deletePaymentMethod(schoolId: number, id: number) {
         return this.prisma.$transaction(async (tx) => {
             // قفل صف الإعدادات — يسلسل إضافة/حذف طرق الدفع ويمنع حذف الأخيرة
-            const [settings] = await tx.$queryRawUnsafe<Array<{ is_activated: boolean }>>(
-                `SELECT is_activated FROM "school_subscription_settings" WHERE school_id = $1 FOR UPDATE`,
-                schoolId,
-            );
-            if (!settings?.is_activated) {
-                throw new ForbiddenException('SUBSCRIPTION_NOT_ACTIVATED');
-            }
+            await this.lockActivatedSettingsTx(tx, schoolId);
 
             const method = await tx.schoolPaymentMethod.findFirst({
                 where: { id, schoolId, isDeleted: false },
@@ -432,35 +428,36 @@ export class SubscriptionService {
     }
 
     async reorderPaymentMethods(schoolId: number, dto: ReorderPaymentMethodsDto) {
-        await this.ensureActivated(schoolId);
+        await this.prisma.$transaction(async (tx) => {
+            // نفس القفل المشترك — التحقق والتحديث ذريان مقابل إضافة/حذف متزامن
+            await this.lockActivatedSettingsTx(tx, schoolId);
 
-        // تحقق أن كل الـ IDs تخص المدرسة وغير محذوفة
-        const activeMethods = await this.prisma.schoolPaymentMethod.findMany({
-            where: { schoolId, isDeleted: false },
-            select: { id: true },
-        });
-        const activeIds = new Set(activeMethods.map((m) => m.id));
+            // تحقق أن كل الـ IDs تخص المدرسة وغير محذوفة
+            const activeMethods = await tx.schoolPaymentMethod.findMany({
+                where: { schoolId, isDeleted: false },
+                select: { id: true },
+            });
+            const activeIds = new Set(activeMethods.map((m) => m.id));
 
-        for (const id of dto.orderedIds) {
-            if (!activeIds.has(id)) {
-                throw new BadRequestException(`PAYMENT_METHOD_${id}_NOT_FOUND_OR_DELETED`);
+            for (const id of dto.orderedIds) {
+                if (!activeIds.has(id)) {
+                    throw new BadRequestException(`PAYMENT_METHOD_${id}_NOT_FOUND_OR_DELETED`);
+                }
             }
-        }
 
-        // تحقق أن كل الطرق الفعّالة مشمولة
-        if (dto.orderedIds.length !== activeIds.size) {
-            throw new BadRequestException('ORDERED_IDS_MUST_INCLUDE_ALL_ACTIVE_METHODS');
-        }
+            // تحقق أن كل الطرق الفعّالة مشمولة
+            if (dto.orderedIds.length !== activeIds.size) {
+                throw new BadRequestException('ORDERED_IDS_MUST_INCLUDE_ALL_ACTIVE_METHODS');
+            }
 
-        // تحديث الترتيب في معاملة
-        await this.prisma.$transaction(
-            dto.orderedIds.map((id, index) =>
-                this.prisma.schoolPaymentMethod.update({
-                    where: { id },
+            // تحديث الترتيب في معاملة
+            for (let index = 0; index < dto.orderedIds.length; index++) {
+                await tx.schoolPaymentMethod.update({
+                    where: { id: dto.orderedIds[index] },
                     data: { sortOrder: index + 1 },
-                }),
-            ),
-        );
+                });
+            }
+        });
 
         return this.listPaymentMethods(schoolId);
     }
@@ -468,6 +465,24 @@ export class SubscriptionService {
     // ═══════════════════════════════════════════════════════════
     // مساعدات
     // ═══════════════════════════════════════════════════════════
+
+    /**
+     * القفل المشترك لكل عمليات تعديل طرق الدفع (إضافة/تعديل/حذف/ترتيب):
+     * SELECT ... FOR UPDATE على صف إعدادات الاشتراك للمدرسة.
+     * يرمي SUBSCRIPTION_NOT_ACTIVATED إن لم يكن الاشتراك مفعّلاً.
+     */
+    private async lockActivatedSettingsTx(
+        tx: Prisma.TransactionClient,
+        schoolId: number,
+    ): Promise<void> {
+        const [settings] = await tx.$queryRawUnsafe<Array<{ is_activated: boolean }>>(
+            `SELECT is_activated FROM "school_subscription_settings" WHERE school_id = $1 FOR UPDATE`,
+            schoolId,
+        );
+        if (!settings?.is_activated) {
+            throw new ForbiddenException('SUBSCRIPTION_NOT_ACTIVATED');
+        }
+    }
 
     private async ensureActivated(schoolId: number): Promise<void> {
         const settings = await this.prisma.schoolSubscriptionSettings.findUnique({

@@ -216,21 +216,23 @@ export class StudentSubscriptionService {
                     },
                 });
 
-                return {
+                const response = {
                     success: true,
                     accessType: 'PAID' as const,
                     startedAt: now.toISOString(),
                     expiresAt: expiresAt.toISOString(),
                     serverTime: now.toISOString(),
                 };
+
+                // 9. تسجيل idempotency داخل المعاملة — يُثبَّت مع الأثر ذرياً
+                if (idempotencyKey) {
+                    await this.idempotencyService.markCompletedTx(tx, idempotencyKey, 200, response);
+                }
+
+                return response;
             }, {
                 timeout: 15_000,
             });
-
-            // 9. تحديث idempotency بنجاح
-            if (idempotencyKey) {
-                await this.idempotencyService.markCompleted(idempotencyKey, 200, result);
-            }
 
             return result;
 

@@ -8,14 +8,27 @@ import * as crypto from 'crypto';
  * 🔁 خدمة Idempotency — SRS-SUB-004 §2.3
  *
  * تُستخدم لضمان عدم تكرار العمليات الحرجة (تفعيل الاشتراك، إنشاء الدفعات، تفعيل الرمز).
- * تعمل في معاملة منفصلة عن العملية الأصلية لتجنب deadlocks.
+ *
+ * ## نموذج الضمان
+ * 1. `acquireOrReturn()` يحجز السجل بحالة PROCESSING في معاملة مستقلة مع **مهلة إيجار قصيرة**
+ *    (`PROCESSING_LEASE_MS`) أطول من أقصى مهلة لأي معاملة أعمال.
+ * 2. `markCompletedTx()` تُستدعى **داخل** معاملة الأعمال نفسها ← الأثر وسجل COMPLETED
+ *    يُثبَّتان معاً أو لا يُثبَّت أيٌّ منهما. لا توجد حالة «نجحت العملية ولم تُحفظ الاستجابة».
+ * 3. لذلك: سجل PROCESSING انتهى إيجاره = دليل قاطع أن العملية **لم تُثبَّت**
+ *    (المعاملة إما فشلت أو أُلغيت بانتهاء مهلتها) ← إعادة الاستحواذ آمنة.
  */
 @Injectable()
 export class IdempotencyService {
     private readonly logger = new Logger(IdempotencyService.name);
 
-    /** مدة صلاحية سجل idempotency: 24 ساعة */
+    /** مدة الاحتفاظ بالاستجابة المكتملة/الفاشلة: 24 ساعة */
     private static readonly TTL_HOURS = 24;
+
+    /**
+     * مهلة إيجار PROCESSING — يجب أن تتجاوز أقصى `timeout` لمعاملات الأعمال
+     * (حالياً 60 ثانية في إنشاء الدفعات) بهامش واسع.
+     */
+    static readonly PROCESSING_LEASE_MS = 5 * 60_000;
 
     constructor(private readonly prisma: PrismaService) {}
 
@@ -34,7 +47,7 @@ export class IdempotencyService {
                 // الكائنات العادية (ليست مصفوفات أو null): رتّب مفاتيحها
                 if (value && typeof value === 'object' && !Array.isArray(value)) {
                     return Object.fromEntries(
-                        Object.entries(value).sort(([a], [b]) => a.localeCompare(b)),
+                        Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
                     );
                 }
                 return value;
@@ -59,7 +72,7 @@ export class IdempotencyService {
         requestHash: string;
     }): Promise<{ statusCode: number; body: any } | null> {
         const { idempotencyKey, schoolId, actorUserId, endpoint, requestHash } = params;
-        const expiresAt = new Date(Date.now() + IdempotencyService.TTL_HOURS * 3600_000);
+        const leaseUntil = this.newLease();
 
         try {
             await this.prisma.idempotencyRecord.create({
@@ -70,68 +83,102 @@ export class IdempotencyService {
                     endpoint,
                     requestHash,
                     status: IdempotencyStatus.PROCESSING,
-                    expiresAt,
+                    expiresAt: leaseUntil,
                 },
             });
             return null; // حجز ناجح — تابع العملية
         } catch (err: any) {
             // P2002 = unique violation — السجل موجود مسبقاً
             if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-                return this.handleExistingRecord(params, expiresAt);
+                return this.handleExistingRecord(params, leaseUntil);
             }
             throw err;
         }
     }
 
     /**
-     * تحديث حالة السجل بعد نجاح العملية
+     * تسجيل النجاح **داخل معاملة الأعمال** — يُثبَّت مع الأثر ذرياً.
+     *
+     * يرمي خطأً (فيُلغي المعاملة كاملة) إذا لم يعد السجل PROCESSING،
+     * أي إن طلباً آخر استحوذ عليه — لا يمكن أن يحدث ضمن مهلة الإيجار.
      */
-    async markCompleted(
+    async markCompletedTx(
+        tx: Prisma.TransactionClient,
         idempotencyKey: string,
         responseStatusCode: number,
         responseBody: any,
     ): Promise<void> {
-        await this.prisma.idempotencyRecord.update({
-            where: { idempotencyKey },
+        const updated = await tx.idempotencyRecord.updateMany({
+            where: { idempotencyKey, status: IdempotencyStatus.PROCESSING },
             data: {
                 status: IdempotencyStatus.COMPLETED,
                 responseStatusCode,
                 responseBody,
+                expiresAt: this.newRetention(),
             },
         });
+        if (updated.count !== 1) {
+            throw new ConflictException('IDEMPOTENCY_LEASE_LOST');
+        }
     }
 
     /**
-     * تحديث حالة السجل بعد فشل عمل (خطأ متوقع — لا إعادة محاولة)
+     * تحديث حالة السجل بعد فشل عمل (خطأ متوقع — لا إعادة محاولة).
+     * المعاملة أُلغيت فعلاً ← لا أثر. إن فشل هذا التحديث يبقى السجل PROCESSING
+     * حتى انتهاء الإيجار ثم يُعاد تنفيذه بأمان.
      */
     async markFailedBusiness(
         idempotencyKey: string,
         responseStatusCode: number,
         responseBody: any,
     ): Promise<void> {
-        await this.prisma.idempotencyRecord.update({
-            where: { idempotencyKey },
-            data: {
-                status: IdempotencyStatus.FAILED_BUSINESS,
-                responseStatusCode,
-                responseBody,
-            },
+        await this.safeUpdateFromProcessing(idempotencyKey, {
+            status: IdempotencyStatus.FAILED_BUSINESS,
+            responseStatusCode,
+            responseBody,
+            expiresAt: this.newRetention(),
         });
     }
 
     /**
-     * تحديث حالة السجل بعد فشل عابر (يمكن إعادة المحاولة)
+     * تحديث حالة السجل بعد فشل عابر (يمكن إعادة المحاولة فوراً).
      */
     async markFailedTransient(idempotencyKey: string): Promise<void> {
-        await this.prisma.idempotencyRecord.update({
-            where: { idempotencyKey },
-            data: {
-                status: IdempotencyStatus.FAILED_TRANSIENT,
-            },
+        await this.safeUpdateFromProcessing(idempotencyKey, {
+            status: IdempotencyStatus.FAILED_TRANSIENT,
+            expiresAt: this.newRetention(),
         });
     }
 
     // ─── المنطق الداخلي ──────────────────────────────────
+
+    private newLease(): Date {
+        return new Date(Date.now() + IdempotencyService.PROCESSING_LEASE_MS);
+    }
+
+    private newRetention(): Date {
+        return new Date(Date.now() + IdempotencyService.TTL_HOURS * 3600_000);
+    }
+
+    /**
+     * تحديث من PROCESSING فقط، دون رمي خطأ يحجب الخطأ الأصلي للمستدعي.
+     */
+    private async safeUpdateFromProcessing(
+        idempotencyKey: string,
+        data: Prisma.IdempotencyRecordUpdateManyMutationInput,
+    ): Promise<void> {
+        try {
+            await this.prisma.idempotencyRecord.updateMany({
+                where: { idempotencyKey, status: IdempotencyStatus.PROCESSING },
+                data,
+            });
+        } catch (e) {
+            this.logger.warn(
+                `Failed to record idempotency failure for key=${idempotencyKey}: ${(e as Error).message} ` +
+                `— record stays PROCESSING until lease expiry`,
+            );
+        }
+    }
 
     private async handleExistingRecord(
         params: {
@@ -141,7 +188,7 @@ export class IdempotencyService {
             endpoint: string;
             requestHash: string;
         },
-        newExpiresAt: Date,
+        leaseUntil: Date,
     ): Promise<{ statusCode: number; body: any } | null> {
         const { idempotencyKey, schoolId, actorUserId, endpoint, requestHash } = params;
         const existing = await this.prisma.idempotencyRecord.findUnique({
@@ -168,40 +215,29 @@ export class IdempotencyService {
 
         switch (existing.status) {
             case IdempotencyStatus.PROCESSING: {
-                const now = new Date();
-                if (existing.expiresAt > now) {
-                    // السجل لا يزال ضمن مدة الصلاحية — العملية قد تكون جارية فعلاً
+                if (existing.expiresAt > new Date()) {
+                    // الإيجار ساري — العملية الأصلية قد تكون جارية
                     throw new ConflictException('REQUEST_IN_PROGRESS');
                 }
 
-                // السجل منتهي الصلاحية وما زال PROCESSING:
-                // العملية الأصلية إما نجحت ولم تُحفظ استجابتها، أو فشلت بشكل غير معروف.
-                //
-                // ⚠️ لا نستحوذ على السجل تلقائياً — لأن TX الأصلية ربما نجحت.
-                // بدلاً من ذلك: نُبلغ العميل بفحص حالته الفعلية ثم إعادة الطلب بمفتاح جديد.
-                //
-                // ننقل السجل إلى EXPIRED حتى لا يبقى عالقاً للأبد،
-                // مع تسجيل تحذير للتحقيق.
+                // الإيجار انتهى والسجل ما زال PROCESSING:
+                // بما أن COMPLETED يُثبَّت داخل معاملة الأعمال، فلو نجحت العملية الأصلية
+                // لكانت الحالة COMPLETED. إذن المعاملة لم تُثبَّت (فشل/انقطاع/انتهاء مهلة)
+                // ← إعادة الاستحواذ آمنة. الاستحواذ ذري: طلب واحد فقط ينجح.
                 this.logger.warn(
-                    `Stale PROCESSING idempotency record detected: key=${idempotencyKey}, ` +
-                    `endpoint=${existing.endpoint}, expired=${existing.expiresAt.toISOString()}`,
+                    `Reclaiming stale PROCESSING idempotency record: key=${idempotencyKey}, ` +
+                    `endpoint=${existing.endpoint}, leaseExpired=${existing.expiresAt.toISOString()}`,
                 );
-
-                // نقل ذري إلى EXPIRED (فقط إذا كان لا يزال PROCESSING)
-                await this.prisma.idempotencyRecord.updateMany({
+                const reclaimed = await this.prisma.idempotencyRecord.updateMany({
                     where: {
                         idempotencyKey,
                         status: IdempotencyStatus.PROCESSING,
+                        expiresAt: { lte: new Date() },
                     },
-                    data: {
-                        status: IdempotencyStatus.EXPIRED,
-                    },
+                    data: { expiresAt: leaseUntil },
                 });
-
-                throw new ConflictException(
-                    'STALE_PROCESSING_UNKNOWN — The previous request\'s outcome is uncertain. ' +
-                    'Check your current state, then retry with a new idempotency key if needed.',
-                );
+                if (reclaimed.count === 1) return null;
+                throw new ConflictException('REQUEST_IN_PROGRESS');
             }
 
             case IdempotencyStatus.COMPLETED:
@@ -231,7 +267,7 @@ export class IdempotencyService {
                         status: IdempotencyStatus.PROCESSING,
                         responseStatusCode: null,
                         responseBody: Prisma.DbNull,
-                        expiresAt: newExpiresAt,
+                        expiresAt: leaseUntil,
                     },
                 });
                 if (taken.count === 1) return null; // تابع العملية

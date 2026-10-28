@@ -18,38 +18,56 @@ export class CodeHmacService {
     private ensureInitialized() {
         if (this.initialized) return;
         // ⚠️ لا نضبط initialized إلا بعد نجاح التحميل — وإلا يبقى الخطأ دائماً حتى إعادة التشغيل
-        // تحميل المفاتيح من متغيرات البيئة
-        // V1 مطلوب دائماً، إصدارات إضافية اختيارية
+        // V1 مطلوب دائماً، إصدارات إضافية اختيارية ومتتالية (V2, V3, ...)
         const v1Key = process.env.ACTIVATION_CODE_HMAC_KEY_V1;
         if (!v1Key) {
             throw new Error('ACTIVATION_CODE_HMAC_KEY_V1 environment variable is required');
         }
 
-        const keyBuffer = Buffer.from(v1Key, 'base64');
-        if (keyBuffer.length < 32) {
-            throw new Error('HMAC key must be at least 32 bytes (256 bits)');
-        }
-        this.keys.set(1, keyBuffer);
+        const loaded = new Map<number, Buffer>();
+        loaded.set(1, CodeHmacService.decodeKey(1, v1Key));
 
-        // البحث عن إصدارات إضافية (V2, V3, ...)
-        for (let v = 2; v <= 10; v++) {
+        let current = 1;
+        let gapAt: number | null = null;
+        for (let v = 2; v <= CodeHmacService.MAX_VERSION; v++) {
             const envKey = process.env[`ACTIVATION_CODE_HMAC_KEY_V${v}`];
-            if (envKey) {
-                const buf = Buffer.from(envKey, 'base64');
-                if (buf.length < 32) {
-                    throw new Error(
-                        `ACTIVATION_CODE_HMAC_KEY_V${v} must be at least 32 bytes (256 bits), got ${buf.length}`,
-                    );
-                }
-                this.keys.set(v, buf);
-                this.currentVersion = v;
-            } else {
-                break;
+            if (!envKey) {
+                gapAt ??= v;
+                continue;
             }
+            if (gapAt !== null) {
+                // V3 موجود بلا V2 مثلاً — كان يُتجاهل بصمت فيُكتب بإصدار قديم
+                throw new Error(
+                    `ACTIVATION_CODE_HMAC_KEY_V${v} is set but ACTIVATION_CODE_HMAC_KEY_V${gapAt} is missing — versions must be consecutive`,
+                );
+            }
+            loaded.set(v, CodeHmacService.decodeKey(v, envKey));
+            current = v;
         }
 
+        // إسناد ذري بعد نجاح التحميل الكامل
+        this.keys = loaded;
+        this.currentVersion = current;
         this.initialized = true;
         this.logger.log(`HMAC keys loaded: ${this.keys.size} version(s), current=V${this.currentVersion}`);
+    }
+
+    private static readonly MAX_VERSION = 10;
+
+    /** فك وتحقق صارم لمفتاح base64: محارف صالحة + طول ≥ 32 بايت */
+    private static decodeKey(version: number, raw: string): Buffer {
+        const value = raw.trim();
+        // Buffer.from(..., 'base64') يتجاهل المحارف غير الصالحة بصمت — نرفضها صراحة
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
+            throw new Error(`ACTIVATION_CODE_HMAC_KEY_V${version} is not valid base64`);
+        }
+        const buf = Buffer.from(value, 'base64');
+        if (buf.length < 32) {
+            throw new Error(
+                `ACTIVATION_CODE_HMAC_KEY_V${version} must be at least 32 bytes (256 bits), got ${buf.length}`,
+            );
+        }
+        return buf;
     }
 
     /**
@@ -99,6 +117,7 @@ export class CodeHmacService {
     }
 
     getCurrentVersion(): number {
+        this.ensureInitialized();
         return this.currentVersion;
     }
 }

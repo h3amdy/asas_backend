@@ -731,14 +731,82 @@ describeIfDb('Subscription API — Phases 2, 3, 6', () => {
       await expect(svc.acquireOrReturn(params(key))).rejects.toThrow('REQUEST_IN_PROGRESS');
     });
 
+    const complete = (key: string, status: number, body: any) =>
+      prisma.$transaction((tx) => svc.markCompletedTx(tx, key, status, body));
+
     it('COMPLETED record replays the stored response', async () => {
       const key = randomUUID();
       await svc.acquireOrReturn(params(key));
-      await svc.markCompleted(key, 201, { ok: 1 });
+      await complete(key, 201, { ok: 1 });
       await expect(svc.acquireOrReturn(params(key))).resolves.toEqual({
         statusCode: 201,
         body: { ok: 1 },
       });
+    });
+
+    // ─── الإكمال داخل معاملة الأعمال (PostgreSQL فعلي) ───
+
+    it('effect + COMPLETED commit together: replay returns cached result, no re-execution', async () => {
+      const key = randomUUID();
+      await svc.acquireOrReturn(params(key));
+      await prisma.$transaction(async (tx) => {
+        await tx.subscriptionAuditEvent.create({
+          data: { schoolId, actorUserId: adminId, eventType: 'IDEMP_ATOMIC_OK', metadata: { key } },
+        });
+        await svc.markCompletedTx(tx, key, 201, { ok: 'atomic' });
+      });
+      // العميل لم يتلقّ الاستجابة وأعاد المحاولة → يحصل على النتيجة المحفوظة
+      await expect(svc.acquireOrReturn(params(key))).resolves.toEqual({ statusCode: 201, body: { ok: 'atomic' } });
+      const effects = await prisma.subscriptionAuditEvent.count({
+        where: { schoolId, eventType: 'IDEMP_ATOMIC_OK', metadata: { path: ['key'], equals: key } },
+      });
+      expect(effects).toBe(1);
+    });
+
+    it('TX failure after markCompletedTx rolls back BOTH effect and COMPLETED', async () => {
+      const key = randomUUID();
+      await svc.acquireOrReturn(params(key));
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await tx.subscriptionAuditEvent.create({
+            data: { schoolId, actorUserId: adminId, eventType: 'IDEMP_ATOMIC_FAIL', metadata: { key } },
+          });
+          await svc.markCompletedTx(tx, key, 201, { ok: 1 });
+          throw new Error('crash before commit');
+        }),
+      ).rejects.toThrow('crash before commit');
+
+      const rec = await prisma.idempotencyRecord.findUnique({ where: { idempotencyKey: key } });
+      expect(rec!.status).toBe('PROCESSING');
+      const effects = await prisma.subscriptionAuditEvent.count({
+        where: { schoolId, eventType: 'IDEMP_ATOMIC_FAIL', metadata: { path: ['key'], equals: key } },
+      });
+      expect(effects).toBe(0);
+    });
+
+    it('stale PROCESSING (lease expired, nothing committed) → exactly one concurrent retry proceeds', async () => {
+      const key = randomUUID();
+      await svc.acquireOrReturn(params(key));
+      await prisma.idempotencyRecord.update({
+        where: { idempotencyKey: key },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+      const results = await Promise.allSettled([
+        svc.acquireOrReturn(params(key)),
+        svc.acquireOrReturn(params(key)),
+        svc.acquireOrReturn(params(key)),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled' && r.value === null)).toHaveLength(1);
+      expect(results.filter((r) => r.status === 'rejected')).toHaveLength(2);
+      const rec = await prisma.idempotencyRecord.findUnique({ where: { idempotencyKey: key } });
+      expect(rec!.status).toBe('PROCESSING');
+      expect(rec!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('PROCESSING within lease is never reclaimed', async () => {
+      const key = randomUUID();
+      await svc.acquireOrReturn(params(key));
+      await expect(svc.acquireOrReturn(params(key))).rejects.toThrow('REQUEST_IN_PROGRESS');
     });
 
     it('FAILED_TRANSIENT retry with same key proceeds directly (no RETRY_ALLOWED round-trip)', async () => {
@@ -784,7 +852,7 @@ describeIfDb('Subscription API — Phases 2, 3, 6', () => {
     ])('rejects key reuse with %s', async (_label, override) => {
       const key = randomUUID();
       await svc.acquireOrReturn(params(key));
-      await svc.markCompleted(key, 201, { secret: 'school-A-data' });
+      await complete(key, 201, { secret: 'school-A-data' });
       await expect(svc.acquireOrReturn(params(key, override as any))).rejects.toThrow(
         'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
       );
