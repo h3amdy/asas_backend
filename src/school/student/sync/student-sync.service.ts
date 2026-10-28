@@ -279,7 +279,7 @@ export class StudentSyncService {
                         },
                     },
                 },
-                subject: { select: { uuid: true, displayName: true } },
+                subject: { select: { uuid: true, displayName: true, isDeleted: true, isActive: true } },
                 // Per-Target: جلب target الطالب للحصول على publishedAt
                 targets: {
                     where: { sectionId: ctx.sectionId, publishedAt: { not: null } },
@@ -303,8 +303,10 @@ export class StudentSyncService {
                 coverMediaAssetUuid: lesson.template.coverMediaAsset?.uuid ?? null,
                 status: lesson.status,
                 publishedAt: lesson.targets[0]?.publishedAt ?? null, // Per-Target
-                isActive: lesson.isActive,
-                isDeleted: lesson.isDeleted,
+                isActive: lesson.isActive && lesson.subject.isActive,
+                // درس تابع لمادة محذوفة يُعامل كمحذوف — وإلا يبني التطبيق مادة "شبح" مكررة
+                // من الدروس القديمة بجانب المادة المُعاد استيرادها (نفس الاسم، UUID مختلف)
+                isDeleted: lesson.isDeleted || lesson.subject.isDeleted,
                 updatedAt: lesson.updatedAt,
                 // محتوى الدرس — يُحذف لغير المشترك (SRS-SUB-005 §8.0)
                 contentBlocks: contentEntitled

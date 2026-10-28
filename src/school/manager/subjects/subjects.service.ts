@@ -177,10 +177,23 @@ export class SubjectsService {
         });
         if (!subject) throw new NotFoundException('SUBJECT_NOT_FOUND');
 
-        await this.prisma.subject.update({
-            where: { id: subjectId },
-            data: { isDeleted: true, deletedAt: new Date() },
-        });
+        const now = new Date();
+        await this.prisma.$transaction([
+            this.prisma.subject.update({
+                where: { id: subjectId },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+            // فك ربط المادة بالشعب
+            this.prisma.subjectSection.updateMany({
+                where: { subjectId, isDeleted: false },
+                data: { isDeleted: true, deletedAt: now },
+            }),
+            // تحديث updatedAt للدروس حتى تلتقطها مزامنة الطلاب (cursor) وتُحذف من الكاش المحلي
+            this.prisma.lesson.updateMany({
+                where: { subjectId },
+                data: { updatedAt: now },
+            }),
+        ]);
         return { success: true };
     }
 
