@@ -1,5 +1,5 @@
 // src/school/common/subscription/idempotency.service.ts
-import { Injectable, ConflictException, HttpException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, HttpException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { Prisma, IdempotencyStatus } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -12,18 +12,35 @@ import * as crypto from 'crypto';
  */
 @Injectable()
 export class IdempotencyService {
+    private readonly logger = new Logger(IdempotencyService.name);
+
     /** مدة صلاحية سجل idempotency: 24 ساعة */
     private static readonly TTL_HOURS = 24;
 
     constructor(private readonly prisma: PrismaService) {}
 
     /**
-     * حساب hash ثابت الترتيب للـ DTO
-     * يُستخدم لكشف طلبات مختلفة بنفس idempotency key
+     * حساب hash ثابت الترتيب للـ DTO — Canonical JSON
+     *
+     * يُرتب المفاتيح في **جميع** مستويات الكائن (بما فيها المتداخلة)
+     * لضمان أن أي اختلاف في أي حقل مؤثر يُنتج بصمة مختلفة.
+     *
+     * المصفوفات تحافظ على ترتيبها الأصلي (ترتيب العناصر مهم دلالياً).
      */
     computeRequestHash(dto: Record<string, any>): string {
-        const sorted = JSON.stringify(dto, Object.keys(dto).sort());
-        return crypto.createHash('sha256').update(sorted).digest('hex');
+        const canonical = JSON.stringify(
+            dto,
+            (_key, value) => {
+                // الكائنات العادية (ليست مصفوفات أو null): رتّب مفاتيحها
+                if (value && typeof value === 'object' && !Array.isArray(value)) {
+                    return Object.fromEntries(
+                        Object.entries(value).sort(([a], [b]) => a.localeCompare(b)),
+                    );
+                }
+                return value;
+            },
+        );
+        return crypto.createHash('sha256').update(canonical).digest('hex');
     }
 
     /**
@@ -150,8 +167,42 @@ export class IdempotencyService {
         }
 
         switch (existing.status) {
-            case IdempotencyStatus.PROCESSING:
-                throw new ConflictException('REQUEST_IN_PROGRESS');
+            case IdempotencyStatus.PROCESSING: {
+                const now = new Date();
+                if (existing.expiresAt > now) {
+                    // السجل لا يزال ضمن مدة الصلاحية — العملية قد تكون جارية فعلاً
+                    throw new ConflictException('REQUEST_IN_PROGRESS');
+                }
+
+                // السجل منتهي الصلاحية وما زال PROCESSING:
+                // العملية الأصلية إما نجحت ولم تُحفظ استجابتها، أو فشلت بشكل غير معروف.
+                //
+                // ⚠️ لا نستحوذ على السجل تلقائياً — لأن TX الأصلية ربما نجحت.
+                // بدلاً من ذلك: نُبلغ العميل بفحص حالته الفعلية ثم إعادة الطلب بمفتاح جديد.
+                //
+                // ننقل السجل إلى EXPIRED حتى لا يبقى عالقاً للأبد،
+                // مع تسجيل تحذير للتحقيق.
+                this.logger.warn(
+                    `Stale PROCESSING idempotency record detected: key=${idempotencyKey}, ` +
+                    `endpoint=${existing.endpoint}, expired=${existing.expiresAt.toISOString()}`,
+                );
+
+                // نقل ذري إلى EXPIRED (فقط إذا كان لا يزال PROCESSING)
+                await this.prisma.idempotencyRecord.updateMany({
+                    where: {
+                        idempotencyKey,
+                        status: IdempotencyStatus.PROCESSING,
+                    },
+                    data: {
+                        status: IdempotencyStatus.EXPIRED,
+                    },
+                });
+
+                throw new ConflictException(
+                    'STALE_PROCESSING_UNKNOWN — The previous request\'s outcome is uncertain. ' +
+                    'Check your current state, then retry with a new idempotency key if needed.',
+                );
+            }
 
             case IdempotencyStatus.COMPLETED:
                 return {

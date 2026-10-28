@@ -329,39 +329,48 @@ export class SubscriptionService {
     }
 
     async createPaymentMethod(schoolId: number, dto: CreatePaymentMethodDto) {
-        await this.ensureActivated(schoolId);
-
-        // حد 10 فعّالة
-        const activeCount = await this.prisma.schoolPaymentMethod.count({
-            where: { schoolId, isDeleted: false },
-        });
-        if (activeCount >= SubscriptionService.MAX_ACTIVE_PAYMENT_METHODS) {
-            throw new BadRequestException('MAX_PAYMENT_METHODS_REACHED');
-        }
-
-        // أعلى sortOrder + 1
-        const maxSort = await this.prisma.schoolPaymentMethod.aggregate({
-            where: { schoolId, isDeleted: false },
-            _max: { sortOrder: true },
-        });
-        const nextSort = (maxSort._max.sortOrder ?? 0) + 1;
-
-        return this.prisma.schoolPaymentMethod.create({
-            data: {
+        return this.prisma.$transaction(async (tx) => {
+            // قفل صف الإعدادات — يسلسل إضافة/حذف طرق الدفع ويمنع تجاوز الحد
+            const [settings] = await tx.$queryRawUnsafe<Array<{ is_activated: boolean }>>(
+                `SELECT is_activated FROM "school_subscription_settings" WHERE school_id = $1 FOR UPDATE`,
                 schoolId,
-                name: dto.name,
-                paymentDetails: dto.paymentDetails,
-                instructions: dto.instructions ?? null,
-                sortOrder: nextSort,
-            },
-            select: {
-                id: true,
-                uuid: true,
-                name: true,
-                paymentDetails: true,
-                instructions: true,
-                sortOrder: true,
-            },
+            );
+            if (!settings?.is_activated) {
+                throw new ForbiddenException('SUBSCRIPTION_NOT_ACTIVATED');
+            }
+
+            // حد 10 فعّالة
+            const activeCount = await tx.schoolPaymentMethod.count({
+                where: { schoolId, isDeleted: false },
+            });
+            if (activeCount >= SubscriptionService.MAX_ACTIVE_PAYMENT_METHODS) {
+                throw new BadRequestException('MAX_PAYMENT_METHODS_REACHED');
+            }
+
+            // أعلى sortOrder + 1
+            const maxSort = await tx.schoolPaymentMethod.aggregate({
+                where: { schoolId, isDeleted: false },
+                _max: { sortOrder: true },
+            });
+            const nextSort = (maxSort._max.sortOrder ?? 0) + 1;
+
+            return tx.schoolPaymentMethod.create({
+                data: {
+                    schoolId,
+                    name: dto.name,
+                    paymentDetails: dto.paymentDetails,
+                    instructions: dto.instructions ?? null,
+                    sortOrder: nextSort,
+                },
+                select: {
+                    id: true,
+                    uuid: true,
+                    name: true,
+                    paymentDetails: true,
+                    instructions: true,
+                    sortOrder: true,
+                },
+            });
         });
     }
 
@@ -390,27 +399,36 @@ export class SubscriptionService {
     }
 
     async deletePaymentMethod(schoolId: number, id: number) {
-        await this.ensureActivated(schoolId);
+        return this.prisma.$transaction(async (tx) => {
+            // قفل صف الإعدادات — يسلسل إضافة/حذف طرق الدفع ويمنع حذف الأخيرة
+            const [settings] = await tx.$queryRawUnsafe<Array<{ is_activated: boolean }>>(
+                `SELECT is_activated FROM "school_subscription_settings" WHERE school_id = $1 FOR UPDATE`,
+                schoolId,
+            );
+            if (!settings?.is_activated) {
+                throw new ForbiddenException('SUBSCRIPTION_NOT_ACTIVATED');
+            }
 
-        const method = await this.prisma.schoolPaymentMethod.findFirst({
-            where: { id, schoolId, isDeleted: false },
+            const method = await tx.schoolPaymentMethod.findFirst({
+                where: { id, schoolId, isDeleted: false },
+            });
+            if (!method) throw new NotFoundException('PAYMENT_METHOD_NOT_FOUND');
+
+            // منع حذف آخر طريقة دفع
+            const activeCount = await tx.schoolPaymentMethod.count({
+                where: { schoolId, isDeleted: false },
+            });
+            if (activeCount <= 1) {
+                throw new BadRequestException('CANNOT_DELETE_LAST_PAYMENT_METHOD');
+            }
+
+            await tx.schoolPaymentMethod.update({
+                where: { id },
+                data: { isDeleted: true, deletedAt: new Date() },
+            });
+
+            return { deleted: true };
         });
-        if (!method) throw new NotFoundException('PAYMENT_METHOD_NOT_FOUND');
-
-        // منع حذف آخر طريقة دفع
-        const activeCount = await this.prisma.schoolPaymentMethod.count({
-            where: { schoolId, isDeleted: false },
-        });
-        if (activeCount <= 1) {
-            throw new BadRequestException('CANNOT_DELETE_LAST_PAYMENT_METHOD');
-        }
-
-        await this.prisma.schoolPaymentMethod.update({
-            where: { id },
-            data: { isDeleted: true, deletedAt: new Date() },
-        });
-
-        return { deleted: true };
     }
 
     async reorderPaymentMethods(schoolId: number, dto: ReorderPaymentMethodsDto) {

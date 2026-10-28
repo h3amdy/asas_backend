@@ -35,7 +35,13 @@ export class CodeHmacService {
         for (let v = 2; v <= 10; v++) {
             const envKey = process.env[`ACTIVATION_CODE_HMAC_KEY_V${v}`];
             if (envKey) {
-                this.keys.set(v, Buffer.from(envKey, 'base64'));
+                const buf = Buffer.from(envKey, 'base64');
+                if (buf.length < 32) {
+                    throw new Error(
+                        `ACTIVATION_CODE_HMAC_KEY_V${v} must be at least 32 bytes (256 bits), got ${buf.length}`,
+                    );
+                }
+                this.keys.set(v, buf);
                 this.currentVersion = v;
             } else {
                 break;

@@ -1,1025 +1,491 @@
-      deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/core/widgets/custom_bottom_nav.dart:30:33 •
-          deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/core/widgets/custom_bottom_nav.dart:53:43 •
-          deprecated_member_use
-   info • The imported package 'path' isn't a dependency of
-          the importing package •
-          lib/data/local/app_database.dart:8:8 •
-          depend_on_referenced_packages
-   info • The member 'getGrades' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/grade_repository.dart:37:28
-          • annotate_overrides
-   info • The member 'addGrade' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/grade_repository.dart:63:16
-          • annotate_overrides
-   info • The member 'updateGrade' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/grade_repository.dart:86:16
-          • annotate_overrides
-   info • The member 'toggleStatus' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/grade_repository.dart:108:16
-          • annotate_overrides
-   info • The member 'deleteGrade' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/grade_repository.dart:168:16
-          • annotate_overrides
-   info • The member 'isCodeAvailable' overrides an
-          inherited member but isn't annotated with
-          '@override' •
-          lib/data/repositories/grade_repository.dart:174:16
-          • annotate_overrides
-   info • The member 'getManagerForSchool' overrides an
-          inherited member but isn't annotated with
-          '@override' •
-          lib/data/repositories/manager_repository.dart:19:3
-          3 • annotate_overrides
-   info • The member 'createOrUpdateManager' overrides an
-          inherited member but isn't annotated with
-          '@override' •
-          lib/data/repositories/manager_repository.dart:58:3
-          2 • annotate_overrides
-   info • The member 'resetManagerPassword' overrides an
-          inherited member but isn't annotated with
-          '@override' •
-          lib/data/repositories/manager_repository.dart:99:3
-          2 • annotate_overrides
-   info • The member 'getSchools' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/school_repository.dart:22:29
-          • annotate_overrides
-   info • The member 'updateSchool' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/school_repository.dart:109:2
-          3 • annotate_overrides
-   info • The member 'toggleStatus' overrides an inherited
-          member but isn't annotated with '@override' •
-          lib/data/repositories/school_repository.dart:137:2
-          3 • annotate_overrides
-   info • Don't invoke 'print' in production code •
-          lib/data/sync/sync_manger.dart:21:9 • avoid_print
-   info • Don't invoke 'print' in production code •
-          lib/presentation/pages/dashboard/dashboard_control
-          ler.dart:50:13 • avoid_print
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:61:52 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:64:54 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:175:38 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:261:65 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:274:34 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:377:49 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:378:39 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:404:50 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:407:56 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:493:51 • deprecated_member_use
-   info • Unnecessary use of string interpolation •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:525:59 • unnecessary_string_interpolations
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:609:33 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:610:63 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:626:53 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:627:43 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:685:50 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:688:56 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:879:58 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:880:56 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:921:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:924:30 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:952:54 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:1008:58 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/dashboard/dashboard_view.da
-          rt:1009:56 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grade_form_view.dart
-          :196:47 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grade_form_view.dart
-          :197:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grade_form_view.dart
-          :203:49 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grade_form_view.dart
-          :204:47 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grade_form_view.dart
-          :217:53 • deprecated_member_use
-   info • 'activeColor' is deprecated and shouldn't be used.
-          Use activeThumbColor instead. This feature was
-          deprecated after v3.31.0-2.0.pre •
-          lib/presentation/pages/grades/grade_form_view.dart
-          :257:27 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:59:52 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:62:54 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:116:39 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:124:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:135:35 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:160:39 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:241:33 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:265:38 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:266:39 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:334:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/grades/grades_list_view.dar
-          t:337:48 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/login/login_view.dart:41:49
-          • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/login/login_view.dart:196:3
-          9 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/login/login_view.dart:209:4
-          5 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/login/login_view.dart:217:4
-          5 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/login/login_view.dart:234:3
-          3 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:176:39 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:188:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:203:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:218:41 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:221:43 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:264:49 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:272:51 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:300:41 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:302:60 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:331:29 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:385:40 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:387:59 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_draw
-          er.dart:410:34 • deprecated_member_use
-warning • Unused import:
-       'package:admin_panel/core/widgets/app_background.dart
-       ' •
-       lib/presentation/pages/main_layout/views/main_layout_
-       view.dart:3:8 • unused_import
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/main_layout/views/main_layo
-          ut_view.dart:33:52 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/dialogs/cred
-          entials_dialog.dart:59:35 • deprecated_member_use
-   info • 'Share' is deprecated and shouldn't be used. Use
-          SharePlus instead •
-          lib/presentation/pages/managers/views/dialogs/cred
-          entials_dialog.dart:243:5 • deprecated_member_use
-   info • 'share' is deprecated and shouldn't be used. Use
-          SharePlus.instance.share() instead •
-          lib/presentation/pages/managers/views/dialogs/cred
-          entials_dialog.dart:243:11 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/dialogs/deve
-          loper_order_dialog.dart:63:35 •
-          deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/dialogs/deve
-          loper_order_dialog.dart:106:43 •
-          deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_form
-          _view.dart:33:44 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_form
-          _view.dart:35:63 • deprecated_member_use
-warning • The '!' will have no effect because the receiver
-       can't be null •
-       lib/presentation/pages/managers/views/manager_view.da
-       rt:44:76 • unnecessary_non_null_assertion
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:74:38 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:101:35 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:121:47 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:204:36 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:218:44 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:219:63 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:259:54 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:331:28 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:332:26 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:336:30 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:337:28 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:375:34 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:386:32 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:387:40 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/managers/views/manager_view
-          .dart:396:32 • deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/presentation/pages/platform_books/views/book_f
-          orm_dialog.dart:595:9 • deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/presentation/pages/platform_books/views/book_f
-          orm_dialog.dart:653:9 • deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/presentation/pages/platform_books/views/book_f
-          orm_dialog.dart:697:7 • deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/presentation/pages/platform_books/views/platfo
-          rm_books_view.dart:206:9 • deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/presentation/pages/platform_books/views/platfo
-          rm_books_view.dart:230:9 • deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/presentation/pages/platform_books/views/platfo
-          rm_books_view.dart:255:9 • deprecated_member_use
-   info • 'activeColor' is deprecated and shouldn't be used.
-          Use activeThumbColor or activeTrackColor instead.
-          This feature was deprecated after v3.31.0-2.0.pre
-          •
-          lib/presentation/pages/platform_books/views/platfo
-          rm_books_view.dart:530:31 • deprecated_member_use
-warning • Unused import:
-       'package:admin_panel/src/features/shared/media/contra
-       cts/media_service_contract.dart' •
-       lib/presentation/pages/platform_subjects/views/platfo
-       rm_subjects_view.dart:8:8 • unused_import
-warning • Unused import:
-       'package:admin_panel/data/models/subject_dictionary_m
-       odel.dart' •
-       lib/presentation/pages/platform_users/views/platform_
-       user_detail_view.dart:5:8 • unused_import
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/platform_users/views/platfo
-          rm_user_detail_view.dart:792:40 •
-          deprecated_member_use
-   info • Statements in an if should be enclosed in a block
-          •
-          lib/presentation/pages/platform_users/views/platfo
-          rm_user_form_view.dart:70:31 •
-          curly_braces_in_flow_control_structures
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:108:47 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:109:37 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:143:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:144:51 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:395:60 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:401:40 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:452:37 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:454:56 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_details_view
-          .dart:467:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_form_view.da
-          rt:35:35 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_form_view.da
-          rt:85:43 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_form_view.da
-          rt:89:62 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/schools/school_form_view.da
-          rt:377:56 • deprecated_member_use
-warning • The value of the local variable 'isDark' isn't
-       used •
-       lib/presentation/pages/settings/views/dialogs/edit_ph
-       one_dialog.dart:50:11 • unused_local_variable
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/settings/views/dialogs/edit
-          _phone_dialog.dart:63:35 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/settings/views/dialogs/edit
-          _phone_dialog.dart:98:44 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/settings/views/dialogs/edit
-          _profile_dialog.dart:74:35 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/settings/views/dialogs/edit
-          _profile_dialog.dart:119:58 •
-          deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:96:39 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:106:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:121:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:137:43 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:140:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:178:49 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:184:51 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:213:40 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:266:40 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:268:59 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          drawer.dart:291:34 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:25:50 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:94:34 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:140:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:143:48 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:242:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:245:45 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:249:30 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:269:43 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:292:41 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:293:41 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:334:42 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:397:47 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:404:49 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:411:46 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:418:34 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/presentation/pages/teacher_home/views/teacher_
-          home_view.dart:419:34 • deprecated_member_use
-   info • 'surfaceVariant' is deprecated and shouldn't be
-          used. Use surfaceContainerHighest instead. This
-          feature was deprecated after v3.18.0-0.1.pre •
-          lib/src/core/ui/widgets/app_segmented_button.dart:
-          67:19 • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/src/core/ui/widgets/app_stepper_row.dart:27:39
-          • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/src/core/ui/widgets/app_stepper_row.dart:27:77
-          • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/src/core/ui/widgets/app_stepper_row.dart:45:51
-          • deprecated_member_use
-   info • 'withOpacity' is deprecated and shouldn't be used.
-          Use .withValues() to avoid precision loss •
-          lib/src/core/ui/widgets/app_wizard_header.dart:55:
-          55 • deprecated_member_use
-   info • Dangling library doc comment •
-          lib/src/features/backup/data/models/backup_models.
-          dart:2:1 • dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/backup/data/repositories/backup_r
-          epository.dart:1:1 • dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/backup/data/services/backup_api_s
-          ervice.dart:1:1 • dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/backup/presentation/controllers/b
-          ackup_controller.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/backup/presentation/views/backup_
-          management_view.dart:1:1 •
-          dangling_library_doc_comments
-warning • The value of the local variable 'cs' isn't used •
-       lib/src/features/backup/presentation/views/backup_man
-       agement_view.dart:119:11 • unused_local_variable
-  error • The argument type 'SizedBox' can't be assigned to
-         the parameter type 'Expanded'.  •
-         lib/src/features/backup/presentation/views/backup_m
-         anagement_view.dart:196:30 •
-         argument_type_not_assignable
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/data/models/
-          distribution_batch_model.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/data/models/
-          distribution_model.dart:2:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/data/models/
-          distribution_summary_model.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/data/reposit
-          ories/distribution_repository.dart:1:1 •
-          dangling_library_doc_comments
-   info • Angle brackets will be interpreted as HTML •
-          lib/src/features/content_distribution/data/reposit
-          ories/distribution_repository.dart:1:60 •
-          unintended_html_in_doc_comment
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/data/service
-          s/distribution_api_service.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/presentation
-          /controllers/distribution_controller.dart:1:1 •
-          dangling_library_doc_comments
-   info • Angle brackets will be interpreted as HTML •
-          lib/src/features/content_distribution/presentation
-          /controllers/distribution_controller.dart:135:35 •
-          unintended_html_in_doc_comment
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/presentation
-          /views/content_distribution_view.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/content_distribution/presentation
-          /views/distribution_history_view.dart:1:1 •
-          dangling_library_doc_comments
-   info • Statements in an if should be enclosed in a block
-          •
-          lib/src/features/platform_content/data/services/js
-          on_question_normalizer.dart:219:9 •
-          curly_braces_in_flow_control_structures
-   info • Statements in an if should be enclosed in a block
-          •
-          lib/src/features/platform_content/data/services/js
-          on_question_normalizer.dart:223:9 •
-          curly_braces_in_flow_control_structures
-warning • The value of the field '_mediaService' isn't used
-       •
-       lib/src/features/platform_content/data/services/lesso
-       n_json_service.dart:23:23 • unused_field
-   info • Statements in an if should be enclosed in a block
-          •
-          lib/src/features/platform_content/data/services/le
-          sson_json_service.dart:284:11 •
-          curly_braces_in_flow_control_structures
-   info • Statements in an if should be enclosed in a block
-          •
-          lib/src/features/platform_content/data/services/le
-          sson_json_service.dart:286:11 •
-          curly_braces_in_flow_control_structures
-warning • The declaration '_guessExtension' isn't referenced
-       •
-       lib/src/features/platform_content/data/services/lesso
-       n_json_service.dart:1057:10 • unused_element
-warning • The value of the local variable 'isDark' isn't
-       used •
-       lib/src/features/platform_content/presentation/views/
-       units_management_view.dart:25:11 •
-       unused_local_variable
-   info • Invalid use of a private type in a public API •
-          lib/src/features/platform_content/presentation/vie
-          ws/widgets/json_import_sheet.dart:35:9 •
-          library_private_types_in_public_api
-warning • The declaration '_buildSearchBar' isn't referenced
-       •
-       lib/src/features/platform_content/presentation/views/
-       widgets/json_instructions_dialog.dart:322:10 •
-       unused_element
-warning • The declaration '_buildNavigationChips' isn't
-       referenced •
-       lib/src/features/platform_content/presentation/views/
-       widgets/json_instructions_dialog.dart:385:10 •
-       unused_element
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/src/features/platform_content/presentation/vie
-          ws/widgets/lesson_form_sheet.dart:92:17 •
-          deprecated_member_use
-   info • Dangling library doc comment •
-          lib/src/features/release_management/data/models/ma
-          naged_app_model.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:2:1 •
-          dangling_library_doc_comments
-   info • The constant name 'PUBLIC' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:6:3 • constant_identifier_names
-   info • The constant name 'PRIVATE' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:7:3 • constant_identifier_names
-   info • The constant name 'ADMIN_PANEL' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:8:3 • constant_identifier_names
-   info • The constant name 'ACTIVE' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:20:3 • constant_identifier_names
-   info • The constant name 'DISABLED' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:21:3 • constant_identifier_names
-   info • The constant name 'ARCHIVED' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:22:3 • constant_identifier_names
-   info • The constant name 'DRAFT' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:34:3 • constant_identifier_names
-   info • The constant name 'TESTING' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:35:3 • constant_identifier_names
-   info • The constant name 'PUBLISHED' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:36:3 • constant_identifier_names
-   info • The constant name 'DEPRECATED' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:37:3 • constant_identifier_names
-   info • The constant name 'REVOKED' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:38:3 • constant_identifier_names
-   info • The constant name 'NONE' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:50:3 • constant_identifier_names
-   info • The constant name 'OPTIONAL' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:51:3 • constant_identifier_names
-   info • The constant name 'REQUIRED' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:52:3 • constant_identifier_names
-   info • The constant name 'STABLE' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:64:3 • constant_identifier_names
-   info • The constant name 'BETA' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:65:3 • constant_identifier_names
-   info • The constant name 'INTERNAL' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:66:3 • constant_identifier_names
-   info • The constant name 'APK_DIRECT' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:78:3 • constant_identifier_names
-   info • The constant name 'GOOGLE_PLAY' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:79:3 • constant_identifier_names
-   info • The constant name 'APP_STORE' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:80:3 • constant_identifier_names
-   info • The constant name 'TESTFLIGHT' isn't a
-          lowerCamelCase identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:81:3 • constant_identifier_names
-   info • The constant name 'ANDROID' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:93:3 • constant_identifier_names
-   info • The constant name 'IOS' isn't a lowerCamelCase
-          identifier •
-          lib/src/features/release_management/data/models/re
-          lease_enums.dart:94:3 • constant_identifier_names
-   info • Dangling library doc comment •
-          lib/src/features/release_management/data/models/re
-          lease_model.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/data/models/st
-          ats_models.dart:2:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/data/repositor
-          ies/releases_repository.dart:1:1 •
-          dangling_library_doc_comments
-   info • Angle brackets will be interpreted as HTML •
-          lib/src/features/release_management/data/repositor
-          ies/releases_repository.dart:1:60 •
-          unintended_html_in_doc_comment
-   info • Dangling library doc comment •
-          lib/src/features/release_management/data/services/
-          releases_api_service.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/presentation/c
-          ontrollers/release_management_controller.dart:1:1
-          • dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/presentation/v
-          iews/app_releases_view.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/presentation/v
-          iews/apps_list_view.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/presentation/v
-          iews/stats_dashboard_view.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/presentation/w
-          idgets/release_dialogs.dart:1:1 •
-          dangling_library_doc_comments
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/src/features/release_management/presentation/w
-          idgets/release_dialogs.dart:52:21 •
-          deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/src/features/release_management/presentation/w
-          idgets/release_dialogs.dart:232:21 •
-          deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/src/features/release_management/presentation/w
-          idgets/release_dialogs.dart:244:21 •
-          deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/src/features/release_management/presentation/w
-          idgets/release_dialogs.dart:343:21 •
-          deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/src/features/release_management/presentation/w
-          idgets/release_dialogs.dart:352:21 •
-          deprecated_member_use
-   info • 'value' is deprecated and shouldn't be used. Use
-          initialValue instead. This will set the initial
-          value for the form field. This feature was
-          deprecated after v3.33.0-1.0.pre •
-          lib/src/features/release_management/presentation/w
-          idgets/release_dialogs.dart:702:21 •
-          deprecated_member_use
-   info • Dangling library doc comment •
-          lib/src/features/release_management/presentation/w
-          idgets/release_distribution_sheet.dart:1:1 •
-          dangling_library_doc_comments
-   info • Dangling library doc comment •
-          lib/src/features/release_management/presentation/w
-          idgets/release_shared_widgets.dart:1:1 •
-          dangling_library_doc_comments
-   info • Use a function declaration rather than a variable
-          assignment to bind a function to a name •
-          lib/src/features/shared/media/presentation/media_i
-          mage_viewer_page.dart:195:11 •
-          prefer_function_declarations_over_variables
-   info • 'dart:html' is deprecated and shouldn't be used.
-          Use package:web and dart:js_interop instead •
-          lib/src/features/shared/media/utils/web_audio_help
-          er.dart:8:1 • deprecated_member_use
-   info • The imported package 'path' isn't a dependency of
-          the importing package •
-          lib/src/features/shared/media/workers/download_wor
-          ker.dart:8:8 • depend_on_referenced_packages
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:15:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:24:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:25:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:27:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:28:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:29:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:30:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:31:7 •
-          avoid_print
-   info • Don't invoke 'print' in production code •
-          test/media_endpoint_probe_test.dart:33:7 •
-          avoid_print
+] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] SharedMediaModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] OtpModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] SessionsModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformSessionsModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] HealthModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] AppModule dependencies initialized +5ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] ScheduleModule dependencies initialized +8ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PublicMediaModule dependencies initialized +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PublicSchoolsModule dependencies initialized +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] SchoolsModule dependencies initialized +6ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] GradesModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] StatusModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] SchoolCommonModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformContentModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] StudentSyncModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformSubjectsModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformUnitsModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformLessonsModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformQuestionsModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] DistributionModule dependencies initialized +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] ReleasesModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformBooksModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] ProfileModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] ImportsModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] ManagerModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] ReportsModule dependencies initialized +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] SubscriptionModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformUsersModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformProfileModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] SchoolAuthModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] StudentSubscriptionModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] StudentModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformAuthModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] MediaModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] PlatformMediaModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] ParentModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] TeacherModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] StudentRegistrationModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [InstanceLoader] BackupModule dependencies initialized +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM    WARN [LegacyRouteConverter] Unsupported route path: "/api/v1/*". In previous versions, the symbols ?, *, and + were used to denote optional or repeating path parameters. The latest version of "path-to-regexp" now requires the use of named parameters. For example, instead of using a route like /users/* to capture all routes starting with "/users", you should use /users/*path. For more details, refer to the migration guide. Attempting to auto-convert...
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] AppController {/api/v1}: +3ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1, GET} route +3ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] SchoolsController {/api/v1/schools}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/stats, GET} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:uuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:uuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:uuid/status, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:uuid, DELETE} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:uuid/manager, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:uuid/manager/reset-password, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:uuid/manager, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] SchoolsSyncController {/api/v1/schools-sync}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools-sync, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/schools-sync, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] GradesController {/api/v1/grades}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades/:uuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades/:uuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades/:uuid/status, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades/:uuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] GradesSyncController {/api/v1/grades-sync}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades-sync, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/grades-sync, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] StatusController {/api/v1/status}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/status/schools/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/status/me, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] PublicSchoolsController {/api/v1/public/schools}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/schools/search, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/schools/verify-code, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/schools/provinces, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/schools/:uuid/profile, GET} route +3ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] PublicMediaController {/api/v1/public/media}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/media/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] StudentRegistrationController {/api/v1/public/student-registration}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/student-registration/check-phone, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/student-registration/request-otp, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/student-registration/verify-otp, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/student-registration/complete, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/student-registration/config, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/student-registration/complete-without-otp, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] RegistrationDataController {/api/v1/public}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/provinces, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/provinces/:id/districts, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/public/registration/grades, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] SchoolAuthController {/api/v1/school/auth}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/auth/login, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/auth/refresh, POST} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/auth/logout, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] AcademicContextController {/api/v1/school/academic-context}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/academic-context, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] ProfileController {/api/v1/school/profile}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/profile/me, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/profile/me, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/profile/change-password, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] SchoolInfoController {/api/v1/school/manager/school-info}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/school-info, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/school-info, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] GradesController {/api/v1/school/manager/grades}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/dictionary, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/bulk, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/:id, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/:id, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/:id, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/:id/toggle-active, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/:id/sections, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/:id/sections, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/sections/:sectionId, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/sections/:sectionId, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/grades/sections/:sectionId/toggle-active, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] AcademicYearsController {/api/v1/school/manager/academic-years}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/current, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/:yearId, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/:yearId, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/:yearId/advance-term, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/:yearId/end-current-term, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/:yearId/terms/:termId/start, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/:yearId/copy-timetable, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/terms/:termId, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/:yearId/terms, POST} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/academic-years/terms/:termId, DELETE} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] StudentsController {/api/v1/school/manager/students}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid, PATCH} route +8ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid/transfer-section, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid/transfer-grade, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid/drop, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid/re-enroll, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid/toggle-active, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid/reset-password, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/students/:uuid/credentials, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] ParentsController {/api/v1/school/manager/parents}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents/:uuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents/:uuid/toggle-active, PATCH} route +4ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents/:uuid/reset-password, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents/:uuid/credentials, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents/:uuid/link-children, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/parents/:uuid/children/:studentUuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] TeachersController {/api/v1/school/manager/teachers}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers/:uuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers/:uuid/toggle-active, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers/:uuid/reset-password, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers/:uuid/credentials, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/teachers/:uuid/timetable, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] SubjectsController {/api/v1/school/manager/subjects}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/dictionary, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/import-from-dictionary, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectId, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectId, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectId, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectId/sections, POST} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectId/sections/:sectionId, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectUuid/assignment, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectUuid/sections/:sectionId/assign-teacher, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subjects/:subjectUuid/sections/:sectionId/unassign-teacher, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] SetupController {/api/v1/school/manager/setup}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/setup/status, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/setup/academic-initialization, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] TimetableController {/api/v1/school/manager/sections/:sectionId/timetable}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/sections/:sectionId/timetable, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/sections/:sectionId/timetable, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/sections/:sectionId/timetable/subjects, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/sections/:sectionId/timetable/slots/:slotUuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/sections/:sectionId/timetable/teacher-conflicts, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] DashboardController {/api/v1/school/manager/dashboard}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/dashboard/stats, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] RolloverController {/api/v1/school/manager/rollover}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/rollover/check-eligibility, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/rollover/preview, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/rollover/execute, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/rollover/students, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] SubscriptionController {/api/v1/school/manager/subscription}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/settings, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/activate, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/settings, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/payment-methods, GET} route +4ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/payment-methods, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/payment-methods/reorder, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/payment-methods/:id, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/payment-methods/:id, DELETE} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/code-batches, POST} route +33ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/code-batches, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/code-batches/:id, GET} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/code-batches/:id/unused-codes, GET} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/code-batches/:id/used-codes, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/audit/code-copied, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/audit/codes-copied, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/manager/subscription/activation-codes, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] MediaController {/api/v1/school/media}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/media/:uuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/media/:uuid/meta, GET} route +4ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] MediaUploadController {/api/v1/school/media-upload}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/media-upload/sessions, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/media-upload/sessions/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/media-upload/sessions/:uuid/chunks, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/media-upload/sessions/:uuid/complete, POST} route +17ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/media-upload/sessions/:uuid/cancel, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] TeacherSubjectsController {/api/v1/school/teacher}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/my-subjects, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RoutesResolver] TeacherUnitsController {/api/v1/school/teacher/subjects/:subjectId/units}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:51 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectId/units, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectId/units, POST} route +17ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectId/units/:unitId, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectId/units/:unitId, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectId/units/reorder, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] TeacherLessonsController {/api/v1/school/teacher}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectUuid/lessons-by-units, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectUuid/units/:unitUuid/lessons, POST} route +4ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/status, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/reorder, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/:blockUuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/:blockUuid, DELETE} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/:blockUuid/items, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/:blockUuid/items/reorder, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid, DELETE} route +4ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid/move, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] TeacherQuestionsController {/api/v1/school/teacher}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/questions, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/questions, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/questions/:questionUuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/questions/:questionUuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/questions/:questionUuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/questions/reorder, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] TeacherLessonTargetingController {/api/v1/school/teacher}: +11ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectUuid/available-sections, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/subjects/:subjectUuid/sections/:sectionUuid/timetable-slots, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/targeting, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/targeting, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/publish, POST} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/cancel-schedule, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/lessons/:lessonUuid/delivery-status, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] TeacherTimetableController {/api/v1/school/teacher}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/my-timetable, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] TeacherReportController {/api/v1/school/teacher/reports}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/reports/filter-options, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/reports/comprehensive, GET} route +5ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/reports/comprehensive/students/:studentUuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/reports/comprehensive/students/:studentUuid/subjects/:subjectUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] ReportsController {/api/v1/school/reports/student-progress}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-progress/filter-options, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-progress, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-progress/students/:studentUuid, GET} route +5ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-progress/students/:studentUuid/subjects/:subjectUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-progress/students/:studentUuid/lessons/:lessonUuid/review, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] GradesReportController {/api/v1/school/reports/student-grades}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-grades/filter-options, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-grades, GET} route +5ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-grades/students/:studentUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/student-grades/students/:studentUuid/subjects/:subjectUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] ComprehensiveReportController {/api/v1/school/reports/comprehensive}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/comprehensive/filter-options, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/comprehensive, GET} route +3ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/comprehensive/students/:studentUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/reports/comprehensive/students/:studentUuid/subjects/:subjectUuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformContentController {/api/v1/school/teacher}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/platform-lessons, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/platform-lessons/:uuid, GET} route +4ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/platform-lessons/:uuid/fork, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/teacher/platform-lessons/:uuid/fork-for-publish, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StudentSubjectsController {/api/v1/school/student}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/my-subjects, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StudentTimetableController {/api/v1/school/student}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/my-timetable, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StudentLessonsController {/api/v1/school/student}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/my-lessons, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/lesson/:lessonUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/my-summary, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StudentQuizController {/api/v1/school/student}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/lesson/:lessonUuid/questions, GET} route +9ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/lesson/:lessonUuid/check-answer, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/lesson/:lessonUuid/submit-quiz, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/lesson/:lessonUuid/result, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/lesson/:lessonUuid/review, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/lesson/:lessonUuid/mark-read, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StudentBooksController {/api/v1/school/student}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/my-books, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StudentSyncController {/api/v1/school/student/sync}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/sync/manifest, GET} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/sync/pull, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/sync/push, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StudentSubscriptionController {/api/v1/school/student/subscription}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/subscription/my-status, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/subscription/activate, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/student/subscription/payment-info, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] ParentChildrenController {/api/v1/school/parent}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/parent/my-children, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/parent/child/:uuid/subjects, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/parent/child/:childUuid/subject/:subjectUuid/lessons, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/parent/child/:childUuid/results, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/parent/child/:childUuid/subject/:subjectUuid/results, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/school/parent/child/:childUuid/lesson/:lessonUuid/review, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformAuthController {/api/v1/auth/platform}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/auth/platform/login, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/auth/platform/refresh, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/auth/platform/logout, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformUsersController {/api/v1/platform/users}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users/:uuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users/:uuid/status, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users/:uuid/reset-password, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformSubjectsController {/api/v1/platform}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:uuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:uuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:uuid/status, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:uuid/cover, PATCH} route +2ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/reorder, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/grades, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users/:uuid/subjects, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/users/:uuid/subjects/:subjectUuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformProfileController {/api/v1/platform/profile}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/profile, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/profile, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/profile/password, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformUnitsController {/api/v1/platform/subjects/:subjectDictId/units}: +3ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:subjectDictId/units, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:subjectDictId/units, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:subjectDictId/units/:unitId, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:subjectDictId/units/:unitId, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:subjectDictId/units/reorder, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformLessonsController {/api/v1/platform}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:subjectDictUuid/lessons-by-units, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/subjects/:subjectDictUuid/units/:unitUuid/lessons, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid, DELETE} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/status, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/reorder, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/:blockUuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/:blockUuid, DELETE} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/:blockUuid/items, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/:blockUuid/items/reorder, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/blocks/:blockUuid/items/:itemUuid/move, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformQuestionsController {/api/v1/platform}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/questions, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/questions, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/questions/:questionUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/questions/:questionUuid, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/questions/:questionUuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/lessons/:lessonUuid/questions/reorder, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformMediaController {/api/v1/platform/media}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media/:uuid/meta, GET} route +3ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformMediaUploadController {/api/v1/platform/media-upload}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media-upload/sessions, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media-upload/sessions/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media-upload/sessions/:uuid/chunks, PUT} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media-upload/sessions/:uuid/complete, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media-upload/sessions/:uuid/cancel, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformMediaFromUrlController {/api/v1/platform/media}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/media/from-url, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] PlatformBooksController {/api/v1/platform/books}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/books, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/books/:id, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/books, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/books/:id, PATCH} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/books/:id/toggle, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/books/:id, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] DistributionController {/api/v1/platform}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/distribute, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/distributions, GET} route +12ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/distributions/summary, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/platform/distributions/batches, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] ImportsController {/api/v1/schools/:schoolUuid/imports}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:schoolUuid/imports/readiness, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:schoolUuid/imports/students/preview, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:schoolUuid/imports/teachers/preview, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:schoolUuid/imports/:importUuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:schoolUuid/imports/:importUuid/execute, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/schools/:schoolUuid/imports/:importUuid/credentials, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] AppsController {/api/v1/releases/apps}: +3ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/apps, GET} route +6ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/apps/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/apps, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/apps/:uuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] ReleasesController {/api/v1/releases}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/apps/:appUuid/releases, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/apps/:appUuid/releases, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/:uuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/:uuid/test, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/:uuid/publish, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/:uuid/deprecate, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/:uuid/revoke, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/:uuid/distributions, POST} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/distributions/:uuid, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/distributions/:uuid, DELETE} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] UpdateCheckController {/api/v1/public/app}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/public/app/check-update, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] StatsController {/api/v1/releases/stats}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/stats/overview, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/releases/stats/apps/:appUuid/devices, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] BackupController {/api/v1/owner/backups}: +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/trigger, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/jobs, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/jobs/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/instances, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/instances/:uuid, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/instances/:uuid/restore-preview, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/instances/:uuid/pin, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/instances/:uuid, DELETE} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/plans, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/plans/:id, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/plans/:id, PATCH} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/dashboard, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/restore, POST} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/restore-jobs, GET} route +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/owner/backups/restore-jobs/:uuid, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RoutesResolver] HealthController {/api/v1/health}: +0ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [RouterExplorer] Mapped {/api/v1/health, GET} route +1ms
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [MediaCleanupService] 🧹 Media cleanup service started
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [LocalStorageProvider] Storage initialized at: /Users/hamdy/development/Mafhooom/backend/asas_backend/backups-staging
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [BackupSchedulerService] Scheduled backup "نسخ يومي افتراضي" (0 2 * * *) in Asia/Aden
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [BackupSchedulerService] Backup scheduler synced: 1 active plans
+[Nest] 27787  - 10/25/2026, 5:21:52 PM     LOG [NestApplication] Nest application successfully started +10ms
+🚀 Server is running on port 3000 [staging]
+[Nest] 27787  - 10/25/2026, 5:21:54 PM   ERROR [ExceptionsHandler] PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
 
-285 issues found. (ran in 13.3s)
-hamdy@hamdys-iMac-Pro admin_panel % 
+
+Raw query failed. Code: `42703`. Message: `column u.schoolId does not exist`
+    at Mn.handleRequestError (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:121:7338)
+    at Mn.handleAndLogRequestError (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:121:6663)
+    at Mn.request (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:121:6370)
+    at async l (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:130:9633)
+    at async <anonymous> (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/prisma/prisma.service.ts:15:22)
+    at async SubscriptionTrialService.createBulkTrialsTx (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/school/common/subscription/subscription-trial.service.ts:90:24)
+    at async result.prisma.$transaction.timeout (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/school/manager/subscription/subscription.service.ts:204:43)
+    at async Proxy._transactionWithCallback (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:130:8000)
+    at async SubscriptionService.activateSubscription (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/school/manager/subscription/subscription.service.ts:150:28)
+    at async /Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@nestjs/core/router/router-execution-context.js:46:28 {
+  code: 'P2010',
+  clientVersion: '6.0.0',
+  meta: {
+    code: '42703',
+    message: 'column u.schoolId does not exist'
+  }
+}
+[Nest] 27787  - 10/25/2026, 5:21:54 PM     LOG [API] [da597e98] POST /api/v1/school/manager/subscription/activate → 500 (74ms)
+[Nest] 27787  - 10/25/2026, 5:21:54 PM     LOG [API] [3858acc7] GET /api/v1/school/manager/subscription/settings → 200 (42ms)
+[Nest] 27787  - 10/25/2026, 5:22:05 PM     LOG [API] [fc2330c3] GET /api/v1/school/manager/subscription/settings → 200 (6ms)
+[Nest] 27787  - 10/25/2026, 5:23:06 PM   ERROR [ExceptionsHandler] PrismaClientKnownRequestError: 
+Invalid `prisma.$executeRaw()` invocation:
+
+
+Raw query failed. Code: `42703`. Message: `column u.schoolId does not exist`
+    at Mn.handleRequestError (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:121:7338)
+    at Mn.handleAndLogRequestError (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:121:6663)
+    at Mn.request (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:121:6370)
+    at async l (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:130:9633)
+    at async <anonymous> (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/prisma/prisma.service.ts:15:22)
+    at async SubscriptionTrialService.createBulkTrialsTx (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/school/common/subscription/subscription-trial.service.ts:90:24)
+    at async result.prisma.$transaction.timeout (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/school/manager/subscription/subscription.service.ts:204:43)
+    at async Proxy._transactionWithCallback (/Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@prisma/client/runtime/library.js:130:8000)
+    at async SubscriptionService.activateSubscription (/Users/hamdy/development/Mafhooom/backend/asas_backend/src/school/manager/subscription/subscription.service.ts:150:28)
+    at async /Users/hamdy/development/Mafhooom/backend/asas_backend/node_modules/@nestjs/core/router/router-execution-context.js:46:28 {
+  code: 'P2010',
+  clientVersion: '6.0.0',
+  meta: {
+    code: '42703',
+    message: 'column u.schoolId does not exist'
+  }
+}
+[Nest] 27787  - 10/25/2026, 5:23:06 PM     LOG [API] [e1ed6e3d] POST /api/v1/school/manager/subscription/activate → 500 (22ms)
+[Nest] 27787  - 10/25/2026, 5:23:06 PM     LOG [API] [ce9b446a] GET /api/v1/school/manager/subscription/settings → 200 (9ms)
