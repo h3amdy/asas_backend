@@ -11,12 +11,14 @@ import { RATE_LIMIT_STORAGE } from './phone-rate-limiter.interface';
 import { OtpBypassGuard } from './guards/otp-bypass.guard';
 import { OtpModule } from '../../shared/otp/otp.module';
 import { SessionsModule } from '../../school/sessions/sessions.module';
+import { SchoolCommonModule } from '../../school/common/school-common.module';
 import { SCHOOL_AUTH_JWT } from '../../school/auth/constants';
 
 @Module({
   imports: [
     OtpModule,
     SessionsModule,
+    SchoolCommonModule, // SubscriptionTrialService — تجربة الطالب المسجّل ذاتياً
     // ThrottlerModule مطلوب هنا لكي يعمل @UseGuards(ThrottlerGuard) على هذا الـ controller
     // نُعيد استخدام نفس إعدادات AppModule (short + long)
     ThrottlerModule.forRoot([

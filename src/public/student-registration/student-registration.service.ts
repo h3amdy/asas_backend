@@ -21,6 +21,7 @@ import { randomToken } from '../../school/auth/utils/crypto.util';
 import { CheckPhoneDto } from './dto/check-phone.dto';
 import { CompleteWithoutOtpDto } from './dto/complete-without-otp.dto';
 import { PhoneRateLimiterService } from './phone-rate-limiter.service';
+import { SubscriptionTrialService } from '../../school/common/subscription/subscription-trial.service';
 
 // ─── Internal shared types ────────────────────────────────────
 
@@ -61,6 +62,7 @@ export class StudentRegistrationService {
     private readonly sessions: SessionsService,
     private readonly jwt: JwtService,
     private readonly phoneRateLimiter: PhoneRateLimiterService,
+    private readonly trialService: SubscriptionTrialService,
   ) {}
 
   // ─── UX Phone Checking ───────────────────────────────────────
@@ -307,6 +309,11 @@ export class StudentRegistrationService {
           joinedAt: new Date(),
         },
       });
+
+      // 9.5 فترة تجربة الاشتراك — خطة التنفيذ §2.3.1
+      //     صف المدرسة مقفل مسبقاً (tx.school.update في الخطوة 6).
+      //     لا يفعل شيئاً إن لم تفعّل المدرسة الاشتراك أو كانت التجربة معطّلة.
+      await this.trialService.createTrialForNewStudentTx(tx, mafhoomSchool.id, user.id, new Date());
 
       // 10. Consume OTP if applicable (mark as CONSUMED)
       if (otpId !== null) {
