@@ -7,6 +7,10 @@ export const REGISTRATION_ERRORS = {
   TOKEN_INVALID: 'REGISTRATION_TOKEN_INVALID',
   TOKEN_EXPIRED: 'REGISTRATION_TOKEN_EXPIRED',
   PHONE_ALREADY_REGISTERED: 'PHONE_ALREADY_REGISTERED',
+  /** تطابق كامل: نفس الهاتف + الاسم + الصف — يُحتمل أنه نفس الطالب أو إعادة طلب */
+  DUPLICATE_STUDENT_DETECTED: 'DUPLICATE_STUDENT_DETECTED',
+  /** بلوغ الحد الأقصى لعدد حسابات الطلاب المرتبطة برقم هاتف واحد */
+  PHONE_ACCOUNTS_LIMIT_REACHED: 'PHONE_ACCOUNTS_LIMIT_REACHED',
   MAFHOOM_SCHOOL_NOT_FOUND: 'MAFHOOM_SCHOOL_NOT_FOUND',
   NO_CURRENT_YEAR: 'NO_CURRENT_YEAR',
   GRADE_NOT_FOUND: 'GRADE_NOT_FOUND',
@@ -25,9 +29,23 @@ export const REGISTRATION_ERRORS = {
 /**
  * إعدادات التسجيل — مدرسة مفهوم
  */
+
+// ─── Safe parsing for maxAccountsPerPhone ───────────────────────────────
+// القيم المقبولة: 0 (بلا حد)، أو عدد صحيح موجب.
+// القيم السالبة أو غير الصالحة تُستبدل بالافتراضي الآمن (5).
+const _rawMaxAccounts = parseInt(process.env.REGISTRATION_MAX_ACCOUNTS_PER_PHONE || '5', 10);
+const _safeMaxAccounts = Number.isNaN(_rawMaxAccounts) || _rawMaxAccounts < 0 ? 5 : _rawMaxAccounts;
+
 export const REGISTRATION_CONFIG = {
   /** رمز مدرسة مفهوم */
   mafhoomSchoolCode: parseInt(process.env.MAFHOOM_SCHOOL_CODE || '0', 10),
+  /**
+   * الحد الأقصى لعدد حسابات الطلاب لكل رقم هاتف في التسجيل الذاتي.
+   * - القيمة 0 تُلغي الحد نهائيًا.
+   * - القيمة الافتراضية: 5.
+   * - القيم السالبة أو غير الصالحة تُستبدل بـ 5.
+   */
+  maxAccountsPerPhone: _safeMaxAccounts,
   /** أقصى عدد محاولات إكمال تسجيل بدون OTP لكل هاتف في الساعة (الافتراضي: 5) */
   phoneRateLimitPerHour: parseInt(process.env.REGISTRATION_PHONE_RATE_LIMIT || '5', 10),
   /** نافذة تحديد المعدل بالثواني (الافتراضي: 3600 = 1 ساعة) */

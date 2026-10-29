@@ -68,8 +68,11 @@ export class StudentRegistrationService {
   // ─── UX Phone Checking ───────────────────────────────────────
 
   /**
-   * فحص سريع مبدئي (UX Optimization) لمعرفة ما إذا كان الرقم مسجل مسبقاً في مدرسة مفهوم.
+   * فحص سريع مبدئي (UX Optimization) لمعرفة حالة الرقم في مدرسة مفهوم.
    * لا يحل هذا محل الفحص النهائي في completeRegistration.
+   *
+   * URS-REG-004: لا يمنع التسجيل — يُرجع معلومات تنبيهية فقط.
+   * لا يكشف عدد الحسابات المرتبطة بالرقم.
    */
   async checkPhoneRegistration(dto: CheckPhoneDto) {
     const normalizedPhone = this.otpService.normalizePhone(dto.phone);
@@ -85,28 +88,24 @@ export class StudentRegistrationService {
       throw new InternalServerErrorException(REGISTRATION_ERRORS.MAFHOOM_SCHOOL_NOT_FOUND);
     }
 
-    const existingStudent = await this.prisma.user.findFirst({
+    const existingCount = await this.prisma.user.count({
       where: {
         schoolId: mafhoomSchool.id,
         userType: 'STUDENT',
         phone: normalizedPhone,
         isDeleted: false,
       },
-      select: { id: true },
     });
 
-    if (existingStudent) {
-      return {
-        registered: true,
-        school: {
-          uuid: mafhoomSchool.uuid,
-          displayName: mafhoomSchool.displayName,
-        },
-      };
-    }
+    const maxAccounts = REGISTRATION_CONFIG.maxAccountsPerPhone;
+    const limitReached = maxAccounts > 0 && existingCount >= maxAccounts;
 
     return {
-      registered: false,
+      registered: existingCount > 0,
+      limitReached,
+      school: existingCount > 0
+        ? { uuid: mafhoomSchool.uuid, displayName: mafhoomSchool.displayName }
+        : undefined,
     };
   }
 
@@ -253,18 +252,46 @@ export class StudentRegistrationService {
         throw new NotFoundException(REGISTRATION_ERRORS.SECTION_NOT_FOUND);
       }
 
-      // 5. Check: phone not already used by active STUDENT in Mafhoom
-      const existingStudent = await tx.user.findFirst({
+      // ──── 5a. منع تكرار الطالب: نفس الهاتف + الاسم + الصف ────
+      //      حماية من تسجيل نفس الشخص مرتين ومن إعادة إرسال الطلب (network retry).
+      //      ملاحظة: هذا ليس idempotency كامل (لا يُرجع النتيجة السابقة).
+      const duplicateStudent = await tx.user.findFirst({
         where: {
           schoolId: mafhoomSchool.id,
           userType: 'STUDENT',
           phone: payload.phone,
+          name: payload.name,
           isDeleted: false,
+          student: {
+            enrollments: {
+              some: {
+                gradeId: payload.gradeId,
+                isCurrent: true,
+                isDeleted: false,
+              },
+            },
+          },
         },
         select: { id: true },
       });
-      if (existingStudent) {
-        throw new ForbiddenException(REGISTRATION_ERRORS.PHONE_ALREADY_REGISTERED);
+      if (duplicateStudent) {
+        throw new ForbiddenException(REGISTRATION_ERRORS.DUPLICATE_STUDENT_DETECTED);
+      }
+
+      // ──── 5b. حد أقصى لعدد الحسابات لكل رقم هاتف ────
+      const maxAccounts = REGISTRATION_CONFIG.maxAccountsPerPhone;
+      if (maxAccounts > 0) {
+        const phoneAccountsCount = await tx.user.count({
+          where: {
+            schoolId: mafhoomSchool.id,
+            userType: 'STUDENT',
+            phone: payload.phone,
+            isDeleted: false,
+          },
+        });
+        if (phoneAccountsCount >= maxAccounts) {
+          throw new ForbiddenException(REGISTRATION_ERRORS.PHONE_ACCOUNTS_LIMIT_REACHED);
+        }
       }
 
       // 6. Generate school number (atomic increment)
