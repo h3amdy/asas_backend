@@ -125,10 +125,24 @@ export class StudentRegistrationService {
    * إعادة وضع تشغيل OTP في مسار التسجيل الذاتي.
    * يُستخدم من Flutter لاتخاذ قرار عرض/إخفاء شاشة OTP.
    * الافتراضي الآمن: true (OTP مفعّل) عند غياب المتغير.
+   *
+   * يُرجع أيضاً الهوية العامة لمدرسة مفهوم (بحسب بيئة السيرفر)
+   * لاستخدامها في واجهة الترحيب بالتطبيق العام.
+   * لا يرمي خطأ عند غياب المدرسة — يُرجع school: null حتى لا يتعطل مسار OTP.
    */
-  getRegistrationConfig() {
+  async getRegistrationConfig() {
+    const school = await this.prisma.school.findFirst({
+      where: {
+        schoolCode: REGISTRATION_CONFIG.mafhoomSchoolCode,
+        isDeleted: false,
+        isActive: true,
+      },
+      select: { uuid: true, schoolCode: true, displayName: true },
+    });
+
     return {
       otpEnabled: OTP_DEFAULTS.isStudentRegistrationOtpEnabled,
+      school: school ?? null,
     };
   }
 

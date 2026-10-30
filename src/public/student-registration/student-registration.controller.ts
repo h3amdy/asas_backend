@@ -93,7 +93,7 @@ export class StudentRegistrationController {
     short: { ttl: 60000, limit: 10 },
     long: { ttl: 3600000, limit: 60 },
   })
-  getConfig() {
+  async getConfig() {
     return this.registrationService.getRegistrationConfig();
   }
 

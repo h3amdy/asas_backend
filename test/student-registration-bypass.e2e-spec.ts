@@ -103,7 +103,7 @@ describe('Student Registration Bypass HTTP E2E (supertest)', () => {
         .get('/api/v1/public/student-registration/config')
         .expect(200);
 
-      expect(res.body).toEqual({ otpEnabled: true });
+      expect(res.body).toMatchObject({ otpEnabled: true });
     });
 
     it('should return otpEnabled: false when STUDENT_REGISTRATION_OTP_ENABLED=false', async () => {
@@ -112,7 +112,19 @@ describe('Student Registration Bypass HTTP E2E (supertest)', () => {
         .get('/api/v1/public/student-registration/config')
         .expect(200);
 
-      expect(res.body).toEqual({ otpEnabled: false });
+      expect(res.body).toMatchObject({ otpEnabled: false });
+    });
+
+    it('should return the public Mafhoom school identity (uuid + schoolCode)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/public/student-registration/config')
+        .expect(200);
+
+      const schoolCode = parseInt(process.env.MAFHOOM_SCHOOL_CODE || '0', 10);
+      expect(res.body.school).toBeDefined();
+      expect(res.body.school).not.toBeNull();
+      expect(typeof res.body.school.uuid).toBe('string');
+      expect(res.body.school.schoolCode).toBe(schoolCode);
     });
   });
 

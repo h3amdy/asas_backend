@@ -107,7 +107,7 @@ async function main() {
   // ─── C-01: GET /config returns otpEnabled: false ──────────────
 
   console.log('C-01 — getRegistrationConfig() يعيد otpEnabled: false');
-  const config = service.getRegistrationConfig();
+  const config = await service.getRegistrationConfig();
   const c01pass = config.otpEnabled === false;
   console.log(`  otpEnabled: ${config.otpEnabled} (expected false)`);
   console.log(`  ${c01pass ? '✅ C-01 PASS' : '❌ C-01 FAIL'}`);
@@ -299,7 +299,7 @@ async function main() {
 
   console.log('\nC-02 — getRegistrationConfig() يعيد otpEnabled: true عند تفعيل OTP');
   process.env.STUDENT_REGISTRATION_OTP_ENABLED = 'true';
-  const configActive = service.getRegistrationConfig();
+  const configActive = await service.getRegistrationConfig();
   const c02pass = configActive.otpEnabled === true;
   console.log(`  otpEnabled: ${configActive.otpEnabled} (expected true)`);
   console.log(`  ${c02pass ? '✅ C-02 PASS' : '❌ C-02 FAIL'}`);
