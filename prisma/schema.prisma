@@ -211,6 +211,9 @@ model Student {
   userId         Int                     @id @map("user_id")
   uuid           String                  @unique @default(uuid())
   birthDate      DateTime?               @map("birth_date") @db.Date
+  /// اسم المدرسة التي يدرس فيها الطالب فعلياً — يُدخله الطالب عند التسجيل الذاتي فقط.
+  /// للعرض فقط للمدير (غير قابل للتعديل من واجهات الإدارة).
+  externalSchoolName String?             @map("external_school_name") @db.VarChar(150)
   parentLinks    ParentStudent[]
   answers        StudentAnswer[]
   enrollments    StudentEnrollment[]

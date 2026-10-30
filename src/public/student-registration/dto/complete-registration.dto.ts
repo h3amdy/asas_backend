@@ -1,5 +1,6 @@
 // src/public/student-registration/dto/complete-registration.dto.ts
-import { IsString, IsNotEmpty, IsInt, IsIn, MinLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsInt, IsIn, MinLength, MaxLength, IsOptional } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CompleteRegistrationDto {
   @IsString()
@@ -26,4 +27,14 @@ export class CompleteRegistrationDto {
   @IsString()
   @MinLength(4)
   password: string;
+
+  /**
+   * URS-REG-005: اسم المدرسة الفعلية للطالب.
+   * إلزامي في التطبيق، اختياري هنا للتوافق مع النسخ القديمة.
+   */
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(150)
+  externalSchoolName?: string;
 }

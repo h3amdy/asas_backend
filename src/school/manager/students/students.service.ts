@@ -261,6 +261,7 @@ export class StudentsService {
                 student: {
                     select: {
                         birthDate: true,
+                        externalSchoolName: true, // URS-REG-005 — عرض فقط
                         enrollments: {
                             where: { isDeleted: false, isCurrent: true },
                             include: {
@@ -297,6 +298,7 @@ export class StudentsService {
             phone: user.phone,
             email: user.email,
             birthDate: user.student?.birthDate,
+            externalSchoolName: user.student?.externalSchoolName ?? null,
             province: user.province,
             district: user.district,
             addressArea: user.addressArea,

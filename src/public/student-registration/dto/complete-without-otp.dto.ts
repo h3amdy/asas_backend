@@ -1,5 +1,6 @@
 // src/public/student-registration/dto/complete-without-otp.dto.ts
-import { IsString, IsNotEmpty, IsInt, IsIn, MinLength, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, IsInt, IsIn, MinLength, Matches, MaxLength, IsOptional } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 /**
  * DTO لإكمال التسجيل بدون OTP — يُستخدم فقط عند تعطيل OTP مؤقتاً
@@ -40,4 +41,14 @@ export class CompleteWithoutOtpDto {
   @IsString()
   @MinLength(4)
   password: string;
+
+  /**
+   * URS-REG-005: اسم المدرسة الفعلية للطالب.
+   * إلزامي في التطبيق، اختياري هنا للتوافق مع النسخ القديمة.
+   */
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(150)
+  externalSchoolName?: string;
 }

@@ -36,6 +36,16 @@ interface RegistrationPayload {
   districtId: number;
   gradeId: number;
   password: string;
+  externalSchoolName?: string | null; // URS-REG-005: اسم المدرسة الفعلية (اختياري)
+}
+
+/**
+ * URS-REG-005: تنظيف اسم المدرسة — نص فارغ أو مسافات فقط ← null
+ */
+function normalizeExternalSchoolName(value?: string | null): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().replace(/\s+/g, ' ');
+  return trimmed.length > 0 ? trimmed.slice(0, 150) : null;
 }
 
 /**
@@ -321,7 +331,10 @@ export class StudentRegistrationService {
 
       // 8. Create Student
       await tx.student.create({
-        data: { userId: user.id },
+        data: {
+          userId: user.id,
+          externalSchoolName: normalizeExternalSchoolName(payload.externalSchoolName),
+        },
       });
 
       // 9. Create Enrollment
@@ -461,6 +474,7 @@ export class StudentRegistrationService {
     districtId: number;
     gradeId: number;
     password: string;
+    externalSchoolName?: string;
   }) {
     // ── Step 1: Validate token (outside transaction) ──
     const { otpId, phone } = await this.validateRegistrationToken(dto.registrationToken);
@@ -485,6 +499,7 @@ export class StudentRegistrationService {
         districtId: dto.districtId,
         gradeId: dto.gradeId,
         password: dto.password,
+        externalSchoolName: dto.externalSchoolName,
       },
       preconditions,
       passwordHash,
@@ -533,6 +548,7 @@ export class StudentRegistrationService {
         districtId: dto.districtId,
         gradeId: dto.gradeId,
         password: dto.password,
+        externalSchoolName: dto.externalSchoolName,
       },
       preconditions,
       passwordHash,
