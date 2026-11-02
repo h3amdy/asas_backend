@@ -238,12 +238,32 @@ export class GradesService {
     }
 
     async createSection(schoolId: number, gradeId: number, dto: CreateSectionDto) {
-        const grade = await this.prisma.schoolGrade.findFirst({ where: { id: gradeId, schoolId, isDeleted: false } });
-        if (!grade) throw new NotFoundException('GRADE_NOT_FOUND');
-
         try {
-            return await this.prisma.section.create({
-                data: { gradeId, name: dto.name, orderIndex: dto.orderIndex },
+            return await this.prisma.$transaction(async (tx) => {
+                const grade = await tx.schoolGrade.findFirst({ where: { id: gradeId, schoolId, isDeleted: false } });
+                if (!grade) throw new NotFoundException('GRADE_NOT_FOUND');
+
+                const section = await tx.section.create({
+                    data: { gradeId, name: dto.name, orderIndex: dto.orderIndex },
+                });
+
+                // ربط الشعبة الجديدة بجميع مواد الصف الموجودة
+                const subjects = await tx.subject.findMany({
+                    where: { gradeId, schoolId, isDeleted: false },
+                    select: { id: true },
+                });
+
+                if (subjects.length > 0) {
+                    await tx.subjectSection.createMany({
+                        data: subjects.map((subject) => ({
+                            subjectId: subject.id,
+                            sectionId: section.id,
+                        })),
+                        skipDuplicates: true,
+                    });
+                }
+
+                return section;
             });
         } catch (e) {
             if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
