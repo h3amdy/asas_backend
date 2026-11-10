@@ -1,5 +1,5 @@
 // src/school/manager/school-info/school-info.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UpdateSchoolInfoDto } from './dto/update-school-info.dto';
 
@@ -42,6 +42,12 @@ export class SchoolInfoService {
                     where: { uuid: dto.logoMediaAssetUuid, schoolId, isDeleted: false },
                 });
                 if (!asset) throw new NotFoundException('LOGO_ASSET_NOT_FOUND');
+                if (asset.kind === 'VIDEO') {
+                    throw new BadRequestException({
+                        code: 'VIDEO_NOT_ALLOWED_HERE',
+                        message: 'VIDEO assets can only be linked to lesson_block_items',
+                    });
+                }
                 data.logoMediaAssetId = asset.id;
             } else {
                 // null → remove logo

@@ -4,8 +4,10 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../shared/media/media-access-policy.service';
 import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
 import { ReorderSubjectsDto } from './dto/reorder-subjects.dto';
@@ -13,7 +15,15 @@ import { UpdateCoverDto } from './dto/update-cover.dto';
 
 @Injectable()
 export class PlatformSubjectsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly mediaAccessPolicy: MediaAccessPolicyService;
+
+  constructor(
+    private prisma: PrismaService,
+    @Optional() mediaAccessPolicy?: MediaAccessPolicyService,
+  ) {
+    this.mediaAccessPolicy =
+      mediaAccessPolicy ?? new MediaAccessPolicyService(this.prisma);
+  }
 
   // ═══════════════════════════════════════════════════
   //  SELECT — حقول مشتركة بين العمليات
@@ -522,13 +532,21 @@ export class PlatformSubjectsService {
     let coverMediaAssetId: number | null = null;
 
     if (dto.mediaAssetUuid) {
-      const asset = await this.prisma.mediaAsset.findFirst({
-        where: { uuid: dto.mediaAssetUuid, isDeleted: false },
-      });
-      if (!asset) {
-        throw new NotFoundException('ملف الوسائط غير موجود');
+      // P4-5 Hardening (F-P45-02): غلاف القاموس الرسمي يقبل أصول PLATFORM فقط (schoolId = null)
+      // أصل مدرسة → يُعامل كغير موجود (العقد القديم 404)، VIDEO → 400 VIDEO_NOT_ALLOWED_HERE
+      try {
+        const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+          this.prisma,
+          dto.mediaAssetUuid,
+          { targetOwnerType: 'PLATFORM' },
+        );
+        coverMediaAssetId = asset.id;
+      } catch (e) {
+        if (e instanceof NotFoundException) {
+          throw new NotFoundException('ملف الوسائط غير موجود');
+        }
+        throw e;
       }
-      coverMediaAssetId = asset.id;
     }
 
     await this.prisma.subjectDictionary.update({

@@ -1,12 +1,43 @@
 // src/school/manager/subjects/subjects.service.ts
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../../shared/media/media-access-policy.service';
 import { CreateSubjectDto, UpdateSubjectDto, AssignSubjectSectionsDto, AssignTeacherToSectionDto } from './dto/subjects.dto';
 import { ImportSubjectsDto } from './dto/import-subjects.dto';
 
 @Injectable()
 export class SubjectsService {
-    constructor(private readonly prisma: PrismaService) { }
+    private readonly mediaAccessPolicy: MediaAccessPolicyService;
+
+    constructor(
+        private readonly prisma: PrismaService,
+        @Optional() mediaAccessPolicy?: MediaAccessPolicyService,
+    ) {
+        this.mediaAccessPolicy =
+            mediaAccessPolicy ?? new MediaAccessPolicyService(this.prisma);
+    }
+
+    /**
+     * P4-5 Hardening (F-P45-02) — يحل UUID غلاف المادة مع فرض سياسة W-061:
+     *  - أصل المدرسة نفسها أو أصل منصة غير فيديو (Decision 3 — غلاف القاموس الرسمي PLATFORM)
+     *  - أصل مدرسة أخرى → يُعامل كغير موجود (400 COVER_MEDIA_ASSET_NOT_FOUND — العقد القديم)
+     *  - VIDEO → 400 VIDEO_NOT_ALLOWED_HERE
+     */
+    private async resolveCoverMediaAssetId(schoolId: number, uuid: string): Promise<number> {
+        try {
+            const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+                this.prisma,
+                uuid,
+                { targetOwnerType: 'SCHOOL', schoolId },
+            );
+            return asset.id;
+        } catch (e) {
+            if (e instanceof NotFoundException) {
+                throw new BadRequestException('COVER_MEDIA_ASSET_NOT_FOUND');
+            }
+            throw e;
+        }
+    }
 
     // ═══════ القراءة ═══════
 
@@ -76,12 +107,7 @@ export class SubjectsService {
         // 🛡️ 3. UUID → ID لغلاف المادة (إن وُجد)
         let coverMediaAssetId: number | null = null;
         if (dto.coverMediaAssetUuid) {
-            const asset = await this.prisma.mediaAsset.findUnique({
-                where: { uuid: dto.coverMediaAssetUuid },
-                select: { id: true },
-            });
-            if (!asset) throw new BadRequestException('COVER_MEDIA_ASSET_NOT_FOUND');
-            coverMediaAssetId = asset.id;
+            coverMediaAssetId = await this.resolveCoverMediaAssetId(schoolId, dto.coverMediaAssetUuid);
         }
 
         // 4. إنشاء المادة
@@ -153,12 +179,7 @@ export class SubjectsService {
         if (dto.shortName !== undefined) data.shortName = dto.shortName;
         if (dto.coverMediaAssetUuid !== undefined) {
             if (dto.coverMediaAssetUuid) {
-                const asset = await this.prisma.mediaAsset.findUnique({
-                    where: { uuid: dto.coverMediaAssetUuid },
-                    select: { id: true },
-                });
-                if (!asset) throw new BadRequestException('COVER_MEDIA_ASSET_NOT_FOUND');
-                data.coverMediaAssetId = asset.id;
+                data.coverMediaAssetId = await this.resolveCoverMediaAssetId(schoolId, dto.coverMediaAssetUuid);
             } else {
                 data.coverMediaAssetId = null; // إزالة الغلاف
             }

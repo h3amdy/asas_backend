@@ -1,6 +1,7 @@
 // src/school/student/lessons/student-lessons.service.ts
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { buildSanitizedVariantsMap } from '../../../shared/media/video-delivery.helper';
 import { StudentProgressSummaryService } from '../../common/services/student-progress-summary.service';
 
 @Injectable()
@@ -218,6 +219,8 @@ export class StudentLessonsService {
                                                 kind: true,
                                                 contentType: true,
                                                 durationSec: true,
+                                                processingStatus: true,
+                                                variantsJson: true,
                                             },
                                         },
                                     },
@@ -255,6 +258,13 @@ export class StudentLessonsService {
                 mediaAssetKind: item.mediaAsset?.kind ?? null,
                 contentType: item.mediaAsset?.contentType ?? null,
                 durationSec: item.mediaAsset?.durationSec ?? null,
+                mediaVariants:
+                    item.mediaAsset?.kind === 'VIDEO'
+                        ? buildSanitizedVariantsMap(
+                              'VIDEO',
+                              item.mediaAsset.variantsJson ?? null,
+                          )
+                        : null,
                 caption: item.caption,
             })),
         }));

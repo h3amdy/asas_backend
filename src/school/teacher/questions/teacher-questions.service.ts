@@ -5,8 +5,10 @@ import {
     ForbiddenException,
     Injectable,
     NotFoundException,
+    Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../../shared/media/media-access-policy.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
@@ -18,7 +20,15 @@ import { bumpQuestionsRevision } from '../../common/helpers/lesson-revision.help
  */
 @Injectable()
 export class TeacherQuestionsService {
-    constructor(private readonly prisma: PrismaService) {}
+    private readonly mediaAccessPolicy: MediaAccessPolicyService;
+
+    constructor(
+        private readonly prisma: PrismaService,
+        @Optional() mediaAccessPolicy?: MediaAccessPolicyService,
+    ) {
+        this.mediaAccessPolicy =
+            mediaAccessPolicy ?? new MediaAccessPolicyService(this.prisma);
+    }
 
     // ─────────────────────────────────────────────────────────
     // Helper: التحقق أن المعلم يملك هذا الدرس
@@ -115,25 +125,59 @@ export class TeacherQuestionsService {
 
     // ─────────────────────────────────────────────────────────
     // Helper: تحويل UUID إلى ID رقمي
+    // P4-5 Hardening (F-P45-02): كل حقول الوسائط تمر عبر MediaAccessPolicyService
+    //  - أصل مدرسة أخرى → 404 ASSET_NOT_FOUND (مثل عدم الوجود لمنع الاستكشاف)
+    //  - أصول المنصة غير الفيديو مسموحة (Decision 3 — الأسئلة المستنسخة من المنصة تحتفظ بمراجعها)
+    //  - VIDEO → 400 VIDEO_NOT_ALLOWED_HERE
     // ─────────────────────────────────────────────────────────
-    private async resolveAssetUuid(uuid: string | null | undefined): Promise<number | null> {
+    private async resolveAssetUuid(
+        schoolId: number,
+        uuid: string | null | undefined,
+    ): Promise<number | null> {
         if (!uuid) return null;
-        const asset = await this.prisma.mediaAsset.findFirst({
-            where: { uuid, isDeleted: false },
-            select: { id: true },
-        });
-        if (!asset) return null;
+        const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+            this.prisma,
+            uuid,
+            { targetOwnerType: 'SCHOOL', schoolId },
+        );
         return asset.id;
     }
 
-    /// يحل UUID → ID أو يُرجع ID المُمرَّر مباشرة
+    /// يحل UUID → ID أو يتحقق من ID المُمرَّر مباشرة بنفس سياسة الملكية
     private async resolveAssetField(
+        schoolId: number,
         assetId: number | null | undefined,
         assetUuid: string | null | undefined,
     ): Promise<number | null> {
-        if (assetId) return assetId;
-        if (assetUuid) return this.resolveAssetUuid(assetUuid);
+        if (assetId) {
+            const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+                this.prisma,
+                { id: assetId },
+                { targetOwnerType: 'SCHOOL', schoolId },
+            );
+            return asset.id;
+        }
+        if (assetUuid) return this.resolveAssetUuid(schoolId, assetUuid);
         return null;
+    }
+
+    /// للتعديل: undefined = بلا تغيير، null = إزالة صريحة، وإلا يُتحقق من الأصل
+    private async resolveUpdateAssetField(
+        schoolId: number,
+        assetId: number | null | undefined,
+        assetUuid: string | null | undefined,
+    ): Promise<number | null | undefined> {
+        if (assetId !== undefined) {
+            if (assetId === null) return null;
+            const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+                this.prisma,
+                { id: assetId },
+                { targetOwnerType: 'SCHOOL', schoolId },
+            );
+            return asset.id;
+        }
+        if (assetUuid) return this.resolveAssetUuid(schoolId, assetUuid);
+        return undefined;
     }
 
     // ─────────────────────────────────────────────────────────
@@ -333,10 +377,10 @@ export class TeacherQuestionsService {
 
         // Transaction: إنشاء السؤال + بياناته الفرعية
         // تحويل UUIDs → IDs قبل الـ transaction
-        const questionImageAssetId = await this.resolveAssetField(dto.questionImageAssetId, dto.questionImageAssetUuid);
-        const questionAudioAssetId = await this.resolveAssetField(dto.questionAudioAssetId, dto.questionAudioAssetUuid);
-        const explanationImageAssetId = await this.resolveAssetField(dto.explanationImageAssetId, dto.explanationImageAssetUuid);
-        const explanationAudioAssetId = await this.resolveAssetField(dto.explanationAudioAssetId, dto.explanationAudioAssetUuid);
+        const questionImageAssetId = await this.resolveAssetField(schoolId, dto.questionImageAssetId, dto.questionImageAssetUuid);
+        const questionAudioAssetId = await this.resolveAssetField(schoolId, dto.questionAudioAssetId, dto.questionAudioAssetUuid);
+        const explanationImageAssetId = await this.resolveAssetField(schoolId, dto.explanationImageAssetId, dto.explanationImageAssetUuid);
+        const explanationAudioAssetId = await this.resolveAssetField(schoolId, dto.explanationAudioAssetId, dto.explanationAudioAssetUuid);
 
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. إنشاء السؤال
@@ -356,7 +400,7 @@ export class TeacherQuestionsService {
             });
 
             // 2. إنشاء البيانات الفرعية حسب النوع
-            await this.createSubItems(tx, question.id, dto);
+            await this.createSubItems(tx, question.id, dto, schoolId);
 
             // DEC-026: questionsRevision++
             await bumpQuestionsRevision(tx, lesson.id);
@@ -405,34 +449,30 @@ export class TeacherQuestionsService {
             this.validateTypeRulesForUpdate(question.type, dto);
         }
 
-        // تحويل UUIDs → IDs إذا أرسلت
-        const resolvedQuestionImageAssetId = dto.questionImageAssetUuid
-            ? await this.resolveAssetUuid(dto.questionImageAssetUuid)
-            : undefined;
-        const resolvedQuestionAudioAssetId = dto.questionAudioAssetUuid
-            ? await this.resolveAssetUuid(dto.questionAudioAssetUuid)
-            : undefined;
-        const resolvedExplanationImageAssetId = dto.explanationImageAssetUuid
-            ? await this.resolveAssetUuid(dto.explanationImageAssetUuid)
-            : undefined;
-        const resolvedExplanationAudioAssetId = dto.explanationAudioAssetUuid
-            ? await this.resolveAssetUuid(dto.explanationAudioAssetUuid)
-            : undefined;
+        // تحويل UUIDs/IDs → IDs بعد التحقق من الملكية (F-P45-02: يشمل الحقول الرقمية المباشرة)
+        const resolvedQuestionImageAssetId = await this.resolveUpdateAssetField(
+            schoolId, dto.questionImageAssetId, dto.questionImageAssetUuid,
+        );
+        const resolvedQuestionAudioAssetId = await this.resolveUpdateAssetField(
+            schoolId, dto.questionAudioAssetId, dto.questionAudioAssetUuid,
+        );
+        const resolvedExplanationImageAssetId = await this.resolveUpdateAssetField(
+            schoolId, dto.explanationImageAssetId, dto.explanationImageAssetUuid,
+        );
+        const resolvedExplanationAudioAssetId = await this.resolveUpdateAssetField(
+            schoolId, dto.explanationAudioAssetId, dto.explanationAudioAssetUuid,
+        );
 
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. تحديث حقول السؤال
             const updateData: any = {};
             if (dto.instructionText !== undefined) updateData.instructionText = dto.instructionText;
             if (dto.questionText !== undefined) updateData.questionText = dto.questionText;
-            if (dto.questionImageAssetId !== undefined) updateData.questionImageAssetId = dto.questionImageAssetId;
-            else if (resolvedQuestionImageAssetId !== undefined) updateData.questionImageAssetId = resolvedQuestionImageAssetId;
-            if (dto.questionAudioAssetId !== undefined) updateData.questionAudioAssetId = dto.questionAudioAssetId;
-            else if (resolvedQuestionAudioAssetId !== undefined) updateData.questionAudioAssetId = resolvedQuestionAudioAssetId;
+            if (resolvedQuestionImageAssetId !== undefined) updateData.questionImageAssetId = resolvedQuestionImageAssetId;
+            if (resolvedQuestionAudioAssetId !== undefined) updateData.questionAudioAssetId = resolvedQuestionAudioAssetId;
             if (dto.explanationText !== undefined) updateData.explanationText = dto.explanationText;
-            if (dto.explanationImageAssetId !== undefined) updateData.explanationImageAssetId = dto.explanationImageAssetId;
-            else if (resolvedExplanationImageAssetId !== undefined) updateData.explanationImageAssetId = resolvedExplanationImageAssetId;
-            if (dto.explanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = dto.explanationAudioAssetId;
-            else if (resolvedExplanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = resolvedExplanationAudioAssetId;
+            if (resolvedExplanationImageAssetId !== undefined) updateData.explanationImageAssetId = resolvedExplanationImageAssetId;
+            if (resolvedExplanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = resolvedExplanationAudioAssetId;
 
             if (Object.keys(updateData).length > 0) {
                 await tx.question.update({
@@ -447,7 +487,7 @@ export class TeacherQuestionsService {
                     where: { questionId: question.id },
                     data: { isDeleted: true, deletedAt: new Date() },
                 });
-                await this.createOptions(tx, question.id, dto.options);
+                await this.createOptions(tx, question.id, dto.options, schoolId);
             }
 
             if (dto.matchingPairs) {
@@ -455,7 +495,7 @@ export class TeacherQuestionsService {
                 await tx.questionMatchingPair.deleteMany({
                     where: { questionId: question.id },
                 });
-                await this.createMatchingPairs(tx, question.id, dto.matchingPairs);
+                await this.createMatchingPairs(tx, question.id, dto.matchingPairs, schoolId);
             }
 
             if (dto.orderingItems) {
@@ -463,7 +503,7 @@ export class TeacherQuestionsService {
                 await tx.questionOrderingItem.deleteMany({
                     where: { questionId: question.id },
                 });
-                await this.createOrderingItems(tx, question.id, dto.orderingItems);
+                await this.createOrderingItems(tx, question.id, dto.orderingItems, schoolId);
             }
 
             if (dto.fillBlanks || dto.fillAnswers) {
@@ -592,18 +632,18 @@ export class TeacherQuestionsService {
     // ─────────────────────────────────────────────────────────
     // Private: إنشاء البيانات الفرعية
     // ─────────────────────────────────────────────────────────
-    private async createSubItems(tx: any, questionId: number, dto: CreateQuestionDto) {
+    private async createSubItems(tx: any, questionId: number, dto: CreateQuestionDto, schoolId: number) {
         switch (dto.type) {
             case 'MCQ':
             case 'TRUE_FALSE':
-                if (dto.options) await this.createOptions(tx, questionId, dto.options);
+                if (dto.options) await this.createOptions(tx, questionId, dto.options, schoolId);
                 break;
             case 'MATCHING':
-                if (dto.matchingPairs) await this.createMatchingPairs(tx, questionId, dto.matchingPairs);
+                if (dto.matchingPairs) await this.createMatchingPairs(tx, questionId, dto.matchingPairs, schoolId);
                 break;
             case 'ORDERING':
             case 'IMAGE_STEP_SORTING':
-                if (dto.orderingItems) await this.createOrderingItems(tx, questionId, dto.orderingItems);
+                if (dto.orderingItems) await this.createOrderingItems(tx, questionId, dto.orderingItems, schoolId);
                 break;
             case 'FILL':
                 if (dto.fillBlanks) await this.createFillBlanks(tx, questionId, dto.fillBlanks);
@@ -612,10 +652,10 @@ export class TeacherQuestionsService {
         }
     }
 
-    private async createOptions(tx: any, questionId: number, options: any[]) {
+    private async createOptions(tx: any, questionId: number, options: any[], schoolId: number) {
         for (const opt of options) {
-            const imageAssetId = await this.resolveAssetField(opt.imageAssetId, opt.imageAssetUuid);
-            const audioAssetId = await this.resolveAssetField(opt.audioAssetId, opt.audioAssetUuid);
+            const imageAssetId = await this.resolveAssetField(schoolId, opt.imageAssetId, opt.imageAssetUuid);
+            const audioAssetId = await this.resolveAssetField(schoolId, opt.audioAssetId, opt.audioAssetUuid);
             await tx.questionOption.create({
                 data: {
                     questionId,
@@ -629,12 +669,12 @@ export class TeacherQuestionsService {
         }
     }
 
-    private async createMatchingPairs(tx: any, questionId: number, pairs: any[]) {
+    private async createMatchingPairs(tx: any, questionId: number, pairs: any[], schoolId: number) {
         for (const pair of pairs) {
-            const leftImageAssetId = await this.resolveAssetField(pair.leftImageAssetId, pair.leftImageAssetUuid);
-            const leftAudioAssetId = await this.resolveAssetField(pair.leftAudioAssetId, pair.leftAudioAssetUuid);
-            const rightImageAssetId = await this.resolveAssetField(pair.rightImageAssetId, pair.rightImageAssetUuid);
-            const rightAudioAssetId = await this.resolveAssetField(pair.rightAudioAssetId, pair.rightAudioAssetUuid);
+            const leftImageAssetId = await this.resolveAssetField(schoolId, pair.leftImageAssetId, pair.leftImageAssetUuid);
+            const leftAudioAssetId = await this.resolveAssetField(schoolId, pair.leftAudioAssetId, pair.leftAudioAssetUuid);
+            const rightImageAssetId = await this.resolveAssetField(schoolId, pair.rightImageAssetId, pair.rightImageAssetUuid);
+            const rightAudioAssetId = await this.resolveAssetField(schoolId, pair.rightAudioAssetId, pair.rightAudioAssetUuid);
             await tx.questionMatchingPair.create({
                 data: {
                     questionId,
@@ -652,10 +692,10 @@ export class TeacherQuestionsService {
         }
     }
 
-    private async createOrderingItems(tx: any, questionId: number, items: any[]) {
+    private async createOrderingItems(tx: any, questionId: number, items: any[], schoolId: number) {
         for (const item of items) {
-            const imageAssetId = await this.resolveAssetField(item.imageAssetId, item.imageAssetUuid);
-            const audioAssetId = await this.resolveAssetField(item.audioAssetId, item.audioAssetUuid);
+            const imageAssetId = await this.resolveAssetField(schoolId, item.imageAssetId, item.imageAssetUuid);
+            const audioAssetId = await this.resolveAssetField(schoolId, item.audioAssetId, item.audioAssetUuid);
             await tx.questionOrderingItem.create({
                 data: {
                     questionId,

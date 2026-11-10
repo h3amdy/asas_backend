@@ -1,6 +1,8 @@
 // src/school/student/sync/student-sync.service.ts
 import { Injectable, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { buildSanitizedVariantsMap } from '../../../shared/media/video-delivery.helper';
 import { SyncPullDto } from './dto/sync-pull.dto';
 import { SyncPushDto, ClientChange } from './dto/sync-push.dto';
 import { parseCursor, paginateResult, PaginatedSyncResult } from './helpers/cursor-paginator';
@@ -271,6 +273,8 @@ export class StudentSyncService {
                                                 kind: true,
                                                 contentType: true,
                                                 durationSec: true,
+                                                processingStatus: true,
+                                                variantsJson: true,
                                             },
                                         },
                                     },
@@ -324,6 +328,13 @@ export class StudentSyncService {
                             mediaAssetKind: item.mediaAsset?.kind ?? null,
                             contentType: item.mediaAsset?.contentType ?? null,
                             durationSec: item.mediaAsset?.durationSec ?? null,
+                            mediaVariants:
+                                item.mediaAsset?.kind === 'VIDEO'
+                                    ? buildSanitizedVariantsMap(
+                                          'VIDEO',
+                                          item.mediaAsset.variantsJson ?? null,
+                                      )
+                                    : null,
                         })),
                     }))
                     : [],
@@ -339,6 +350,7 @@ export class StudentSyncService {
 
     /**
      * استخراج كل UUIDs الوسائط من محتوى الدرس (للتحميل المسبق)
+     * W-049: يتم استثناء أصول VIDEO من mediaAssetUuids لأن تنزيلها يتم عبر /download-url?variant=...
      */
     private extractMediaUuids(blocks: any[], coverUuid?: string | null): string[] {
         const uuids = new Set<string>();
@@ -346,7 +358,11 @@ export class StudentSyncService {
 
         for (const block of blocks) {
             for (const item of block.items) {
-                if (item.mediaAsset?.uuid) {
+                if (
+                    item.mediaAsset?.uuid &&
+                    item.mediaAsset.kind !== 'VIDEO' &&
+                    item.itemType !== 'VIDEO'
+                ) {
                     uuids.add(item.mediaAsset.uuid);
                 }
             }
@@ -721,24 +737,77 @@ export class StudentSyncService {
         });
         if (!lesson) throw new Error(`Lesson not found: ${lessonUuid}`);
 
-        await this.prisma.studentLessonProgress.upsert({
-            where: {
-                studentId_lessonId: {
+        const serializedPosition = lastPosition ? JSON.stringify(lastPosition) : null;
+
+        // Decision 1 (P4-5d): حماية COMPLETED من التراجع إلى IN_PROGRESS ذرياً على مستوى قاعدة البيانات
+        // دون الحاجة لترحيل M4 أو عمود completed_at.
+        if (typeof (this.prisma as any).$executeRaw === 'function') {
+            await this.prisma.$executeRaw(Prisma.sql`
+                INSERT INTO "student_lesson_progress" (
+                    "uuid",
+                    "student_id",
+                    "lesson_id",
+                    "status",
+                    "last_position",
+                    "created_at",
+                    "updated_at"
+                ) VALUES (
+                    gen_random_uuid(),
+                    ${studentId},
+                    ${lesson.id},
+                    ${status},
+                    ${serializedPosition},
+                    NOW(),
+                    NOW()
+                )
+                ON CONFLICT ("student_id", "lesson_id") DO UPDATE SET
+                    "status" = CASE
+                        WHEN "student_lesson_progress"."status" = 'COMPLETED' THEN 'COMPLETED'
+                        ELSE EXCLUDED."status"
+                    END,
+                    "last_position" = CASE
+                        WHEN "student_lesson_progress"."status" = 'COMPLETED' AND EXCLUDED."status" <> 'COMPLETED'
+                            THEN "student_lesson_progress"."last_position"
+                        ELSE EXCLUDED."last_position"
+                    END,
+                    "updated_at" = NOW()
+            `);
+        } else {
+            const existingProgress = await this.prisma.studentLessonProgress?.findUnique?.({
+                where: {
+                    studentId_lessonId: {
+                        studentId,
+                        lessonId: lesson.id,
+                    },
+                },
+                select: { status: true, lastPosition: true },
+            });
+            const isAlreadyCompleted = existingProgress?.status === 'COMPLETED';
+            const nextStatus = isAlreadyCompleted ? 'COMPLETED' : status;
+            const nextLastPosition =
+                isAlreadyCompleted && status !== 'COMPLETED'
+                    ? existingProgress?.lastPosition ?? serializedPosition
+                    : serializedPosition;
+
+            await this.prisma.studentLessonProgress.upsert({
+                where: {
+                    studentId_lessonId: {
+                        studentId,
+                        lessonId: lesson.id,
+                    },
+                },
+                update: {
+                    status: nextStatus,
+                    lastPosition: nextLastPosition,
+                },
+                create: {
                     studentId,
                     lessonId: lesson.id,
+                    status,
+                    lastPosition: serializedPosition,
                 },
-            },
-            update: {
-                status,
-                lastPosition: lastPosition ? JSON.stringify(lastPosition) : null,
-            },
-            create: {
-                studentId,
-                lessonId: lesson.id,
-                status,
-                lastPosition: lastPosition ? JSON.stringify(lastPosition) : null,
-            },
-        });
+            });
+        }
 
         // ── اشتقاق النتيجة تلقائياً إذا تم إنجاز الدرس ولم تكن هناك نتيجة مسبقاً ──
         if (status === 'COMPLETED') {

@@ -5,8 +5,11 @@ import {
     ForbiddenException,
     Injectable,
     NotFoundException,
+    Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../../shared/media/media-access-policy.service';
+import { MediaLifecycleService } from '../../../shared/media/media-lifecycle.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
@@ -21,7 +24,56 @@ import { bumpContentRevision, touchRelatedLessons } from '../../common/helpers/l
 
 @Injectable()
 export class TeacherLessonsService {
-    constructor(private readonly prisma: PrismaService) {}
+    private readonly mediaLifecycle: MediaLifecycleService;
+    private readonly mediaAccessPolicy: MediaAccessPolicyService;
+
+    constructor(
+        private readonly prisma: PrismaService,
+        @Optional() mediaLifecycle?: MediaLifecycleService,
+        @Optional() mediaAccessPolicy?: MediaAccessPolicyService,
+    ) {
+        this.mediaAccessPolicy =
+            mediaAccessPolicy ?? new MediaAccessPolicyService(this.prisma);
+        this.mediaLifecycle =
+            mediaLifecycle ??
+            new MediaLifecycleService(this.mediaAccessPolicy);
+    }
+
+    private async assertValidCoverMediaAssetId(
+        schoolId: number,
+        coverMediaAssetId: number | null | undefined,
+    ) {
+        if (coverMediaAssetId === undefined || coverMediaAssetId === null) {
+            return;
+        }
+        const asset = await this.prisma.mediaAsset.findFirst({
+            where: { id: coverMediaAssetId, isDeleted: false },
+            select: {
+                id: true,
+                uuid: true,
+                ownerType: true,
+                schoolId: true,
+                kind: true,
+                processingStatus: true,
+                isDeleted: true,
+            },
+        });
+        if (!asset) {
+            throw new NotFoundException({
+                code: 'ASSET_NOT_FOUND',
+                message: 'Media asset not found',
+            });
+        }
+        await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+            this.prisma,
+            asset.uuid,
+            {
+                targetOwnerType: 'SCHOOL',
+                schoolId,
+                allowedKinds: ['IMAGE'],
+            },
+        );
+    }
 
     // ─────────────────────────────────────────────────────────
     // Helper: التحقق أن المعلم مسند لهذه المادة
@@ -234,6 +286,8 @@ export class TeacherLessonsService {
             throw new ConflictException('هذا الترتيب مستخدم. اختر ترتيباً آخر.');
         }
 
+        await this.assertValidCoverMediaAssetId(schoolId, dto.coverMediaAssetId);
+
         const lesson = await this.prisma.lessonTemplate.create({
             data: {
                 ownerType: 'SCHOOL',
@@ -314,6 +368,8 @@ export class TeacherLessonsService {
             }
         }
 
+        await this.assertValidCoverMediaAssetId(schoolId, dto.coverMediaAssetId);
+
         // DEC-026 Phase 5: Administrative mutation + Sync signal (no revision bump)
         const updated = await this.prisma.$transaction(async (tx) => {
             const result = await tx.lessonTemplate.update({
@@ -383,62 +439,84 @@ export class TeacherLessonsService {
 
         const now = new Date();
 
-        await this.prisma.$transaction([
+        await this.prisma.$transaction(async (tx) => {
+            const itemsWithMedia = await tx.lessonBlockItem.findMany({
+                where: {
+                    block: { templateId: lesson.id },
+                    isDeleted: false,
+                    mediaAssetId: { not: null },
+                },
+                select: { mediaAssetId: true },
+            });
+            const assetIds = this.mediaLifecycle.normalizeAndSortAssetIds(
+                itemsWithMedia.map((i) => i.mediaAssetId),
+            );
+            if (assetIds.length > 0) {
+                await this.mediaLifecycle.lockMediaAssetsForUpdate(tx, assetIds);
+            }
+
             // 1. Soft-delete أبناء الأسئلة
-            this.prisma.questionOption.updateMany({
+            await tx.questionOption.updateMany({
                 where: { question: { templateId: lesson.id }, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
-            this.prisma.questionMatchingPair.updateMany({
+            });
+            await tx.questionMatchingPair.updateMany({
                 where: { question: { templateId: lesson.id }, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
-            this.prisma.questionOrderingItem.updateMany({
+            });
+            await tx.questionOrderingItem.updateMany({
                 where: { question: { templateId: lesson.id }, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
-            this.prisma.questionFillBlank.updateMany({
+            });
+            await tx.questionFillBlank.updateMany({
                 where: { question: { templateId: lesson.id }, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
-            this.prisma.questionFillAnswer.updateMany({
+            });
+            await tx.questionFillAnswer.updateMany({
                 where: { question: { templateId: lesson.id }, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
+            });
 
             // 2. Soft-delete الأسئلة
-            this.prisma.question.updateMany({
+            await tx.question.updateMany({
                 where: { templateId: lesson.id, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
+            });
 
             // 3. Soft-delete عناصر الفقرات
-            this.prisma.lessonBlockItem.updateMany({
+            await tx.lessonBlockItem.updateMany({
                 where: {
                     block: { templateId: lesson.id },
                     isDeleted: false,
                 },
                 data: { isDeleted: true, deletedAt: now },
-            }),
+            });
 
             // 4. Soft-delete الفقرات
-            this.prisma.lessonContentBlock.updateMany({
+            await tx.lessonContentBlock.updateMany({
                 where: { templateId: lesson.id, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
+            });
 
             // 5. Soft-delete الدرس المنشور (لمنع ظهوره للطلاب)
-            this.prisma.lesson.updateMany({
+            await tx.lesson.updateMany({
                 where: { templateId: lesson.id, isDeleted: false },
                 data: { isDeleted: true, deletedAt: now },
-            }),
+            });
 
             // 6. Soft-delete القالب
-            this.prisma.lessonTemplate.update({
+            await tx.lessonTemplate.update({
                 where: { id: lesson.id },
                 data: { isDeleted: true, deletedAt: now },
-            }),
-        ]);
+            });
+
+            if (assetIds.length > 0) {
+                await this.mediaLifecycle.reconcileUnlinkedAssetsUnderLock(
+                    tx,
+                    assetIds,
+                );
+            }
+        });
 
         return { message: 'تم حذف الدرس بنجاح' };
     }
@@ -674,6 +752,21 @@ export class TeacherLessonsService {
         const now = new Date();
 
         await this.prisma.$transaction(async (tx) => {
+            const itemsWithMedia = await tx.lessonBlockItem.findMany({
+                where: {
+                    blockId: block.id,
+                    isDeleted: false,
+                    mediaAssetId: { not: null },
+                },
+                select: { mediaAssetId: true },
+            });
+            const assetIds = this.mediaLifecycle.normalizeAndSortAssetIds(
+                itemsWithMedia.map((i) => i.mediaAssetId),
+            );
+            if (assetIds.length > 0) {
+                await this.mediaLifecycle.lockMediaAssetsForUpdate(tx, assetIds);
+            }
+
             // soft-delete العناصر
             await tx.lessonBlockItem.updateMany({
                 where: { blockId: block.id, isDeleted: false },
@@ -684,6 +777,13 @@ export class TeacherLessonsService {
                 where: { id: block.id },
                 data: { isDeleted: true, deletedAt: now },
             });
+
+            if (assetIds.length > 0) {
+                await this.mediaLifecycle.reconcileUnlinkedAssetsUnderLock(
+                    tx,
+                    assetIds,
+                );
+            }
 
             await bumpContentRevision(tx, lesson.id);
         });
@@ -772,20 +872,22 @@ export class TeacherLessonsService {
             finalOrderIndex = (maxOrder._max.orderIndex ?? 0) + 1;
         }
 
-        // Resolve mediaAssetUuid
-        let mediaAssetId: number | null = null;
-        if (dto.mediaAssetUuid) {
-            const asset = await this.prisma.mediaAsset.findFirst({
-                where: { uuid: dto.mediaAssetUuid, isDeleted: false },
-                select: { id: true },
-            });
-            if (!asset) {
-                throw new NotFoundException('الوسيط غير موجود: ' + dto.mediaAssetUuid);
-            }
-            mediaAssetId = asset.id;
-        }
-
         return await this.prisma.$transaction(async (tx) => {
+            let mediaAssetId: number | null = null;
+            if (dto.mediaAssetUuid) {
+                const lockedAsset =
+                    await this.mediaLifecycle.resolveAndLockAssetForLink(tx, {
+                        assetUuid: dto.mediaAssetUuid,
+                        expectedKind: dto.itemType as
+                            | 'IMAGE'
+                            | 'AUDIO'
+                            | 'VIDEO',
+                        targetOwnerType: 'SCHOOL',
+                        schoolId,
+                    });
+                mediaAssetId = lockedAsset.id;
+            }
+
             const item = await tx.lessonBlockItem.create({
                 data: {
                     blockId: block.id,
@@ -843,20 +945,23 @@ export class TeacherLessonsService {
             throw new NotFoundException('العنصر غير موجود');
         }
 
-        // Resolve mediaAssetUuid
-        let resolvedMediaAssetId: number | undefined = undefined;
-        if (dto.mediaAssetUuid !== undefined) {
-            const asset = await this.prisma.mediaAsset.findFirst({
-                where: { uuid: dto.mediaAssetUuid, isDeleted: false },
-                select: { id: true },
-            });
-            if (!asset) {
-                throw new NotFoundException('الوسيط غير موجود: ' + dto.mediaAssetUuid);
-            }
-            resolvedMediaAssetId = asset.id;
-        }
-
         return await this.prisma.$transaction(async (tx) => {
+            let resolvedMediaAssetId: number | undefined = undefined;
+            if (dto.mediaAssetUuid !== undefined) {
+                const lockedAsset =
+                    await this.mediaLifecycle.resolveAndLockAssetForLink(tx, {
+                        assetUuid: dto.mediaAssetUuid,
+                        expectedKind: item.itemType as
+                            | 'IMAGE'
+                            | 'AUDIO'
+                            | 'VIDEO',
+                        targetOwnerType: 'SCHOOL',
+                        schoolId,
+                        previousAssetId: item.mediaAssetId,
+                    });
+                resolvedMediaAssetId = lockedAsset.id;
+            }
+
             const updated = await tx.lessonBlockItem.update({
                 where: { id: item.id },
                 data: {
@@ -866,6 +971,16 @@ export class TeacherLessonsService {
                 },
                 include: { mediaAsset: { select: { uuid: true, kind: true } } },
             });
+
+            if (
+                resolvedMediaAssetId !== undefined &&
+                item.mediaAssetId != null &&
+                item.mediaAssetId !== resolvedMediaAssetId
+            ) {
+                await this.mediaLifecycle.reconcileUnlinkedAssetsUnderLock(tx, [
+                    item.mediaAssetId,
+                ]);
+            }
 
             await bumpContentRevision(tx, lesson.id);
 
@@ -912,10 +1027,27 @@ export class TeacherLessonsService {
         }
 
         await this.prisma.$transaction(async (tx) => {
+            const assetIds = this.mediaLifecycle.normalizeAndSortAssetIds([
+                item.mediaAssetId,
+            ]);
+            if (assetIds.length > 0) {
+                await this.mediaLifecycle.lockMediaAssetsForUpdate(
+                    tx,
+                    assetIds,
+                );
+            }
+
             await tx.lessonBlockItem.update({
                 where: { id: item.id },
                 data: { isDeleted: true, deletedAt: new Date() },
             });
+
+            if (assetIds.length > 0) {
+                await this.mediaLifecycle.reconcileUnlinkedAssetsUnderLock(
+                    tx,
+                    assetIds,
+                );
+            }
 
             await bumpContentRevision(tx, lesson.id);
         });

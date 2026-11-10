@@ -1,7 +1,8 @@
 // src/platform/books/platform-books.service.ts
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../shared/media/media-access-policy.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 
@@ -15,7 +16,15 @@ const BOOK_INCLUDE = {
 
 @Injectable()
 export class PlatformBooksService {
-    constructor(private readonly prisma: PrismaService) {}
+    private readonly mediaAccessPolicy: MediaAccessPolicyService;
+
+    constructor(
+        private readonly prisma: PrismaService,
+        @Optional() mediaAccessPolicy?: MediaAccessPolicyService,
+    ) {
+        this.mediaAccessPolicy =
+            mediaAccessPolicy ?? new MediaAccessPolicyService(this.prisma);
+    }
 
     // ═══════ القراءة ═══════
 
@@ -77,8 +86,8 @@ export class PlatformBooksService {
         }
 
         // 3. resolve media asset IDs
-        const coverMediaAssetId = await this.resolveMediaAssetId(dto.coverMediaAssetUuid);
-        const pdfMediaAssetId = await this.resolveMediaAssetId(dto.pdfMediaAssetUuid);
+        const coverMediaAssetId = await this.resolveMediaAssetId(dto.coverMediaAssetUuid, 'IMAGE');
+        const pdfMediaAssetId = await this.resolveMediaAssetId(dto.pdfMediaAssetUuid, 'DOCUMENT');
 
         // 4. إنشاء الكتاب
         try {
@@ -121,14 +130,14 @@ export class PlatformBooksService {
         // غلاف
         if (dto.coverMediaAssetUuid !== undefined) {
             data.coverMediaAssetId = dto.coverMediaAssetUuid
-                ? await this.resolveMediaAssetId(dto.coverMediaAssetUuid)
+                ? await this.resolveMediaAssetId(dto.coverMediaAssetUuid, 'IMAGE')
                 : null;
         }
 
         // PDF
         if (dto.pdfMediaAssetUuid !== undefined) {
             data.pdfMediaAssetId = dto.pdfMediaAssetUuid
-                ? await this.resolveMediaAssetId(dto.pdfMediaAssetUuid)
+                ? await this.resolveMediaAssetId(dto.pdfMediaAssetUuid, 'DOCUMENT')
                 : null;
         }
 
@@ -185,13 +194,30 @@ export class PlatformBooksService {
         return book;
     }
 
-    private async resolveMediaAssetId(uuid?: string | null): Promise<number | null> {
+    /**
+     * P4-5 Hardening (F-P45-01) — يحل UUID أصل الغلاف/الـ PDF مع فرض سياسة W-061:
+     *  - ملكية PLATFORM حصراً (أصل مدرسة → يُعامل كغير موجود لمنع الاستكشاف)
+     *  - منع VIDEO (400 VIDEO_NOT_ALLOWED_HERE)
+     *  - الغلاف IMAGE فقط، والـ PDF DOCUMENT فقط (400 MEDIA_KIND_MISMATCH)
+     * يحافظ على عقد الخطأ القديم لعدم الوجود: 400 `MEDIA_ASSET_NOT_FOUND: <uuid>`.
+     */
+    private async resolveMediaAssetId(
+        uuid: string | null | undefined,
+        allowedKind: 'IMAGE' | 'DOCUMENT',
+    ): Promise<number | null> {
         if (!uuid) return null;
-        const asset = await this.prisma.mediaAsset.findFirst({
-            where: { uuid, isDeleted: false },
-            select: { id: true },
-        });
-        if (!asset) throw new BadRequestException(`MEDIA_ASSET_NOT_FOUND: ${uuid}`);
-        return asset.id;
+        try {
+            const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+                this.prisma,
+                uuid,
+                { targetOwnerType: 'PLATFORM', allowedKinds: [allowedKind] },
+            );
+            return asset.id;
+        } catch (e) {
+            if (e instanceof NotFoundException) {
+                throw new BadRequestException(`MEDIA_ASSET_NOT_FOUND: ${uuid}`);
+            }
+            throw e;
+        }
     }
 }

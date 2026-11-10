@@ -5,8 +5,11 @@ import {
     ForbiddenException,
     Injectable,
     NotFoundException,
+    Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../../shared/media/media-access-policy.service';
+import { MediaLifecycleService } from '../../../shared/media/media-lifecycle.service';
 
 /**
  * 📖 خدمة محتوى المنصة — مكتبة المنصة للمعلم
@@ -19,7 +22,18 @@ import { PrismaService } from '../../../prisma/prisma.service';
  */
 @Injectable()
 export class PlatformContentService {
-    constructor(private readonly prisma: PrismaService) {}
+    private readonly mediaLifecycle: MediaLifecycleService;
+
+    constructor(
+        private readonly prisma: PrismaService,
+        @Optional() mediaLifecycle?: MediaLifecycleService,
+        @Optional() mediaAccessPolicy?: MediaAccessPolicyService,
+    ) {
+        const policy =
+            mediaAccessPolicy ?? new MediaAccessPolicyService(this.prisma);
+        this.mediaLifecycle =
+            mediaLifecycle ?? new MediaLifecycleService(policy);
+    }
 
     // ─── Helpers ─────────────────────────────────────────────
 
@@ -702,6 +716,31 @@ export class PlatformContentService {
                 },
             },
         });
+
+        const rawAssetIds: Array<number | null | undefined> = [];
+        for (const block of blocks) {
+            for (const item of block.items) {
+                rawAssetIds.push(item.mediaAssetId);
+            }
+        }
+        const assetIds = this.mediaLifecycle.normalizeAndSortAssetIds(rawAssetIds);
+        if (assetIds.length > 0) {
+            const lockedAssets = await this.mediaLifecycle.lockMediaAssetsForUpdate(
+                tx,
+                assetIds,
+            );
+            const lockedMap = new Map(lockedAssets.map((a) => [a.id, a]));
+            for (const assetId of assetIds) {
+                const locked = lockedMap.get(assetId);
+                if (!locked || locked.isDeleted) {
+                    throw new NotFoundException({
+                        code: 'ASSET_NOT_FOUND',
+                        message:
+                            'Media asset referenced by lesson template was deleted',
+                    });
+                }
+            }
+        }
 
         for (const block of blocks) {
             const newBlock = await tx.lessonContentBlock.create({

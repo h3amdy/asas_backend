@@ -536,6 +536,9 @@ model MediaAsset {
   isDeleted                   Boolean                @default(false) @map("is_deleted")
   deletedAt                   DateTime?              @map("deleted_at")
   ownerType                   String                 @default("SCHOOL") @map("owner_type")
+  /// VIDEO P4-1 (M2): 'LOCAL' لكل الأصول الحالية (صور/صوت/مستندات)، و 'R2' للفيديو لاحقاً
+  storageProvider             String                 @default("LOCAL") @map("storage_provider")
+  processingJobs              MediaProcessingJob[]
   schoolsAsLogo               School[]               @relation("SchoolLogo")
   blockItemsAsMedia           LessonBlockItem[]      @relation("BlockItemMedia")
   lessonContentsAsMedia       LessonContent[]        @relation("LessonContentMedia")
@@ -604,6 +607,38 @@ model MediaUploadSession {
   @@index([mediaAssetId], map: "media_upload_sessions_asset_id_idx")
   @@index([updatedAt])
   @@map("media_upload_sessions")
+}
+
+/// VIDEO P4-1 (M3): طابور معالجة الوسائط الدائم في PostgreSQL (بلا Redis)
+/// مرجع: docs/features/video/10-VIDEO-BACKEND-IMPLEMENTATION-PLAN.md (v1.2 §3.1, §5.1)
+/// - status: PENDING | PROCESSING | RETRYING | COMPLETED | FAILED | CANCELED
+/// - fencingToken: يزداد عند كل سحب (claim)؛ كل كتابة للعامل تشترط تطابقه (P4-4)
+model MediaProcessingJob {
+  id             Int        @id @default(autoincrement())
+  uuid           String     @unique @default(uuid())
+  mediaAssetId   Int        @map("media_asset_id")
+  jobType        String     @map("job_type") @db.VarChar(32)
+  status         String     @default("PENDING") @db.VarChar(20)
+  idempotencyKey String     @unique @map("idempotency_key") @db.VarChar(160)
+  fencingToken   BigInt     @default(0) @map("fencing_token")
+  payloadJson    String?    @map("payload_json")
+  stepStateJson  String?    @map("step_state_json")
+  attemptCount   Int        @default(0) @map("attempt_count")
+  maxAttempts    Int        @default(5) @map("max_attempts")
+  nextRetryAt    DateTime   @default(now()) @map("next_retry_at") @db.Timestamptz(3)
+  lockedBy       String?    @map("locked_by") @db.VarChar(120)
+  leaseUntil     DateTime?  @map("lease_until") @db.Timestamptz(3)
+  heartbeatAt    DateTime?  @map("heartbeat_at") @db.Timestamptz(3)
+  lastError      String?    @map("last_error")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  finishedAt     DateTime?  @map("finished_at") @db.Timestamptz(3)
+  mediaAsset     MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([status, nextRetryAt], map: "media_jobs_claim_idx")
+  @@index([status, leaseUntil], map: "media_jobs_lease_idx")
+  @@index([mediaAssetId], map: "media_jobs_asset_idx")
+  @@map("media_processing_jobs")
 }
 
 model Unit {
@@ -1636,6 +1671,7 @@ enum MediaKind {
   IMAGE
   AUDIO
   DOCUMENT
+  VIDEO
 }
 
 enum MediaUploadStatus {

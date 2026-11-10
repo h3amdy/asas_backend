@@ -5,8 +5,10 @@ import {
     ForbiddenException,
     Injectable,
     NotFoundException,
+    Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../shared/media/media-access-policy.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
@@ -17,7 +19,15 @@ import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
  */
 @Injectable()
 export class PlatformQuestionsService {
-    constructor(private readonly prisma: PrismaService) {}
+    private readonly mediaAccessPolicy: MediaAccessPolicyService;
+
+    constructor(
+        private readonly prisma: PrismaService,
+        @Optional() mediaAccessPolicy?: MediaAccessPolicyService,
+    ) {
+        this.mediaAccessPolicy =
+            mediaAccessPolicy ?? new MediaAccessPolicyService(this.prisma);
+    }
 
     // ─────────────────────────────────────────────────────────
     // Helper: التحقق أن المستخدم يملك هذا الدرس
@@ -102,25 +112,52 @@ export class PlatformQuestionsService {
 
     // ─────────────────────────────────────────────────────────
     // Helper: تحويل UUID إلى ID رقمي
+    // P4-5 Hardening (F-P45-02): أسئلة المنصة تقبل أصول PLATFORM فقط (schoolId = null)
+    //  - أصل مدرسة → 404 ASSET_NOT_FOUND، VIDEO → 400 VIDEO_NOT_ALLOWED_HERE
     // ─────────────────────────────────────────────────────────
     private async resolveAssetUuid(uuid: string | null | undefined): Promise<number | null> {
         if (!uuid) return null;
-        const asset = await this.prisma.mediaAsset.findFirst({
-            where: { uuid, isDeleted: false },
-            select: { id: true },
-        });
-        if (!asset) return null;
+        const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+            this.prisma,
+            uuid,
+            { targetOwnerType: 'PLATFORM' },
+        );
         return asset.id;
     }
 
-    /// يحل UUID → ID أو يُرجع ID المُمرَّر مباشرة
+    /// يحل UUID → ID أو يتحقق من ID المُمرَّر مباشرة بنفس سياسة الملكية
     private async resolveAssetField(
         assetId: number | null | undefined,
         assetUuid: string | null | undefined,
     ): Promise<number | null> {
-        if (assetId) return assetId;
+        if (assetId) {
+            const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+                this.prisma,
+                { id: assetId },
+                { targetOwnerType: 'PLATFORM' },
+            );
+            return asset.id;
+        }
         if (assetUuid) return this.resolveAssetUuid(assetUuid);
         return null;
+    }
+
+    /// للتعديل: undefined = بلا تغيير، null = إزالة صريحة، وإلا يُتحقق من الأصل
+    private async resolveUpdateAssetField(
+        assetId: number | null | undefined,
+        assetUuid: string | null | undefined,
+    ): Promise<number | null | undefined> {
+        if (assetId !== undefined) {
+            if (assetId === null) return null;
+            const asset = await this.mediaAccessPolicy.assertCanLinkNonVideoAsset(
+                this.prisma,
+                { id: assetId },
+                { targetOwnerType: 'PLATFORM' },
+            );
+            return asset.id;
+        }
+        if (assetUuid) return this.resolveAssetUuid(assetUuid);
+        return undefined;
     }
 
     // ─────────────────────────────────────────────────────────
@@ -385,34 +422,30 @@ export class PlatformQuestionsService {
             this.validateTypeRulesForUpdate(question.type, dto);
         }
 
-        // تحويل UUIDs → IDs إذا أرسلت
-        const resolvedQuestionImageAssetId = dto.questionImageAssetUuid
-            ? await this.resolveAssetUuid(dto.questionImageAssetUuid)
-            : undefined;
-        const resolvedQuestionAudioAssetId = dto.questionAudioAssetUuid
-            ? await this.resolveAssetUuid(dto.questionAudioAssetUuid)
-            : undefined;
-        const resolvedExplanationImageAssetId = dto.explanationImageAssetUuid
-            ? await this.resolveAssetUuid(dto.explanationImageAssetUuid)
-            : undefined;
-        const resolvedExplanationAudioAssetId = dto.explanationAudioAssetUuid
-            ? await this.resolveAssetUuid(dto.explanationAudioAssetUuid)
-            : undefined;
+        // تحويل UUIDs/IDs → IDs بعد التحقق من الملكية (F-P45-02: يشمل الحقول الرقمية المباشرة)
+        const resolvedQuestionImageAssetId = await this.resolveUpdateAssetField(
+            dto.questionImageAssetId, dto.questionImageAssetUuid,
+        );
+        const resolvedQuestionAudioAssetId = await this.resolveUpdateAssetField(
+            dto.questionAudioAssetId, dto.questionAudioAssetUuid,
+        );
+        const resolvedExplanationImageAssetId = await this.resolveUpdateAssetField(
+            dto.explanationImageAssetId, dto.explanationImageAssetUuid,
+        );
+        const resolvedExplanationAudioAssetId = await this.resolveUpdateAssetField(
+            dto.explanationAudioAssetId, dto.explanationAudioAssetUuid,
+        );
 
         const result = await this.prisma.$transaction(async (tx) => {
             // 1. تحديث حقول السؤال
             const updateData: any = {};
             if (dto.instructionText !== undefined) updateData.instructionText = dto.instructionText;
             if (dto.questionText !== undefined) updateData.questionText = dto.questionText;
-            if (dto.questionImageAssetId !== undefined) updateData.questionImageAssetId = dto.questionImageAssetId;
-            else if (resolvedQuestionImageAssetId !== undefined) updateData.questionImageAssetId = resolvedQuestionImageAssetId;
-            if (dto.questionAudioAssetId !== undefined) updateData.questionAudioAssetId = dto.questionAudioAssetId;
-            else if (resolvedQuestionAudioAssetId !== undefined) updateData.questionAudioAssetId = resolvedQuestionAudioAssetId;
+            if (resolvedQuestionImageAssetId !== undefined) updateData.questionImageAssetId = resolvedQuestionImageAssetId;
+            if (resolvedQuestionAudioAssetId !== undefined) updateData.questionAudioAssetId = resolvedQuestionAudioAssetId;
             if (dto.explanationText !== undefined) updateData.explanationText = dto.explanationText;
-            if (dto.explanationImageAssetId !== undefined) updateData.explanationImageAssetId = dto.explanationImageAssetId;
-            else if (resolvedExplanationImageAssetId !== undefined) updateData.explanationImageAssetId = resolvedExplanationImageAssetId;
-            if (dto.explanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = dto.explanationAudioAssetId;
-            else if (resolvedExplanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = resolvedExplanationAudioAssetId;
+            if (resolvedExplanationImageAssetId !== undefined) updateData.explanationImageAssetId = resolvedExplanationImageAssetId;
+            if (resolvedExplanationAudioAssetId !== undefined) updateData.explanationAudioAssetId = resolvedExplanationAudioAssetId;
 
             if (Object.keys(updateData).length > 0) {
                 await tx.question.update({

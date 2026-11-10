@@ -43,6 +43,7 @@ lerna-debug.log*
 .env.local
 .env.staging
 .env.staging.active
+.env.r2-sandbox
 
 # STG-001: Staging isolation
 storage-staging/

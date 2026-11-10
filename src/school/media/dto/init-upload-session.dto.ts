@@ -1,28 +1,32 @@
 // src/school/media/dto/init-upload-session.dto.ts
-import { IsEnum, IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
+// VIDEO P4-3 (W-050 / W-058 / §4.1):
+//   - إزالة @Max(52_428_800) الصلب من DTO ونقل فحص السقف حسب kind إلى الخدمة المركزية
+//     (UploadValidationHelper.validateFileSize) لإعادة FILE_TOO_LARGE مع max_size_bytes.
+//   - إضافة subjectUuid و lessonUuid الاختياريين للتحقق المبكر من ملكية المعلم (§4.1).
+import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { MediaKind } from '@prisma/client';
 
-/**
- * Max file sizes per kind (validated in service):
- *   IMAGE ≤ 20MB (20_971_520)
- *   AUDIO ≤ 50MB (52_428_800)
- *
- * DTO-level max is the largest allowed (50MB).
- */
 export class InitUploadSessionDto {
-    @IsEnum(MediaKind)
-    kind: MediaKind;
+  @IsEnum(MediaKind)
+  kind!: MediaKind;
 
-    @IsString()
-    contentType: string;
+  @IsString()
+  contentType!: string;
 
-    @IsInt()
-    @Min(1)
-    @Max(52_428_800) // Hard max: 50MB
-    totalSizeBytes: number;
+  @IsInt()
+  @Min(1)
+  totalSizeBytes!: number;
 
-    @IsInt()
-    @IsOptional()
-    @Min(65536) // 64KB minimum chunk
-    chunkSizeBytes?: number;
+  @IsInt()
+  @IsOptional()
+  @Min(65536) // 64KB minimum chunk
+  chunkSizeBytes?: number;
+
+  @IsString()
+  @IsOptional()
+  subjectUuid?: string;
+
+  @IsString()
+  @IsOptional()
+  lessonUuid?: string;
 }

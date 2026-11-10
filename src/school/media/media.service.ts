@@ -1,224 +1,254 @@
 // src/school/media/media.service.ts
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import { MediaAsset } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MediaAccessPolicyService } from '../../shared/media/media-access-policy.service';
+import { R2StorageProvider } from '../../shared/media/r2-storage.provider';
 import { StorageService } from '../../shared/media/storage.service';
+import {
+  buildMediaAssetStatusResponse,
+  buildSanitizedVariantsMap,
+  generateMediaDownloadUrlResponse,
+  MediaAssetStatusResponse,
+  MediaDownloadUrlResponse,
+} from '../../shared/media/video-delivery.helper';
+import { VideoMediaConfig } from '../../shared/media/video-media.config';
 
 /**
- * 📦 خدمة الوسائط الأساسية
- * - جلب metadata
- * - تقديم الملفات للتنزيل
+ * 📦 خدمة الوسائط الأساسية — المدارس
+ * - عزل القراءة S4 (ملكية المدرسة أو توزيع نشط أو درس مستنسخ Policy A)
+ * - جلب حالة المعالجة (/status) والبيانات الوصفية (/meta) والروابط الموقّعة (/download-url)
+ * - تقديم الملفات المحلية للتنزيل المباشر
  */
 @Injectable()
 export class MediaService {
-    private readonly logger = new Logger(MediaService.name);
+  private readonly logger = new Logger(MediaService.name);
+  private readonly accessPolicy: MediaAccessPolicyService;
+  private readonly videoConfig: VideoMediaConfig;
+  private readonly r2Storage: R2StorageProvider;
 
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly storage: StorageService,
-    ) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+    @Optional() accessPolicy?: MediaAccessPolicyService,
+    @Optional() videoConfig?: VideoMediaConfig,
+    @Optional() r2Storage?: R2StorageProvider,
+  ) {
+    this.accessPolicy = accessPolicy ?? new MediaAccessPolicyService(prisma);
+    this.videoConfig = videoConfig ?? new VideoMediaConfig();
+    this.r2Storage = r2Storage ?? new R2StorageProvider(this.videoConfig);
+  }
 
-    /**
-     * Get asset by UUID (scoped to school)
-     */
-    async getAsset(assetUuid: string, schoolId: number) {
-        this.logger.log(`[DEBUG] getAsset called: uuid=${assetUuid}, schoolId=${schoolId}`);
-        
-        const asset = await this.prisma.mediaAsset.findFirst({
-            where: {
-                uuid: assetUuid,
-                isDeleted: false,
-                OR: [
-                    { schoolId, ownerType: 'SCHOOL' },
-                    { ownerType: 'PLATFORM' },
-                ],
-            },
-        });
+  /**
+   * جلب الأصل مع فرض عزل القراءة S4 (يرمي 404 ASSET_NOT_FOUND عند عدم الوجود أو الحذف أو خارج نطاق المدرسة/التوزيع).
+   */
+  async getAsset(assetUuid: string, schoolId: number): Promise<MediaAsset> {
+    return this.accessPolicy.getAccessibleSchoolAsset(assetUuid, schoolId);
+  }
 
-        if (!asset) {
-            // Debug: check if asset exists at all (ignoring filters)
-            const anyAsset = await this.prisma.mediaAsset.findFirst({
-                where: { uuid: assetUuid },
-                select: { id: true, uuid: true, ownerType: true, schoolId: true, isDeleted: true, kind: true },
-            });
-            this.logger.warn(`[DEBUG] ASSET_NOT_FOUND. Raw lookup: ${JSON.stringify(anyAsset)}`);
-            throw new NotFoundException('ASSET_NOT_FOUND');
-        }
+  /**
+   * SRS-SUB-005 §8.0 — هل الأصل مرتبط بمحتوى تعليمي محمي؟
+   *
+   * نعيد `true` إذا كان الأصل مرتبطاً بأي من:
+   *   - محتوى درس (LessonContent / LessonBlockItem)
+   *   - كتاب (SchoolBook PDF أو غلاف)
+   *   - أسئلة (Question / QuestionOption / MatchingPair / OrderingItem)
+   *
+   * الشعارات والصور الرمزية وأغلفة المواد → لا.
+   *
+   * P4-5 Hardening (F-P45-04): أي أصل VIDEO تعليمي بطبيعته (الفيديو لا يُربط إلا بعناصر الدرس)،
+   * فلا يُتجاوز فحص الاشتراك لفيديو جاهز لم يُربط بعد. لا يتغير سلوك IMAGE/AUDIO/DOCUMENT.
+   */
+  async isEducationalAsset(assetId: number, kind?: string): Promise<boolean> {
+    if (kind !== undefined && String(kind) === 'VIDEO') return true;
 
-        this.logger.log(`[DEBUG] Asset found: id=${asset.id}, ownerType=${asset.ownerType}, kind=${asset.kind}`);
-        return asset;
+    const inLesson = await this.prisma.lessonContent.findFirst({
+      where: { mediaAssetId: assetId, isDeleted: false },
+      select: { id: true },
+    });
+    if (inLesson) return true;
+
+    const inBlock = await this.prisma.lessonBlockItem.findFirst({
+      where: { mediaAssetId: assetId, isDeleted: false },
+      select: { id: true },
+    });
+    if (inBlock) return true;
+
+    const inBook = await this.prisma.schoolBook.findFirst({
+      where: {
+        isDeleted: false,
+        OR: [{ pdfMediaAssetId: assetId }, { coverMediaAssetId: assetId }],
+      },
+      select: { id: true },
+    });
+    if (inBook) return true;
+
+    const inQuestion = await this.prisma.question.findFirst({
+      where: {
+        isDeleted: false,
+        OR: [
+          { explanationAudioAssetId: assetId },
+          { explanationImageAssetId: assetId },
+          { questionAudioAssetId: assetId },
+          { questionImageAssetId: assetId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (inQuestion) return true;
+
+    const inOption = await this.prisma.questionOption.findFirst({
+      where: {
+        isDeleted: false,
+        OR: [{ audioAssetId: assetId }, { imageAssetId: assetId }],
+      },
+      select: { id: true },
+    });
+    if (inOption) return true;
+
+    const inPair = await this.prisma.questionMatchingPair.findFirst({
+      where: {
+        isDeleted: false,
+        OR: [
+          { leftAudioAssetId: assetId },
+          { leftImageAssetId: assetId },
+          { rightAudioAssetId: assetId },
+          { rightImageAssetId: assetId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (inPair) return true;
+
+    const inOrdering = await this.prisma.questionOrderingItem.findFirst({
+      where: {
+        isDeleted: false,
+        OR: [{ audioAssetId: assetId }, { imageAssetId: assetId }],
+      },
+      select: { id: true },
+    });
+    if (inOrdering) return true;
+
+    return false;
+  }
+
+  /**
+   * GET /school/media/:uuid/status — حالة معالجة الأصل والجودات الجاهزة والمخططة دون تسريب مسارات التخزين.
+   */
+  async getAssetStatus(
+    assetUuid: string,
+    schoolId: number,
+    preloadedAsset?: MediaAsset,
+  ): Promise<MediaAssetStatusResponse> {
+    const asset = preloadedAsset ?? (await this.getAsset(assetUuid, schoolId));
+    return buildMediaAssetStatusResponse(this.prisma, asset);
+  }
+
+  /**
+   * GET /school/media/:uuid/download-url?variant=... — توليد رابط موقّع من R2 بعد التحقق من الجاهزية والجودة.
+   */
+  async getDownloadUrl(
+    assetUuid: string,
+    schoolId: number,
+    variant?: string,
+    actorLabel = 'school-user',
+    preloadedAsset?: MediaAsset,
+  ): Promise<MediaDownloadUrlResponse> {
+    const asset = preloadedAsset ?? (await this.getAsset(assetUuid, schoolId));
+    return generateMediaDownloadUrlResponse({
+      asset,
+      requestedVariant: variant,
+      r2Storage: this.r2Storage,
+      videoConfig: this.videoConfig,
+      logger: this.logger,
+      actorLabel,
+    });
+  }
+
+  /**
+   * Get asset metadata for client (used by /meta endpoint)
+   */
+  async getAssetMeta(
+    assetUuid: string,
+    schoolId: number,
+    preloadedAsset?: MediaAsset,
+  ) {
+    const asset = preloadedAsset ?? (await this.getAsset(assetUuid, schoolId));
+    const clientVariants = buildSanitizedVariantsMap(
+      asset.kind,
+      asset.variantsJson,
+    );
+
+    return {
+      asset_uuid: asset.uuid,
+      kind: asset.kind,
+      content_type: asset.contentType,
+      variants: clientVariants,
+      processing_status: asset.processingStatus,
+      updated_at: asset.updatedAt,
+    };
+  }
+
+  /**
+   * Resolve variant storage key for local download
+   */
+  async resolveVariantStorageKey(
+    assetUuid: string,
+    schoolId: number,
+    variant: string,
+    preloadedAsset?: MediaAsset,
+  ): Promise<{
+    storageKey: string;
+    etag: string;
+    contentType: string;
+    sizeBytes: number;
+  }> {
+    const asset = preloadedAsset ?? (await this.getAsset(assetUuid, schoolId));
+
+    if (!asset.variantsJson) {
+      throw new NotFoundException('VARIANTS_NOT_READY');
     }
 
-    /**
-     * SRS-SUB-005 §8.0 — هل الأصل مرتبط بمحتوى تعليمي محمي؟
-     *
-     * نعيد `true` إذا كان الأصل مرتبطاً بأي من:
-     *   - محتوى درس (LessonContent / LessonBlockItem)
-     *   - كتاب (SchoolBook PDF أو غلاف)
-     *   - أسئلة (Question / QuestionOption / MatchingPair / OrderingItem)
-     *
-     * الشعارات والصور الرمزية وأغلفة المواد → لا.
-     *
-     * الاستعلام خفيف: يبحث فقط عن وجود صف واحد (findFirst → limit 1).
-     */
-    async isEducationalAsset(assetId: number): Promise<boolean> {
-        // 1. محتوى درس
-        const inLesson = await this.prisma.lessonContent.findFirst({
-            where: { mediaAssetId: assetId },
-            select: { id: true },
-        });
-        if (inLesson) return true;
-
-        // 2. كتلة محتوى
-        const inBlock = await this.prisma.lessonBlockItem.findFirst({
-            where: { mediaAssetId: assetId },
-            select: { id: true },
-        });
-        if (inBlock) return true;
-
-        // 3. كتاب (PDF أو غلاف)
-        const inBook = await this.prisma.schoolBook.findFirst({
-            where: { OR: [{ pdfMediaAssetId: assetId }, { coverMediaAssetId: assetId }] },
-            select: { id: true },
-        });
-        if (inBook) return true;
-
-        // 4. أسئلة — explanationAudio/Image, questionAudio/Image
-        const inQuestion = await this.prisma.question.findFirst({
-            where: {
-                OR: [
-                    { explanationAudioAssetId: assetId },
-                    { explanationImageAssetId: assetId },
-                    { questionAudioAssetId: assetId },
-                    { questionImageAssetId: assetId },
-                ],
-            },
-            select: { id: true },
-        });
-        if (inQuestion) return true;
-
-        // 5. خيارات الأسئلة
-        const inOption = await this.prisma.questionOption.findFirst({
-            where: { OR: [{ audioAssetId: assetId }, { imageAssetId: assetId }] },
-            select: { id: true },
-        });
-        if (inOption) return true;
-
-        // 6. أزواج المطابقة
-        const inPair = await this.prisma.questionMatchingPair.findFirst({
-            where: {
-                OR: [
-                    { leftAudioAssetId: assetId },
-                    { leftImageAssetId: assetId },
-                    { rightAudioAssetId: assetId },
-                    { rightImageAssetId: assetId },
-                ],
-            },
-            select: { id: true },
-        });
-        if (inPair) return true;
-
-        // 7. عناصر الترتيب
-        const inOrdering = await this.prisma.questionOrderingItem.findFirst({
-            where: { OR: [{ audioAssetId: assetId }, { imageAssetId: assetId }] },
-            select: { id: true },
-        });
-        if (inOrdering) return true;
-
-        return false;
-    }
-
-    /**
-     * Get asset metadata for client (used by /meta endpoint)
-     */
-    async getAssetMeta(assetUuid: string, schoolId: number) {
-        const asset = await this.getAsset(assetUuid, schoolId);
-
-        const variants = asset.variantsJson ? JSON.parse(asset.variantsJson) : {};
-
-        // Strip storage_key from variant data (client should not know internal paths)
-        const clientVariants: Record<string, any> = {};
-        for (const [key, val] of Object.entries(variants)) {
-            const v = val as any;
-            clientVariants[key] = {
-                etag: v.etag,
-                size_bytes: v.size_bytes,
-                content_type: v.content_type,
-                width: v.width,
-                height: v.height,
-            };
-        }
-
-        return {
-            asset_uuid: asset.uuid,
-            kind: asset.kind,
-            content_type: asset.contentType,
-            variants: clientVariants,
-            processing_status: asset.processingStatus,
-            updated_at: asset.updatedAt,
-        };
-    }
-
-    /**
-     * Resolve variant storage key for download
-     */
-    async resolveVariantStorageKey(assetUuid: string, schoolId: number, variant: string): Promise<{
-        storageKey: string;
+    const variants = JSON.parse(asset.variantsJson) as Record<
+      string,
+      {
+        storage_key: string;
         etag: string;
-        contentType: string;
-        sizeBytes: number;
-    }> {
-        const asset = await this.getAsset(assetUuid, schoolId);
+        content_type?: string;
+        size_bytes?: number;
+      }
+    >;
+    const variantData = variants[variant];
 
-        this.logger.log(`[DEBUG] resolveVariant: variant=${variant}, variantsJson=${asset.variantsJson ? 'exists' : 'NULL'}`);
-
-        if (!asset.variantsJson) {
-            this.logger.warn(`[DEBUG] VARIANTS_NOT_READY for asset ${assetUuid}`);
-            throw new NotFoundException('VARIANTS_NOT_READY');
-        }
-
-        const variants = JSON.parse(asset.variantsJson);
-        this.logger.log(`[DEBUG] Available variants: ${Object.keys(variants).join(', ')}, requested: '${variant}'`);
-        const variantData = variants[variant];
-
-        if (!variantData) {
-            this.logger.log(`[DEBUG] Variant '${variant}' not found, trying fallback...`);
-            // Fallback: try default variant based on kind
-            const defaultVariant = asset.kind === 'IMAGE' ? 'medium'
-                : asset.kind === 'DOCUMENT' ? 'original'
-                : 'low';
-            const fallback = variants[defaultVariant] || variants['original'];
-            if (!fallback) {
-                this.logger.warn(`[DEBUG] No fallback found! defaultVariant=${defaultVariant}`);
-                throw new NotFoundException(`VARIANT_NOT_FOUND: ${variant}`);
-            }
-            return {
-                storageKey: fallback.storage_key,
-                etag: fallback.etag,
-                contentType: fallback.content_type || asset.contentType,
-                sizeBytes: fallback.size_bytes || 0,
-            };
-        }
-
-        return {
-            storageKey: variantData.storage_key,
-            etag: variantData.etag,
-            contentType: variantData.content_type || asset.contentType,
-            sizeBytes: variantData.size_bytes || 0,
-        };
+    if (!variantData) {
+      const defaultVariant =
+        asset.kind === 'IMAGE'
+          ? 'medium'
+          : asset.kind === 'DOCUMENT'
+            ? 'original'
+            : 'low';
+      const fallback = variants[defaultVariant] || variants['original'];
+      if (!fallback) {
+        throw new NotFoundException(`VARIANT_NOT_FOUND: ${variant}`);
+      }
+      return {
+        storageKey: fallback.storage_key,
+        etag: fallback.etag,
+        contentType: fallback.content_type || asset.contentType,
+        sizeBytes: fallback.size_bytes || 0,
+      };
     }
 
-    /**
-     * Soft-delete an asset
-     */
-    async softDeleteAsset(assetUuid: string, schoolId: number) {
-        const asset = await this.getAsset(assetUuid, schoolId);
-        return this.prisma.mediaAsset.update({
-            where: { id: asset.id },
-            data: {
-                isDeleted: true,
-                deletedAt: new Date(),
-                rowVersion: { increment: 1 },
-            },
-        });
-    }
+    return {
+      storageKey: variantData.storage_key,
+      etag: variantData.etag,
+      contentType: variantData.content_type || asset.contentType,
+      sizeBytes: variantData.size_bytes || 0,
+    };
+  }
 }

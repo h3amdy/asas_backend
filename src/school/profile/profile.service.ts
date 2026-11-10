@@ -96,10 +96,16 @@ export class ProfileService {
                         schoolId: user.schoolId!,
                         isDeleted: false,
                     },
-                    select: { id: true },
+                    select: { id: true, kind: true },
                 });
                 if (!asset) {
                     throw new BadRequestException('Media asset not found or does not belong to this school');
+                }
+                if (asset.kind === 'VIDEO') {
+                    throw new BadRequestException({
+                        code: 'VIDEO_NOT_ALLOWED_HERE',
+                        message: 'VIDEO assets can only be linked to lesson_block_items',
+                    });
                 }
                 data.avatarMediaAssetId = asset.id;
             }
