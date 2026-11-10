@@ -5,6 +5,7 @@
 //        p4-4-design-and-audit.md (v1.7)
 // ═══════════════════════════════════════════════════════════════
 
+import 'dotenv/config';
 import { Logger, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
