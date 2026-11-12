@@ -35,6 +35,8 @@ export class ParentsService {
                     OR: [
                         { name: { contains: q, mode: 'insensitive' as const } },
                         { phone: { contains: q } },
+                        // SRS-SCH-NUM-001 §4.2: البحث بالرقم المدرسي
+                        ...(/^\d+$/.test(q) ? [{ code: { equals: parseInt(q, 10) } }] : []),
                     ]
                 } : {}),
             },
