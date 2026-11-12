@@ -6,8 +6,13 @@ import { allocateUserCodeForFixture } from '../common/user-code/user-code.testin
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = process.env.OWNER_SEED_EMAIL ?? 'h3amdy@gmail.com';
-  const password = process.env.OWNER_SEED_PASSWORD ?? 'faroq19?';
+  const email = process.env.OWNER_SEED_EMAIL;
+  const password = process.env.OWNER_SEED_PASSWORD;
+
+  if (!email || !password) {
+    console.error('❌ يجب تعريف OWNER_SEED_EMAIL و OWNER_SEED_PASSWORD في متغيرات البيئة');
+    process.exit(1);
+  }
   const name = 'مالك النظام';
 
   const exists = await prisma.user.findFirst({
