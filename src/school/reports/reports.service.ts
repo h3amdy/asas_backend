@@ -375,7 +375,23 @@ export class ReportsService {
 
         if (yearId) lessonTargetWhere.lesson.yearId = yearId;
         if (termId) lessonTargetWhere.lesson.termId = termId;
-        if (dateFilter) lessonTargetWhere.publishedAt = dateFilter;
+        // ── حل فلتر "آخر يوم" ديناميكياً قبل تمريره إلى Prisma ──
+        let resolvedDateFilter = dateFilter;
+        if (dateFilter === '__LAST_DAY__' && yearId && termId) {
+            resolvedDateFilter = await this.resolveLastPublishedDayFilter(
+                schoolId, yearId, termId, enrollment.sectionId, subject.id,
+            );
+        }
+
+        // لا نمرر sentinel النصي إلى Prisma؛ نمرر DateTime filter فقط.
+        if (resolvedDateFilter && resolvedDateFilter !== '__LAST_DAY__') {
+            lessonTargetWhere.publishedAt = resolvedDateFilter;
+        }
+
+        // إذا طُلب آخر يوم لكن غاب سياق السنة أو الفصل → لا دروس
+        if (dateFilter === '__LAST_DAY__' && (!yearId || !termId)) {
+            lessonTargetWhere.lessonId = { in: [] };
+        }
 
         const targets = await this.prisma.lessonTarget.findMany({
             where: lessonTargetWhere,
@@ -1133,7 +1149,7 @@ export class ReportsService {
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════════
+   // ═══════════════════════════════════════════════════════════════════
     // ADM-076b: تفاصيل الأداء الشامل لطالب في مادة (الدروس)
     // ═══════════════════════════════════════════════════════════════════
 
@@ -1225,7 +1241,16 @@ export class ReportsService {
 
         if (yearId) lessonTargetWhere.lesson.yearId = yearId;
         if (termId) lessonTargetWhere.lesson.termId = termId;
-        if (resolvedDateFilter) lessonTargetWhere.publishedAt = resolvedDateFilter;
+        
+        // منع تمرير القيمة النصية '__LAST_DAY__' إلى استعلام Prisma
+        if (resolvedDateFilter && resolvedDateFilter !== '__LAST_DAY__') {
+            lessonTargetWhere.publishedAt = resolvedDateFilter;
+        }
+
+        // إذا طُلب آخر يوم لكن غاب سياق السنة أو الفصل → لا دروس
+        if (dateFilter === '__LAST_DAY__' && (!yearId || !termId)) {
+            lessonTargetWhere.lessonId = { in: [] };
+        }
 
         const targets = await this.prisma.lessonTarget.findMany({
             where: lessonTargetWhere,
@@ -1249,7 +1274,6 @@ export class ReportsService {
         });
 
         // Remove duplicates (keep first per lesson since already sorted by publishedAt asc)
-
         const seenLessonIds = new Set<number>();
         const lessons = targets
             .filter(t => {
@@ -1294,7 +1318,6 @@ export class ReportsService {
             lessons,
         };
     }
-
     // ═══════════════════════════════════════════════════════════════════
 
     // ── Endpoint: تقرير درجات الطلاب (ADM-074a) ──
@@ -1554,6 +1577,11 @@ export class ReportsService {
         }
         if (resolvedDateFilter && resolvedDateFilter !== '__LAST_DAY__') {
             lessonTargetWhere.publishedAt = resolvedDateFilter;
+        }
+
+        // إذا طُلب آخر يوم لكن غاب سياق السنة أو الفصل → لا دروس
+        if (dateFilter === '__LAST_DAY__' && (!yearId || !termId)) {
+            lessonTargetWhere.lessonId = { in: [] };
         }
 
         const targets = await this.prisma.lessonTarget.findMany({
