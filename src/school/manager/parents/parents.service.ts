@@ -56,7 +56,8 @@ export class ParentsService {
             where: { schoolId, userType: 'PARENT', phone: dto.phone, isDeleted: false },
         });
         if (existing) {
-            return { existing: true, uuid: existing.uuid, name: existing.name, phone: existing.phone };
+            // code ضمن نفس المدرسة (schoolId) — مصرّح به للمدير (SRS-SCH-NUM-001)
+            return { existing: true, uuid: existing.uuid, name: existing.name, phone: existing.phone, code: existing.code };
         }
 
         const password = dto.password ?? this.generatePassword();
