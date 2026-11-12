@@ -11,14 +11,24 @@ import { SchoolLoginDto } from './dto/school-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SchoolJwtAuthGuard } from './guards/school-jwt-auth.guard';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('school/auth')
 export class SchoolAuthController {
   constructor(private readonly auth: SchoolAuthService) { }
   /**
-      * تسجيل دخول مستخدمي المدرسة (ADMIN/TEACHER/STUDENT/PARENT)
+      * تسجيل دخول مستخدمي المدرسة (ADMIN/TEACHER/STUDENT/PARENT) بالرقم المدرسي الموحد
+      *
+      * 🛡️ SR-NUM-001: ThrottlerGuard إلزامي — ThrottlerModule غير مطبّق عالمياً،
+      * و @Throttle وحده لا يحمي شيئاً. المفاتيح short/long تطابق أسماء AppModule
+      * (مفتاح باسم غير معرّف يُتجاهل بصمت).
       */
   @Post('login')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    short: { ttl: 60000, limit: 10 },
+    long: { ttl: 3600000, limit: 100 },
+  })
   login(@Body() dto: SchoolLoginDto) {
     return this.auth.login(dto);
   }

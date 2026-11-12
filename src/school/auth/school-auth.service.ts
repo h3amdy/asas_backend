@@ -1,19 +1,82 @@
 // src/school/auth/school-auth.service.ts
 
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { SCHOOL_AUTH_JWT, SCHOOL_AUTH_ERRORS } from './constants';
 import { randomToken } from './utils/crypto.util';
+import { SCHOOL_LOGIN_ROLES, parseUserCode } from '../../common/user-code/user-code.policy';
+
+/**
+ * hash ثابت يُقارن به عند عدم وجود المستخدم، حتى يستغرق الرد نفس زمن bcrypt تقريباً
+ * (SR-NUM-002 — تقليل كشف وجود الرقم عبر التوقيت). نفس cost المستخدم في إنشاء الحسابات (10).
+ */
+const TIMING_DUMMY_HASH = bcrypt.hashSync('asas-timing-equalizer', 10);
+
+/**
+ * بيانات المدرسة المُرجعة في login/refresh (SRS-SCH-NUM-001 §4.3-3)
+ * ليحفظ التطبيق العام المدرسة المستنتجة في Drift فور الدخول.
+ * إضافة حقول فقط — متوافق مع النسخ القديمة التي تقرأ uuid/displayName/appType.
+ */
+const SCHOOL_PAYLOAD_SELECT = {
+  id: true,
+  uuid: true,
+  name: true,
+  displayName: true,
+  schoolCode: true,
+  appType: true,
+  phone: true,
+  email: true,
+  primaryColor: true,
+  secondaryColor: true,
+  backgroundColor: true,
+  deliveryPolicy: true,
+  educationType: true,
+  logoMediaAssetId: true,
+  logoMediaAsset: { select: { uuid: true } },
+  province: true,
+  district: true,
+  addressArea: true,
+  address: true,
+  isActive: true,
+  isDeleted: true,
+} satisfies Prisma.SchoolSelect;
+
+type SchoolPayloadRow = Prisma.SchoolGetPayload<{ select: typeof SCHOOL_PAYLOAD_SELECT }>;
+
+function toSchoolPayload(school: SchoolPayloadRow) {
+  return {
+    uuid: school.uuid,
+    name: school.name,
+    displayName: school.displayName ?? school.name,
+    schoolCode: school.schoolCode,
+    appType: school.appType,
+    phone: school.phone ?? null,
+    email: school.email ?? null,
+    primaryColor: school.primaryColor ?? null,
+    secondaryColor: school.secondaryColor ?? null,
+    backgroundColor: school.backgroundColor ?? null,
+    deliveryPolicy: school.deliveryPolicy,
+    educationType: school.educationType ?? null,
+    logoMediaAssetId: school.logoMediaAssetId ?? null,
+    logoMediaAssetUuid: school.logoMediaAsset?.uuid ?? null,
+    province: school.province ?? null,
+    district: school.district ?? null,
+    addressArea: school.addressArea ?? null,
+    address: school.address ?? null,
+    isActive: school.isActive,
+  };
+}
 
 type SafeUserPayload = {
   sub: string; // user uuid
   ut: 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
   sc: string; // school uuid
   sid: string; // session uuid
-  uc?: number; // code
+  uc: number; // الرقم المدرسي الموحد (إلزامي بعد SRS-SCH-NUM-001)
 };
 
 @Injectable()
@@ -32,90 +95,60 @@ export class SchoolAuthService {
     });
   }
 
+  /**
+   * تسجيل الدخول بالرقم المدرسي الموحد (SRS-SCH-NUM-001 §4.3)
+   *
+   * - الهوية تُحدَّد من `code` وحده (فريد على مستوى المنصة)، والمدرسة تُستنتج من حساب المستخدم.
+   * - `schoolUuid` (التطبيق الخاص) قيد إضافي فقط: مستخدم مدرسة أخرى ← INVALID_CREDENTIALS.
+   * - OWNER مستبعد بالدور (SCHOOL_LOGIN_ROLES).
+   * - SR-NUM-002: رسالة واحدة لكل حالات «الرقم غير موجود / كلمة مرور خاطئة / مدرسة غير مطابقة»،
+   *   و bcrypt يُنفَّذ دائماً (حتى عند عدم وجود المستخدم) لتقليل فرق التوقيت الكاشف.
+   *   حالات الحساب/المدرسة (موقوف) لا تُكشف إلا بعد نجاح كلمة المرور.
+   */
   async login(input: {
-    schoolUuid: string;
+    schoolUuid?: string;
     identifier: string;
     password: string;
     deviceFingerprint: string;
     deviceType: 'ANDROID' | 'IOS' | 'WEB';
     pushToken?: string;
   }) {
-    // 1) school
-    const school = await this.prisma.school.findFirst({
-      where: { uuid: input.schoolUuid, isDeleted: false },
-      select: { id: true, uuid: true, isActive: true, appType: true, displayName: true, name: true },
-    });
+    const code = parseUserCode(input.identifier);
 
-    if (!school) throw new NotFoundException(SCHOOL_AUTH_ERRORS.SCHOOL_NOT_FOUND);
+    const user = code === null
+      ? null
+      : await this.prisma.user.findFirst({
+        where: {
+          code,
+          userType: { in: [...SCHOOL_LOGIN_ROLES] },
+          isDeleted: false,
+        },
+        select: {
+          id: true,
+          uuid: true,
+          userType: true,
+          code: true,
+          displayName: true,
+          name: true,
+          passwordHash: true,
+          isActive: true,
+          school: { select: SCHOOL_PAYLOAD_SELECT },
+        },
+      });
+
+    const school = user?.school && !user.school.isDeleted ? user.school : null;
+    const passwordOk = await bcrypt.compare(input.password ?? '', user?.passwordHash ?? TIMING_DUMMY_HASH);
+    const schoolScopeOk = !input.schoolUuid || school?.uuid === input.schoolUuid;
+
+    if (!user || !school || !passwordOk || !schoolScopeOk) {
+      throw new UnauthorizedException(SCHOOL_AUTH_ERRORS.INVALID_CREDENTIALS);
+    }
+
+    // بعد نجاح كلمة المرور فقط — رسائل حالة واضحة (UX)
     if (!school.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_INACTIVE);
-
-    // 2) Smart identifier resolution:
-    //    أولاً: حاول تحويله إلى رقم → ابحث بالـ code (ADMIN/TEACHER/STUDENT)
-    //    ثانياً: إذا لم يوجد → ابحث بالـ phone (PARENT فقط)
-    const identifier = input.identifier.trim();
-    if (!identifier) {
-      throw new BadRequestException('identifier is required');
-    }
-
-    const userSelectFields = {
-      id: true,
-      uuid: true,
-      userType: true,
-      code: true,
-      displayName: true,
-      name: true,
-      passwordHash: true,
-      isActive: true,
-    } as const;
-
-    let user: {
-      id: number;
-      uuid: string;
-      userType: string;
-      code: number | null;
-      displayName: string | null;
-      name: string;
-      passwordHash: string;
-      isActive: boolean;
-    } | null = null;
-
-    // محاولة 1: البحث بالرقم المدرسي (code)
-    const codeNum = Number(identifier);
-    if (Number.isInteger(codeNum) && codeNum > 0) {
-      user = await this.prisma.user.findFirst({
-        where: {
-          schoolId: school.id,
-          isDeleted: false,
-          code: codeNum,
-          userType: { in: ['ADMIN', 'TEACHER', 'STUDENT'] },
-        },
-        select: userSelectFields,
-      });
-    }
-
-    // محاولة 2: البحث بالهاتف (ولي أمر فقط)
-    if (!user) {
-      user = await this.prisma.user.findFirst({
-        where: {
-          schoolId: school.id,
-          isDeleted: false,
-          userType: 'PARENT',
-          phone: identifier,
-        },
-        select: userSelectFields,
-      });
-    }
-
-    if (!user) throw new UnauthorizedException(SCHOOL_AUTH_ERRORS.INVALID_CREDENTIALS);
-
-    // 3) password
-    const ok = await bcrypt.compare(input.password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException(SCHOOL_AUTH_ERRORS.INVALID_CREDENTIALS);
-
-    // ✅ تحقق من أن الحساب نشط (UX أفضل من إخفاء المستخدم)
     if (!user.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.USER_INACTIVE);
 
-    // 4) device upsert
+    // device upsert
     const device = await this.sessions.upsertDevice({
       userId: user.id,
       deviceFingerprint: input.deviceFingerprint,
@@ -123,7 +156,7 @@ export class SchoolAuthService {
       pushToken: input.pushToken,
     });
 
-    // 5) session + refresh token
+    // session + refresh token — schoolId من حساب المستخدم وليس من العميل
     const refreshPlain = randomToken(48);
     const session = await this.sessions.createSession({
       userId: user.id,
@@ -132,13 +165,12 @@ export class SchoolAuthService {
       refreshTokenPlain: refreshPlain,
     });
 
-    // 6) access token
     const accessToken = this.buildAccessToken({
       sub: user.uuid,
-      ut: user.userType as any,
+      ut: user.userType as SafeUserPayload['ut'],
       sc: school.uuid,
       sid: session.uuid,
-      uc: user.code ?? undefined,
+      uc: user.code,
     });
 
     return {
@@ -150,15 +182,11 @@ export class SchoolAuthService {
       user: {
         uuid: user.uuid,
         userType: user.userType,
-        code: user.code ?? null,
+        code: user.code,
         displayName: user.displayName ?? user.name, // ✅ لا نرجّع الاسم الرسمي كحقل مستقل
       },
 
-      school: {
-        uuid: school.uuid,
-        displayName: school.displayName ?? school.name, // للعرض فقط
-        appType: school.appType,
-      },
+      school: toSchoolPayload(school),
     };
   }
 
@@ -185,14 +213,14 @@ export class SchoolAuthService {
       }),
       rotated.schoolId
         ? this.prisma.school.findFirst({
-          where: { id: rotated.schoolId, isDeleted: false },
-          select: { uuid: true, isActive: true, displayName: true, name: true, appType: true },
+          where: { id: rotated.schoolId },
+          select: SCHOOL_PAYLOAD_SELECT,
         })
         : null,
     ]);
 
     if (!user) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.USER_INACTIVE);
-    if (!school) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_NOT_FOUND);
+    if (!school || school.isDeleted) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_NOT_FOUND);
     if (!school.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_INACTIVE);
 
     // ✅ التحقق من تطابق المدرسة في الجلسة مع المدرسة الفعلية للمستخدم
@@ -205,7 +233,7 @@ export class SchoolAuthService {
       ut: user.userType as any,
       sc: school.uuid,
       sid: rotated.sessionUuid,
-      uc: user.code ?? undefined,
+      uc: user.code,
     });
 
     return {
@@ -216,14 +244,10 @@ export class SchoolAuthService {
       user: {
         uuid: user.uuid,
         userType: user.userType,
-        code: user.code ?? null,
+        code: user.code,
         displayName: user.displayName ?? user.name,
       },
-      school: {
-        uuid: school.uuid,
-        displayName: school.displayName ?? school.name,
-        appType: school.appType,
-      },
+      school: toSchoolPayload(school),
     };
   }
 
