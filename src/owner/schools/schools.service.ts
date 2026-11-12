@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UserCodeGeneratorService } from '../../common/user-code/user-code-generator.service';
 import { Prisma, AppType, UserType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
@@ -14,7 +15,10 @@ import { CreateSchoolManagerDto } from './dto/create-school-manager.dto';
 
 @Injectable()
 export class SchoolsService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private readonly userCodeGenerator: UserCodeGeneratorService,
+  ) { }
 
   // ✅ (1) تم التعديل: حساب الإحصائيات للمدارس غير المحذوفة فقط
   async getStats() {
@@ -168,18 +172,6 @@ export class SchoolsService {
     return { success: true };
   }
 
- private async getNextUserCodeForSchool(schoolId: number): Promise<number> {
-  const updated = await this.prisma.school.update({
-    where: { id: schoolId },
-    data: { nextUserCode: { increment: 1 } },
-    select: { nextUserCode: true },
-  });
-
-  // ✅ لو nextUserCode default = 1 → أول مرة يرجع 1
-  return updated.nextUserCode - 1;
-}
-
-
   async createOrUpdateManagerForSchool(
     uuid: string,
     dto: CreateSchoolManagerDto,
@@ -208,19 +200,22 @@ export class SchoolsService {
       }
 
       const passwordHash = await bcrypt.hash(dto.password, 10);
-      const code = await this.getNextUserCodeForSchool(school.id);
 
-      manager = await this.prisma.user.create({
-        data: {
-          schoolId: school.id,
-          userType: UserType.ADMIN,
-          code,
-          name: dto.name,
-          phone: dto.phone,
-          email: null,
-          passwordHash,
-          isActive: true,
-        },
+      // SRS-SCH-NUM-001: حجز الرقم المدرسي الموحد والإنشاء في معاملة واحدة
+      manager = await this.prisma.$transaction(async (tx) => {
+        const code = await this.userCodeGenerator.generateUserCode(tx, UserType.ADMIN);
+        return tx.user.create({
+          data: {
+            schoolId: school.id,
+            userType: UserType.ADMIN,
+            code,
+            name: dto.name,
+            phone: dto.phone,
+            email: null,
+            passwordHash,
+            isActive: true,
+          },
+        });
       });
     } else {
       const updateData: Prisma.UserUpdateInput = {

@@ -3,6 +3,13 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { PublicSchoolDto } from './dto/public-school.dto';
 import { SCHOOL_AUTH_ERRORS } from '../../school/auth/constants';
+import { SCHOOL_LOGIN_ROLES, parseUserCode } from '../../common/user-code/user-code.policy';
+
+/** استجابة واحدة لكل حالات الفشل — لا تميّز «صيغة خاطئة» عن «رقم غير موجود» */
+const USER_CODE_SCHOOL_NOT_FOUND = {
+  code: 'SCHOOL_NOT_FOUND',
+  message: 'لم يتم العثور على مدرسة مرتبطة بهذا الرقم',
+};
 
 @Injectable()
 export class PublicSchoolsService {
@@ -179,6 +186,44 @@ export class PublicSchoolsService {
     return {
       school: this.toDto(school),
       serverTime: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * «نسيت بيانات الدخول» بالرقم المدرسي (SRS-SCH-NUM-001 §4.4 — FR-NUM-012 / SR-NUM-003)
+   * GET /public/schools/by-user-code/:code
+   *
+   * - يُرجع بيانات تواصل المدرسة العامة فقط { uuid, name, phone } — لا أي حقل يخص المستخدم.
+   * - OWNER مستبعد بالدور، والمدرسة المحذوفة = غير موجودة.
+   * - كل حالات الفشل تُرجع نفس 404 بنفس الرسالة.
+   * ملاحظة: نجاح الاستعلام يكشف بطبيعته أن الرقم مرتبط بمدرسة؛ الحماية من التعداد هنا
+   * هي Rate Limiting على المتحكم + عدم إرجاع أي بيانات شخصية (قرار SRS §7).
+   */
+  async getSchoolContactByUserCode(raw: string): Promise<{ uuid: string; name: string; phone: string | null }> {
+    const code = parseUserCode(raw);
+    if (code === null) throw new NotFoundException(USER_CODE_SCHOOL_NOT_FOUND);
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        code,
+        userType: { in: [...SCHOOL_LOGIN_ROLES] },
+        isDeleted: false,
+      },
+      select: {
+        school: {
+          select: { uuid: true, name: true, displayName: true, phone: true, isDeleted: true },
+        },
+      },
+    });
+
+    if (!user?.school || user.school.isDeleted) {
+      throw new NotFoundException(USER_CODE_SCHOOL_NOT_FOUND);
+    }
+
+    return {
+      uuid: user.school.uuid,
+      name: user.school.displayName ?? user.school.name,
+      phone: user.school.phone ?? null,
     };
   }
 

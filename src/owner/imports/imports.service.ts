@@ -10,6 +10,7 @@ import { normalizeImportName } from './utils/import-name.normalizer';
 import { normalizeSection, normalizeAssignmentSections } from './utils/import-section.normalizer';
 import { PERSON } from '../../shared/validation/person';
 import { SubscriptionTrialService } from '../../school/common/subscription/subscription-trial.service';
+import { UserCodeGeneratorService } from '../../common/user-code/user-code-generator.service';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ export class ImportsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly trialService: SubscriptionTrialService,
+        private readonly userCodeGenerator: UserCodeGeneratorService,
     ) {}
 
     // ─── Password Mode ──────────────────────────────────────────
@@ -760,17 +762,31 @@ export class ImportsService {
         // ─ Normalize: استخدم الاسم الموحّد من preview details
         const studentName = normalizeImportName(studentData, 'student_name') || details.name;
         const parentName = details.parent?.name || normalizeImportName(studentData.parent, 'name');
+        const needsParent = !!(studentData.parent && parentName);
+
+        // ─ SRS-SCH-NUM-001: حجز الأرقام في معاملة قصيرة مستقلة قبل معاملة السجل،
+        //   حتى لا يبقى صف البادئة مقفلاً أثناء bcrypt وبقية خطوات الإنشاء.
+        //   رقم ولي الأمر يُحجز فقط إذا لم يكن موجوداً مسبقاً (لتقليل الفجوات).
+        const parentExistsBefore = needsParent
+            ? await this.prisma.user.findFirst({
+                where: {
+                    phone: studentData.parent.phone,
+                    userType: 'PARENT',
+                    schoolId: school.id,
+                    isDeleted: false,
+                },
+                select: { id: true },
+            })
+            : null;
+        const reserveParentCode = needsParent && !parentExistsBefore;
+        const [code, reservedParentCode] = await this.prisma.$transaction((tx) =>
+            this.userCodeGenerator.allocateCodes(reserveParentCode ? 2 : 1, tx),
+        );
+
+        const password = this.generatePassword(code);
+        const passwordHash = await bcrypt.hash(password, 10);
 
         await this.prisma.$transaction(async (tx) => {
-            // Increment school code
-            const updatedSchool = await tx.school.update({
-                where: { id: school.id },
-                data: { nextUserCode: { increment: 1 } },
-            });
-            const code = updatedSchool.nextUserCode - 1;
-            const password = this.generatePassword(code);
-            const passwordHash = await bcrypt.hash(password, 10);
-
             // Create user
             const user = await tx.user.create({
                 data: {
@@ -813,7 +829,7 @@ export class ImportsService {
             await this.trialService.createTrialForNewStudentTx(tx, school.id, user.id, new Date());
 
             // Create parent if provided
-            if (studentData.parent && parentName) {
+            if (needsParent) {
                 let parentUserId: number;
 
                 // Check if parent already exists by phone
@@ -841,7 +857,7 @@ export class ImportsService {
                     } else {
                         credentials.push({
                             name: parentName,
-                            schoolNumber: existingParent.code ?? 0,
+                            schoolNumber: existingParent.code,
                             password: '*****',
                             role: 'PARENT',
                             phone: studentData.parent.phone,
@@ -849,12 +865,11 @@ export class ImportsService {
                         });
                     }
                 } else {
-                    // Create parent
-                    const parentSchool = await tx.school.update({
-                        where: { id: school.id },
-                        data: { nextUserCode: { increment: 1 } },
-                    });
-                    const parentCode = parentSchool.nextUserCode - 1;
+                    // Create parent — الرقم محجوز مسبقاً؛ وإن لم يُحجز (حالة نادرة: حُذف ولي الأمر
+                    // الموجود بين الفحص والمعاملة) يُحجز هنا داخل المعاملة
+                    const parentCode =
+                        reservedParentCode ??
+                        (await this.userCodeGenerator.generateUserCode(tx, 'PARENT'));
                     const parentPassword = this.generatePassword(parentCode);
                     const parentHash = await bcrypt.hash(parentPassword, 10);
 
@@ -911,10 +926,20 @@ export class ImportsService {
         // ─ Normalize: استخدم الاسم الموحّد من record
         const teacherName = record.name;
 
+        // ─ SRS-SCH-NUM-001: حجز رقم المعلم الجديد في معاملة قصيرة مستقلة قبل معاملة السجل
+        const isNewTeacher = !record.details.isDuplicate;
+        const code = isNewTeacher
+            ? await this.prisma.$transaction((tx) =>
+                this.userCodeGenerator.generateUserCode(tx, 'TEACHER'),
+            )
+            : null;
+        const password = code !== null ? this.generatePassword(code) : null;
+        const passwordHash = password !== null ? await bcrypt.hash(password, 10) : null;
+
         await this.prisma.$transaction(async (tx) => {
             let teacherUserId: number;
 
-            if (record.details.isDuplicate) {
+            if (!isNewTeacher) {
                 // Find existing teacher — don't create account
                 const existing = await tx.user.findFirst({
                     where: {
@@ -927,25 +952,17 @@ export class ImportsService {
                 if (!existing) throw new Error('DUPLICATE_TEACHER_NOT_FOUND');
                 teacherUserId = existing.id;
             } else {
-                // Create new teacher
-                const updatedSchool = await tx.school.update({
-                    where: { id: school.id },
-                    data: { nextUserCode: { increment: 1 } },
-                });
-                const code = updatedSchool.nextUserCode - 1;
-                const password = this.generatePassword(code);
-                const passwordHash = await bcrypt.hash(password, 10);
-
+                // Create new teacher (الرقم وكلمة المرور مُجهّزان قبل المعاملة)
                 const user = await tx.user.create({
                     data: {
                         schoolId: school.id,
                         userType: 'TEACHER',
-                        code,
+                        code: code!,
                         name: teacherName,
                         displayName: teacherName,
                         gender: teacherData.gender,
                         phone: teacherData.phone || null,
-                        passwordHash,
+                        passwordHash: passwordHash!,
                         isActive: true,
                     },
                 });
@@ -975,8 +992,8 @@ export class ImportsService {
 
                 credentials.push({
                     name: teacherName,
-                    schoolNumber: code,
-                    password,
+                    schoolNumber: code!,
+                    password: password!,
                     role: 'TEACHER',
                     phone: teacherData.phone || null,
                     subjects: subjectsList,

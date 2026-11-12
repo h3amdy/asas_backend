@@ -12,7 +12,9 @@ model User {
   uuid                    String                @unique @default(uuid())
   schoolId                Int?                  @map("school_id")
   userType                UserType              @map("user_type")
-  code                    Int?
+  /// الرقم المدرسي الموحد (7 خانات، 22xxxxx..29xxxxx) — فريد على مستوى المنصة.
+  /// يُولَّد حصراً عبر UserCodeGeneratorService (SRS-SCH-NUM-001).
+  code                    Int                   @unique
   name                    String
   displayName             String?               @map("display_name")
   gender                  String?
@@ -49,6 +51,20 @@ model User {
   @@map("users")
 }
 
+/// نطاقات بادئات الرقم المدرسي الموحد (22 إلى 29) — SRS-SCH-NUM-001 §3.1
+/// allocatedCount عداد ذري لا يتراجع أبداً؛ algorithmVersion ثابت للبادئة بعد بدء الإصدار منها.
+/// (قيد CHECK على allocated_count <= capacity معرّف في المهاجرة.)
+model UserCodeRange {
+  prefix           Int      @id
+  allocatedCount   Int      @default(0) @map("allocated_count")
+  capacity         Int      @default(100000)
+  algorithmVersion Int      @default(1) @map("algorithm_version")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("user_code_ranges")
+}
+
 model School {
   id                       Int                         @id @default(autoincrement())
   uuid                     String                      @unique @default(uuid())
@@ -64,6 +80,7 @@ model School {
   addressArea              String?
   educationType            String?
   ownerNotes               String?
+  /// @deprecated منذ SRS-SCH-NUM-001 — لم يعد يُستخدم لتوليد الأرقام المدرسية (انظر UserCodeRange).
   nextUserCode             Int                         @default(1)
   primaryColor             String?
   secondaryColor           String?

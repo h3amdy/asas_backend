@@ -45,7 +45,7 @@ describeIfDb('Subscription Stress Tests — Large Batches & Concurrency', () => 
     });
     schoolId = school.id;
     const admin = await prisma.user.create({
-      data: { schoolId, userType: 'ADMIN', name: 'stress-admin', passwordHash: 'x', isActive: true },
+      data: { schoolId, userType: 'ADMIN', name: 'stress-admin', passwordHash: 'x', isActive: true, code: 9800001 },
     });
     adminId = admin.id;
 

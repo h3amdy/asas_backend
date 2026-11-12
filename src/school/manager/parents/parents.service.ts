@@ -2,6 +2,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
 import { CreateParentDto, UpdateParentDto, LinkChildrenDto } from './dto/parents.dto';
 
 /**
@@ -19,7 +20,10 @@ import { CreateParentDto, UpdateParentDto, LinkChildrenDto } from './dto/parents
  */
 @Injectable()
 export class ParentsService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly userCodeGenerator: UserCodeGeneratorService,
+    ) { }
 
     // ─── SRS-PAR-01: List & Search ──────────────────────────
 
@@ -35,7 +39,7 @@ export class ParentsService {
                 } : {}),
             },
             select: {
-                uuid: true, name: true, phone: true, gender: true, isActive: true, updatedAt: true,
+                uuid: true, code: true, name: true, phone: true, gender: true, isActive: true, updatedAt: true,
                 parent: {
                     select: { _count: { select: { childLinks: { where: { isDeleted: false } } } } },
                 },
@@ -52,7 +56,8 @@ export class ParentsService {
             where: { schoolId, userType: 'PARENT', phone: dto.phone, isDeleted: false },
         });
         if (existing) {
-            return { existing: true, uuid: existing.uuid, name: existing.name, phone: existing.phone };
+            // code ضمن نفس المدرسة (schoolId) — مصرّح به للمدير (SRS-SCH-NUM-001)
+            return { existing: true, uuid: existing.uuid, name: existing.name, phone: existing.phone, code: existing.code };
         }
 
         const password = dto.password ?? this.generatePassword();
@@ -60,10 +65,13 @@ export class ParentsService {
 
         const result = await this.prisma.$transaction(async (tx) => {
             const school = await tx.school.findUniqueOrThrow({ where: { id: schoolId } });
+            // الرقم المدرسي الموحد (SRS-SCH-NUM-001) — كان ولي الأمر يُنشأ سابقاً بدون رقم
+            const code = await this.userCodeGenerator.generateUserCode(tx, 'PARENT');
 
             const user = await tx.user.create({
                 data: {
                     schoolId, userType: 'PARENT',
+                    code,
                     name: dto.name,
                     gender: dto.gender,        // ← SRS-PAR: gender إلزامي
                     phone: dto.phone,
@@ -84,6 +92,7 @@ export class ParentsService {
             uuid: result.user.uuid,
             name: result.user.name,
             phone: result.user.phone,
+            code: result.user.code,
             password,
             schoolCode: result.schoolCode,
         };
@@ -91,18 +100,18 @@ export class ParentsService {
 
     // ─── SRS-PAR-03: Parent Profile ─────────────────────────
 
-    async getParentProfile(userUuid: string) {
+    async getParentProfile(userUuid: string, schoolId: number) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false },
+            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false, schoolId },
             select: {
-                uuid: true, name: true, phone: true, email: true,
+                uuid: true, code: true, name: true, phone: true, email: true,
                 gender: true,
                 province: true, district: true, addressArea: true,
                 isActive: true, createdAt: true, updatedAt: true,
                 parent: {
                     select: {
                         childLinks: {
-                            where: { isDeleted: false },
+                            where: { isDeleted: false, student: { user: { schoolId } } },
                             include: {
                                 student: {
                                     include: {
@@ -128,9 +137,9 @@ export class ParentsService {
 
     // ─── SRS-PAR-04: Update Parent ──────────────────────────
 
-    async updateParent(userUuid: string, dto: UpdateParentDto) {
+    async updateParent(userUuid: string, schoolId: number, dto: UpdateParentDto) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false },
+            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false, schoolId },
             select: { id: true, schoolId: true },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
@@ -165,14 +174,14 @@ export class ParentsService {
         }
 
         // إرجاع الملف المحدّث
-        return this.getParentProfile(userUuid);
+        return this.getParentProfile(userUuid, schoolId);
     }
 
     // ─── SRS-PAR-05: Toggle Active (Block/Unblock) ──────────
 
-    async toggleActive(uuid: string, isActive: boolean) {
+    async toggleActive(uuid: string, schoolId: number, isActive: boolean) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid, userType: 'PARENT', isDeleted: false },
+            where: { uuid, userType: 'PARENT', isDeleted: false, schoolId },
             select: { id: true },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
@@ -187,10 +196,10 @@ export class ParentsService {
 
     // ─── SRS-PAR-06: Reset Password ─────────────────────────
 
-    async resetPassword(userUuid: string, newPassword?: string) {
+    async resetPassword(userUuid: string, schoolId: number, newPassword?: string) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false },
-            select: { id: true, phone: true, schoolId: true },
+            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false, schoolId },
+            select: { id: true, code: true, phone: true, schoolId: true },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
 
@@ -204,7 +213,8 @@ export class ParentsService {
             select: { schoolCode: true },
         });
 
-        return { password, phone: user.phone, schoolCode: school?.schoolCode };
+        // code = بيانات الدخول الفعلية (FR-NUM-007)؛ phone/schoolCode للتوافق مع الواجهات الحالية
+        return { code: user.code, password, phone: user.phone, schoolCode: school?.schoolCode };
     }
 
     // ─── SRS-PAR-07: Get Credentials ────────────────────────
@@ -212,7 +222,7 @@ export class ParentsService {
     async getCredentials(uuid: string, schoolId: number) {
         const user = await this.prisma.user.findFirst({
             where: { uuid, userType: 'PARENT', isDeleted: false, schoolId },
-            select: { phone: true },
+            select: { code: true, phone: true },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
 
@@ -225,6 +235,7 @@ export class ParentsService {
         // السيرفر يحتاج آلية تخزين النص الصريح — يُحسم في التنفيذ
         // حالياً نرجع null مع ملاحظة للعميل
         return {
+            code: user.code,
             schoolCode: school?.schoolCode,
             phone: user.phone,
             password: null as string | null,  // يحتاج تصميم آلية التخزين
@@ -233,9 +244,9 @@ export class ParentsService {
 
     // ─── SRS-PAR-08: Link Children ──────────────────────────
 
-    async linkChildren(userUuid: string, dto: LinkChildrenDto) {
+    async linkChildren(userUuid: string, schoolId: number, dto: LinkChildrenDto) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false },
+            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false, schoolId },
             select: { id: true },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
@@ -246,6 +257,7 @@ export class ParentsService {
                 uuid: { in: dto.studentUuids },
                 userType: 'STUDENT',
                 isDeleted: false,
+                schoolId, // SR-NUM-004: لا ربط بطلاب مدرسة أخرى
             },
             select: { id: true, uuid: true },
         });
@@ -267,15 +279,15 @@ export class ParentsService {
 
     // ─── SRS-PAR-08: Unlink Child ───────────────────────────
 
-    async unlinkChild(userUuid: string, studentUuid: string) {
+    async unlinkChild(userUuid: string, schoolId: number, studentUuid: string) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false },
+            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false, schoolId },
             select: { id: true },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
 
         const student = await this.prisma.user.findFirst({
-            where: { uuid: studentUuid, userType: 'STUDENT', isDeleted: false },
+            where: { uuid: studentUuid, userType: 'STUDENT', isDeleted: false, schoolId },
             select: { id: true },
         });
         if (!student) throw new NotFoundException('STUDENT_NOT_FOUND');

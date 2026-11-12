@@ -863,6 +863,7 @@ describe('VIDEO P4-7B — Real FFmpeg Staging & E2E Validation (asas-media-poc)'
 
         const assignedTeacherUser = await prisma.user.create({
           data: {
+            code: 9300001,
             schoolId: schoolAId,
             userType: UserType.TEACHER,
             name: 'معلم مسند - المدرسة أ',
@@ -884,6 +885,7 @@ describe('VIDEO P4-7B — Real FFmpeg Staging & E2E Validation (asas-media-poc)'
 
         const unassignedTeacherUser = await prisma.user.create({
           data: {
+            code: 9300002,
             schoolId: schoolAId,
             userType: UserType.TEACHER,
             name: 'معلم غير مسند - المدرسة أ',
@@ -899,6 +901,7 @@ describe('VIDEO P4-7B — Real FFmpeg Staging & E2E Validation (asas-media-poc)'
         // طالب مشترك في المدرسة A
         const subStudentUser = await prisma.user.create({
           data: {
+            code: 9300003,
             schoolId: schoolAId,
             userType: UserType.STUDENT,
             name: 'طالب مشترك - المدرسة أ',
@@ -934,6 +937,7 @@ describe('VIDEO P4-7B — Real FFmpeg Staging & E2E Validation (asas-media-poc)'
         // طالب غير مشترك في المدرسة A
         const unsubStudentUser = await prisma.user.create({
           data: {
+            code: 9300004,
             schoolId: schoolAId,
             userType: UserType.STUDENT,
             name: 'طالب غير مشترك - المدرسة أ',
@@ -950,6 +954,7 @@ describe('VIDEO P4-7B — Real FFmpeg Staging & E2E Validation (asas-media-poc)'
         // طالب في المدرسة B
         const schoolBStudentUser = await prisma.user.create({
           data: {
+            code: 9300005,
             schoolId: schoolBId,
             userType: UserType.STUDENT,
             name: 'طالب - المدرسة ب',

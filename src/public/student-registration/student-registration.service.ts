@@ -22,6 +22,7 @@ import { CheckPhoneDto } from './dto/check-phone.dto';
 import { CompleteWithoutOtpDto } from './dto/complete-without-otp.dto';
 import { PhoneRateLimiterService } from './phone-rate-limiter.service';
 import { SubscriptionTrialService } from '../../school/common/subscription/subscription-trial.service';
+import { UserCodeGeneratorService } from '../../common/user-code/user-code-generator.service';
 
 // ─── Internal shared types ────────────────────────────────────
 
@@ -73,6 +74,7 @@ export class StudentRegistrationService {
     private readonly jwt: JwtService,
     private readonly phoneRateLimiter: PhoneRateLimiterService,
     private readonly trialService: SubscriptionTrialService,
+    private readonly userCodeGenerator: UserCodeGeneratorService,
   ) {}
 
   // ─── UX Phone Checking ───────────────────────────────────────
@@ -318,13 +320,8 @@ export class StudentRegistrationService {
         }
       }
 
-      // 6. Generate school number (atomic increment)
-      const updatedSchool = await tx.school.update({
-        where: { id: mafhoomSchool.id },
-        data: { nextUserCode: { increment: 1 } },
-        select: { nextUserCode: true },
-      });
-      const code = updatedSchool.nextUserCode - 1;
+      // 6. توليد الرقم المدرسي الموحَّد (SRS-SCH-NUM-001 §4.1)
+      const code = await this.userCodeGenerator.generateUserCode(tx, 'STUDENT');
 
       // 7. Create User
       const user = await tx.user.create({

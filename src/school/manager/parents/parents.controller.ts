@@ -47,29 +47,29 @@ export class ParentsController {
     // ─── SRS-PAR-03: Parent Profile ─────────────────────────
 
     @Get(':uuid')
-    getProfile(@Param('uuid') uuid: string) {
-        return this.service.getParentProfile(uuid);
+    getProfile(@Req() req: any, @Param('uuid') uuid: string) {
+        return this.service.getParentProfile(uuid, req.schoolContext.id);
     }
 
     // ─── SRS-PAR-04: Update Parent ──────────────────────────
 
     @Patch(':uuid')
-    update(@Param('uuid') uuid: string, @Body() dto: UpdateParentDto) {
-        return this.service.updateParent(uuid, dto);
+    update(@Req() req: any, @Param('uuid') uuid: string, @Body() dto: UpdateParentDto) {
+        return this.service.updateParent(uuid, req.schoolContext.id, dto);
     }
 
     // ─── SRS-PAR-05: Block/Unblock ──────────────────────────
 
     @Patch(':uuid/toggle-active')
-    toggleActive(@Param('uuid') uuid: string, @Body() dto: ToggleActiveDto) {
-        return this.service.toggleActive(uuid, dto.isActive);
+    toggleActive(@Req() req: any, @Param('uuid') uuid: string, @Body() dto: ToggleActiveDto) {
+        return this.service.toggleActive(uuid, req.schoolContext.id, dto.isActive);
     }
 
     // ─── SRS-PAR-06: Reset Password ─────────────────────────
 
     @Post(':uuid/reset-password')
-    resetPassword(@Param('uuid') uuid: string, @Body() dto: ResetPasswordDto) {
-        return this.service.resetPassword(uuid, dto.password);
+    resetPassword(@Req() req: any, @Param('uuid') uuid: string, @Body() dto: ResetPasswordDto) {
+        return this.service.resetPassword(uuid, req.schoolContext.id, dto.password);
     }
 
     // ─── SRS-PAR-07: Get Credentials ────────────────────────
@@ -82,14 +82,14 @@ export class ParentsController {
     // ─── SRS-PAR-08: Link Children ──────────────────────────
 
     @Post(':uuid/link-children')
-    linkChildren(@Param('uuid') uuid: string, @Body() dto: LinkChildrenDto) {
-        return this.service.linkChildren(uuid, dto);
+    linkChildren(@Req() req: any, @Param('uuid') uuid: string, @Body() dto: LinkChildrenDto) {
+        return this.service.linkChildren(uuid, req.schoolContext.id, dto);
     }
 
     // ─── SRS-PAR-08: Unlink Child ───────────────────────────
 
     @Delete(':uuid/children/:studentUuid')
-    unlinkChild(@Param('uuid') uuid: string, @Param('studentUuid') studentUuid: string) {
-        return this.service.unlinkChild(uuid, studentUuid);
+    unlinkChild(@Req() req: any, @Param('uuid') uuid: string, @Param('studentUuid') studentUuid: string) {
+        return this.service.unlinkChild(uuid, req.schoolContext.id, studentUuid);
     }
 }

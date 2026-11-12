@@ -3,15 +3,20 @@ import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /**
- * DTO لتسجيل دخول مستخدمي المدرسة
+ * DTO لتسجيل دخول مستخدمي المدرسة (SRS-SCH-NUM-001 §4.3)
  *
- * حقل `identifier` موحّد:
- * - إذا كان رقماً → يُبحث عنه كـ code (ADMIN/TEACHER/STUDENT)
- * - إذا لم يُوجد → يُبحث عنه كـ phone (PARENT)
+ * - `identifier`: الرقم المدرسي الموحد فقط (7 خانات) — أُلغي الدخول برقم الهاتف لجميع الفئات.
+ *   لا نرفض الصيغة هنا بـ 400 حتى لا نميّز «صيغة خاطئة» عن «بيانات خاطئة»؛
+ *   الخدمة ترجع INVALID_CREDENTIALS الموحّدة لأي معرّف غير صالح.
+ * - `schoolUuid`: اختياري.
+ *   • التطبيق العام لا يرسله — الخادم يستنتج المدرسة من حساب المستخدم.
+ *   • التطبيق الخاص (White Label) يرسله — ويُستخدم للتقييد فقط (رفض مستخدمي مدرسة أخرى)،
+ *     ولا يُستخدم أبداً لتحديد هوية المستخدم.
  */
 export class SchoolLoginDto {
+  @IsOptional()
   @IsUUID()
-  schoolUuid!: string;
+  schoolUuid?: string;
 
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : String(value)))
   @IsString()
