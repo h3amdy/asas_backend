@@ -576,6 +576,7 @@ describe('VIDEO P4-5a — Real PostgreSQL Concurrency (RACE-T1) & Isolation (S4 
     });
     const teacherUser = await prismaA.user.create({
       data: {
+        code: 9100001,
         schoolId: schoolAId,
         userType: 'TEACHER',
         name: 'معلم الاختبار',
@@ -590,6 +591,7 @@ describe('VIDEO P4-5a — Real PostgreSQL Concurrency (RACE-T1) & Isolation (S4 
     });
     const studentUser = await prismaA.user.create({
       data: {
+        code: 9100002,
         schoolId: schoolAId,
         userType: 'STUDENT',
         name: 'طالب الاختبار',

@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { UserCodeModule } from './common/user-code/user-code.module';
 import { SchoolsModule } from './owner/schools/schools.module';
 import { GradesModule } from './owner/grades/grades.module';
 import { StatusModule } from './status/status.module';
@@ -21,6 +22,7 @@ import { RequestLoggerMiddleware } from './common/middleware/request-logger.midd
 @Module({
   imports: [
     PrismaModule,
+    UserCodeModule, // 🔢 المولّد المركزي للرقم المدرسي الموحد (SRS-SCH-NUM-001)
     ScheduleModule.forRoot(),
 
     // 🛡️ Rate Limiting — حماية الـ public endpoints من الإساءة

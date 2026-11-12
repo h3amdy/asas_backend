@@ -260,7 +260,7 @@ async function main() {
   await prisma.user.deleteMany({ where: { phone: phoneAuth } });
   await prisma.otpVerification.deleteMany({ where: { phone: phoneAuth } });
 
-  // ─── nextUserCode concurrent test ────────────────────
+  // ─── Unified school number concurrent test (SRS-SCH-NUM-001) ────
 
   console.log('\nT-Code — Concurrent registrations → unique school codes');
   const phones = ['+967777661111', '+967777662222', '+967777663333'];
@@ -290,11 +290,13 @@ async function main() {
     .map(r => r.value.user.code);
 
   const uniqueCodes = new Set(successCodes);
+  // SRS-SCH-NUM-001: الأرقام من المولّد الموحد — 7 خانات ضمن 2200000..2999999 (ليست تسلسلية)
+  const allInRange = successCodes.every((c: number) => c >= 2200000 && c <= 2999999);
   console.log(`  Registered: ${successCodes.length}/3`);
   console.log(`  Codes: ${successCodes.join(', ')}`);
   console.log(`  All unique: ${uniqueCodes.size === successCodes.length}`);
-  console.log(`  Sequential: ${successCodes.length > 0}`);
-  console.log(`  ${uniqueCodes.size === successCodes.length && successCodes.length === 3 ? '✅ T-Code PASS' : '❌ T-Code FAIL'}`);
+  console.log(`  All in unified range: ${allInRange}`);
+  console.log(`  ${uniqueCodes.size === successCodes.length && successCodes.length === 3 && allInRange ? '✅ T-Code PASS' : '❌ T-Code FAIL'}`);
 
   // Cleanup Code test
   for (const p of phones) {

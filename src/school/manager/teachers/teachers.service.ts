@@ -2,6 +2,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
 import { CreateTeacherDto, UpdateTeacherDto } from './dto/teachers.dto';
 
 /**
@@ -18,7 +19,10 @@ import { CreateTeacherDto, UpdateTeacherDto } from './dto/teachers.dto';
  */
 @Injectable()
 export class TeachersService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly userCodeGenerator: UserCodeGeneratorService,
+    ) { }
 
     // ─── SRS-TCH-01: List & Search ──────────────────────────
 
@@ -68,15 +72,14 @@ export class TeachersService {
         const password = dto.password ?? this.generatePassword();
         const passwordHash = await bcrypt.hash(password, 10);
 
-        // ✅ كل شيء داخل Transaction واحدة (بما في ذلك next_user_code)
+        // ✅ كل شيء داخل Transaction واحدة
         const result = await this.prisma.$transaction(async (tx) => {
-            // Step 1: توليد الرقم المدرسي (داخل Transaction لتجنب race condition)
-            const school = await tx.school.findUniqueOrThrow({ where: { id: schoolId } });
-            const code = school.nextUserCode;
-            await tx.school.update({
+            // Step 1: الرقم المدرسي الموحد (SRS-SCH-NUM-001)
+            const school = await tx.school.findUniqueOrThrow({
                 where: { id: schoolId },
-                data: { nextUserCode: code + 1 },
+                select: { schoolCode: true },
             });
+            const code = await this.userCodeGenerator.generateUserCode(tx, 'TEACHER');
 
             // Step 2: إنشاء حساب المستخدم
             const user = await tx.user.create({

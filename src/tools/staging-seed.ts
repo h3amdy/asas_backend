@@ -15,6 +15,7 @@
 
 import { PrismaClient, GradeStage, UserType, AppType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { allocateUserCodeForFixture } from '../common/user-code/user-code.testing';
 
 const prisma = new PrismaClient();
 
@@ -51,18 +52,20 @@ async function seedOwner(): Promise<void> {
   if (exists) {
     console.log('   ↳ OWNER already exists:', exists.email);
   } else {
+    const code = await allocateUserCodeForFixture(prisma);
     await prisma.user.create({
       data: {
         userType: UserType.OWNER,
         name,
         email,
         passwordHash,
+        code,
         isActive: true,
         isDeleted: false,
         schoolId: null,
       },
     });
-    console.log('   ↳ OWNER created:', email);
+    console.log(`   ↳ OWNER created: ${email} (code=${code})`);
   }
 
   // Seed PlatformUser (Required for the new admin_panel auth)
@@ -292,22 +295,20 @@ interface UserDef {
   name: string;
   userType: UserType;
   schoolCode: number;
-  code?: number;     // رقم مدرسي — للدخول عبر school auth
   phone?: string;    // هاتف — لولي الأمر
 }
 
 const TEST_USERS: UserDef[] = [
   // مدرسة أ (99001)
-  // تسجيل الدخول: كود المدرسة 99001 → الرقم المدرسي → كلمة المرور
-  { email: 'admin-a@test.invalid', password: '123456', name: 'مدير مدرسة أ', userType: UserType.ADMIN, schoolCode: 99001, code: 1 },
-  { email: 'teacher-a@test.invalid', password: '123456', name: 'معلم مدرسة أ', userType: UserType.TEACHER, schoolCode: 99001, code: 2 },
-  { email: 'student-a@test.invalid', password: '123456', name: 'طالب مدرسة أ', userType: UserType.STUDENT, schoolCode: 99001, code: 3 },
-  // ولي الأمر يسجل برقم الهاتف وليس الرقم المدرسي
+  // الأرقام المدرسية تُولَّد من المولّد المركزي وتُطبع في نهاية التشغيل
+  { email: 'admin-a@test.invalid', password: '123456', name: 'مدير مدرسة أ', userType: UserType.ADMIN, schoolCode: 99001 },
+  { email: 'teacher-a@test.invalid', password: '123456', name: 'معلم مدرسة أ', userType: UserType.TEACHER, schoolCode: 99001 },
+  { email: 'student-a@test.invalid', password: '123456', name: 'طالب مدرسة أ', userType: UserType.STUDENT, schoolCode: 99001 },
   { email: 'parent-a@test.invalid', password: '123456', name: 'ولي أمر مدرسة أ', userType: UserType.PARENT, schoolCode: 99001, phone: '777000001' },
   // مدرسة ب (99002)
-  { email: 'admin-b@test.invalid', password: '123456', name: 'مدير مدرسة ب', userType: UserType.ADMIN, schoolCode: 99002, code: 1 },
-  { email: 'teacher-b@test.invalid', password: '123456', name: 'معلم مدرسة ب', userType: UserType.TEACHER, schoolCode: 99002, code: 2 },
-  { email: 'student-b@test.invalid', password: '123456', name: 'طالب مدرسة ب', userType: UserType.STUDENT, schoolCode: 99002, code: 3 },
+  { email: 'admin-b@test.invalid', password: '123456', name: 'مدير مدرسة ب', userType: UserType.ADMIN, schoolCode: 99002 },
+  { email: 'teacher-b@test.invalid', password: '123456', name: 'معلم مدرسة ب', userType: UserType.TEACHER, schoolCode: 99002 },
+  { email: 'student-b@test.invalid', password: '123456', name: 'طالب مدرسة ب', userType: UserType.STUDENT, schoolCode: 99002 },
 ];
 
 async function seedUsers(): Promise<void> {
@@ -331,13 +332,15 @@ async function seedUsers(): Promise<void> {
     }
 
     const passwordHash = await bcrypt.hash(userDef.password, 10);
+    // الرقم المدرسي الموحد من المولّد المركزي (SRS-SCH-NUM-001) — لا أرقام يدوية
+    const code = await allocateUserCodeForFixture(prisma);
 
     const user = await prisma.user.create({
       data: {
         userType: userDef.userType,
         name: userDef.name,
         email: userDef.email,
-        code: userDef.code ?? null,
+        code,
         phone: userDef.phone ?? null,
         passwordHash,
         isActive: true,
@@ -501,20 +504,16 @@ async function main(): Promise<void> {
   console.log('✅ Staging seed complete!');
   console.log('════════════════════════════════════════════');
   console.log('');
-  console.log('Test accounts (كلمة المرور: 123456 للجميع):');
+  console.log('Test accounts (كلمة المرور: 123456 للجميع — الدخول بالرقم المدرسي فقط):');
   console.log('');
-  console.log('  📱 مدرسة أ (كود: 99001)');
-  console.log('  ──────────────────────────────');
-  console.log('  مدير     → كود 99001 → رقم مدرسي: 1 → كلمة المرور: 123456');
-  console.log('  معلم     → كود 99001 → رقم مدرسي: 2 → كلمة المرور: 123456');
-  console.log('  طالب     → كود 99001 → رقم مدرسي: 3 → كلمة المرور: 123456');
-  console.log('  ولي أمر  → كود 99001 → هاتف: 777000001  → كلمة المرور: 123456');
-  console.log('');
-  console.log('  📱 مدرسة ب (كود: 99002)');
-  console.log('  ──────────────────────────────');
-  console.log('  مدير     → كود 99002 → رقم مدرسي: 1 → كلمة المرور: 123456');
-  console.log('  معلم     → كود 99002 → رقم مدرسي: 2 → كلمة المرور: 123456');
-  console.log('  طالب     → كود 99002 → رقم مدرسي: 3 → كلمة المرور: 123456');
+  const seeded = await prisma.user.findMany({
+    where: { email: { in: TEST_USERS.map((u) => u.email) } },
+    select: { email: true, code: true, userType: true, school: { select: { schoolCode: true } } },
+    orderBy: { id: 'asc' },
+  });
+  for (const u of seeded) {
+    console.log(`  ${u.userType.padEnd(8)} مدرسة ${u.school?.schoolCode ?? '-'} → رقم مدرسي: ${u.code}  (${u.email})`);
+  }
   console.log('');
 }
 

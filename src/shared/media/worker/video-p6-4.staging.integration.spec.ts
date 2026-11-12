@@ -851,6 +851,7 @@ describe('VIDEO P6 (Stage 2) — Backend Video Pipeline Live Integration (p6-liv
 
         const assignedTeacherUser = await prisma.user.create({
           data: {
+            code: 9400001,
             schoolId: schoolAId,
             userType: UserType.TEACHER,
             name: 'معلم مسند - P6-4 أ',
@@ -872,6 +873,7 @@ describe('VIDEO P6 (Stage 2) — Backend Video Pipeline Live Integration (p6-liv
 
         const unassignedTeacherUser = await prisma.user.create({
           data: {
+            code: 9400002,
             schoolId: schoolAId,
             userType: UserType.TEACHER,
             name: 'معلم غير مسند - P6-4 أ',
@@ -886,6 +888,7 @@ describe('VIDEO P6 (Stage 2) — Backend Video Pipeline Live Integration (p6-liv
 
         const subStudentUser = await prisma.user.create({
           data: {
+            code: 9400003,
             schoolId: schoolAId,
             userType: UserType.STUDENT,
             name: 'طالب مشترك - P6-4 أ',
@@ -920,6 +923,7 @@ describe('VIDEO P6 (Stage 2) — Backend Video Pipeline Live Integration (p6-liv
 
         const unsubStudentUser = await prisma.user.create({
           data: {
+            code: 9400004,
             schoolId: schoolAId,
             userType: UserType.STUDENT,
             name: 'طالب غير مشترك - P6-4 أ',
@@ -935,6 +939,7 @@ describe('VIDEO P6 (Stage 2) — Backend Video Pipeline Live Integration (p6-liv
 
         const schoolBStudentUser = await prisma.user.create({
           data: {
+            code: 9400005,
             schoolId: schoolBId,
             userType: UserType.STUDENT,
             name: 'طالب - P6-4 ب',

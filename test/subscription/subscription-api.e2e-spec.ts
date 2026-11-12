@@ -54,6 +54,7 @@ describeIfDb('Subscription API — Phases 2, 3, 6', () => {
   let studentId: number;
   let studentBId: number;
   let serial = 1;
+  let testCodeCounter = 9700001;
 
   const mkSchool = (code: number) =>
     prisma.school.create({
@@ -61,7 +62,7 @@ describeIfDb('Subscription API — Phases 2, 3, 6', () => {
     });
   const mkUser = (sid: number, userType: 'ADMIN' | 'STUDENT', name: string) =>
     prisma.user.create({
-      data: { schoolId: sid, userType, name, passwordHash: 'x', isActive: true },
+      data: { schoolId: sid, userType, name, passwordHash: 'x', isActive: true, code: testCodeCounter++ },
     });
 
   beforeAll(async () => {

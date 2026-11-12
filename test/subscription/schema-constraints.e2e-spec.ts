@@ -22,6 +22,7 @@ describeIfDb('Subscription schema constraints (Phase 1)', () => {
   let batchA: number;
   let batchB: number;
   let serial = 1;
+  let testCodeCounter = 9600001;
 
   /** يتوقع رفض قاعدة البيانات مع اسم القيد المذكور */
   const expectViolation = async (op: Promise<unknown>, constraint: string) => {
@@ -70,7 +71,7 @@ describeIfDb('Subscription schema constraints (Phase 1)', () => {
       });
     const mkUser = (schoolId: number, userType: 'ADMIN' | 'STUDENT', name: string) =>
       prisma.user.create({
-        data: { schoolId, userType, name, passwordHash: 'x', isActive: true },
+        data: { schoolId, userType, name, passwordHash: 'x', isActive: true, code: testCodeCounter++ },
       });
 
     const base = 900000 + Math.floor(Math.random() * 90000);
@@ -333,7 +334,7 @@ describeIfDb('Subscription schema constraints (Phase 1)', () => {
   describe('ON DELETE RESTRICT protects history', () => {
     it('blocks hard-deleting a student who has an access period', async () => {
       const s = await prisma.user.create({
-        data: { schoolId: schoolA, userType: 'STUDENT', name: 'tmp', passwordHash: 'x', isActive: true },
+        data: { schoolId: schoolA, userType: 'STUDENT', name: 'tmp', passwordHash: 'x', isActive: true, code: testCodeCounter++ },
       });
       await prisma.studentAccessPeriod.create({
         data: {

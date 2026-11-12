@@ -11,12 +11,14 @@ import {
     DropEnrollmentDto, ReEnrollDto, ResetPasswordDto,
 } from './dto/students.dto';
 import { SubscriptionTrialService } from '../../common/subscription/subscription-trial.service';
+import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
 
 @Injectable()
 export class StudentsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly trialService: SubscriptionTrialService,
+        private readonly userCodeGenerator: UserCodeGeneratorService,
     ) { }
 
     // ─── Helpers ────────────────────────────────────────────────
@@ -161,20 +163,17 @@ export class StudentsService {
         const currentYear = await this.getCurrentYear(schoolId);
         await this.validateGradeSection(dto.gradeId, dto.sectionId, schoolId);
 
-        // Generate unique code
+        // schoolCode ما زال ضمن الاستجابة الحالية (يُحذف من واجهات المشاركة في المرحلة 3)
         const school = await this.prisma.school.findUniqueOrThrow({
             where: { id: schoolId },
+            select: { schoolCode: true },
         });
-        const code = school.nextUserCode;
 
         const passwordHash = await bcrypt.hash(dto.password, 10);
 
         const result = await this.prisma.$transaction(async (tx) => {
-            // Step 1: Increment school code
-            await tx.school.update({
-                where: { id: schoolId },
-                data: { nextUserCode: code + 1 },
-            });
+            // Step 1: الرقم المدرسي الموحد (SRS-SCH-NUM-001)
+            const code = await this.userCodeGenerator.generateUserCode(tx, 'STUDENT');
 
             // Step 2: Create user
             const user = await tx.user.create({
@@ -238,11 +237,11 @@ export class StudentsService {
             student: {
                 uuid: result.uuid,
                 name: result.name,
-                code,
+                code: result.code,
             },
             credentials: {
                 schoolCode: school.schoolCode,
-                studentCode: code,
+                studentCode: result.code,
                 password: dto.password,
             },
         };

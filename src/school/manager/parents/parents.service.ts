@@ -2,6 +2,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
 import { CreateParentDto, UpdateParentDto, LinkChildrenDto } from './dto/parents.dto';
 
 /**
@@ -19,7 +20,10 @@ import { CreateParentDto, UpdateParentDto, LinkChildrenDto } from './dto/parents
  */
 @Injectable()
 export class ParentsService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly userCodeGenerator: UserCodeGeneratorService,
+    ) { }
 
     // ─── SRS-PAR-01: List & Search ──────────────────────────
 
@@ -60,10 +64,13 @@ export class ParentsService {
 
         const result = await this.prisma.$transaction(async (tx) => {
             const school = await tx.school.findUniqueOrThrow({ where: { id: schoolId } });
+            // الرقم المدرسي الموحد (SRS-SCH-NUM-001) — كان ولي الأمر يُنشأ سابقاً بدون رقم
+            const code = await this.userCodeGenerator.generateUserCode(tx, 'PARENT');
 
             const user = await tx.user.create({
                 data: {
                     schoolId, userType: 'PARENT',
+                    code,
                     name: dto.name,
                     gender: dto.gender,        // ← SRS-PAR: gender إلزامي
                     phone: dto.phone,
@@ -84,6 +91,7 @@ export class ParentsService {
             uuid: result.user.uuid,
             name: result.user.name,
             phone: result.user.phone,
+            code: result.user.code,
             password,
             schoolCode: result.schoolCode,
         };

@@ -244,6 +244,7 @@ describe('VIDEO P4-3 — PostgreSQL Integration Tests (Real DB + Real FS + SHA-2
 
     const teacherUser = await prisma.user.create({
       data: {
+        code: 9200001,
         schoolId: school.id,
         userType: UserType.TEACHER,
         name: 'معلم مسند',

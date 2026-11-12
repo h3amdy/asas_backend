@@ -324,7 +324,7 @@ describeIfSandbox(
     let parentAUser: { id: number; uuid: string; phone: string; name: string };
     let teacherBUser: { id: number; uuid: string; name: string };
     let studentBUser: { id: number; uuid: string; name: string };
-    let platformAdmin: { id: number; uuid: string; email: string };
+    let platformAdmin: { id: number; uuid: string; email: string | null };
     let subjectDict: {
       id: number;
       uuid: string;
@@ -1180,6 +1180,7 @@ describeIfSandbox(
 
       const createdStudentA2 = await prisma.user.create({
         data: {
+          code: 9500001,
           schoolId: schoolA.id,
           userType: 'STUDENT',
           name: `student-a2 (${runId})`,
