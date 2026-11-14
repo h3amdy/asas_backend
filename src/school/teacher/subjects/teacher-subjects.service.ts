@@ -48,7 +48,7 @@ export class TeacherSubjectsService {
                                 dictionary: { select: { uuid: true } },
                             },
                         },
-                        section: { select: { id: true, name: true, orderIndex: true } },
+                        section: { select: { id: true, uuid: true, name: true, orderIndex: true } },
                     },
                 },
             },
@@ -62,7 +62,7 @@ export class TeacherSubjectsService {
             coverMediaAssetUuid: string | null;
             dictionaryUuid: string | null;
             grade: { id: number; displayName: string };
-            sections: { id: number; name: string; orderIndex: number | null }[];
+            sections: { id: number; uuid: string; name: string; orderIndex: number | null }[];
         }>();
 
         for (const a of assignments) {
@@ -83,6 +83,7 @@ export class TeacherSubjectsService {
 
             subjectsMap.get(subject.uuid)!.sections.push({
                 id: section.id,
+                uuid: section.uuid,
                 name: section.name,
                 orderIndex: section.orderIndex,
             });

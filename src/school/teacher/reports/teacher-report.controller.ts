@@ -36,6 +36,7 @@ export class TeacherReportController {
         @Query('subjectUuid') subjectUuid: string,
         @Query('termUuid') termUuid?: string,
         @Query('period') period?: string,
+        @Query('sectionUuid') sectionUuid?: string,
     ) {
         const schoolId = req.schoolContext.id;
         const userUuid = req.user.sub;
@@ -71,7 +72,7 @@ export class TeacherReportController {
                 subjectSection: {
                     include: {
                         subject: { select: { grade: { select: { uuid: true } } } },
-                        section: { select: { id: true } },
+                        section: { select: { id: true, uuid: true } },
                     },
                 },
             },
@@ -86,7 +87,15 @@ export class TeacherReportController {
         }
 
         // 3. استخراج sectionIds + gradeUuid
-        const sectionIds = assignments.map(a => a.subjectSection.section.id);
+        // فلترة اختيارية بشعبة واحدة — يجب أن تكون من شُعب المعلم
+        let scoped = assignments;
+        if (sectionUuid) {
+            scoped = assignments.filter(a => a.subjectSection.section.uuid === sectionUuid);
+            if (scoped.length === 0) {
+                throw new ForbiddenException('الشعبة غير مسندة لك في هذه المادة');
+            }
+        }
+        const sectionIds = scoped.map(a => a.subjectSection.section.id);
         const gradeUuid = assignments[0].subjectSection.subject.grade.uuid;
 
         // 4. استدعاء التقرير الشامل مع الفلاتر
