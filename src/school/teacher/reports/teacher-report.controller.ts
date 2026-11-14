@@ -1,5 +1,5 @@
 // src/school/teacher/reports/teacher-report.controller.ts
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, NotFoundException, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ReportsService } from '../../reports/reports.service';
 import { SchoolJwtAuthGuard } from '../../auth/guards/school-jwt-auth.guard';
 import { SchoolContextGuard } from '../../common/guards/school-context.guard';
@@ -141,5 +141,47 @@ export class TeacherReportController {
                 period: (period as any) ?? 'full_semester',
             },
         );
+    }
+
+    // ── مراجعة إجابات طالب في درس (سياق المعلم) ──
+    // يُسمح فقط إذا كان المعلم مسنداً لمادة هذا الدرس
+    @Get('comprehensive/students/:studentUuid/lessons/:lessonUuid/review')
+    async getStudentLessonReview(
+        @Req() req: any,
+        @Param('studentUuid') studentUuid: string,
+        @Param('lessonUuid') lessonUuid: string,
+    ) {
+        const schoolId = req.schoolContext.id;
+
+        const user = await this.prisma.user.findFirst({
+            where: { uuid: req.user.sub, schoolId },
+            include: { teacher: { select: { userId: true } } },
+        });
+        if (!user?.teacher) {
+            throw new ForbiddenException('ليس لديك صلاحية للوصول لهذا المورد');
+        }
+
+        const lesson = await this.prisma.lesson.findFirst({
+            where: { uuid: lessonUuid, schoolId, isDeleted: false },
+            select: { subjectId: true },
+        });
+        if (!lesson) {
+            throw new NotFoundException('LESSON_NOT_FOUND');
+        }
+
+        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
+            where: {
+                teacherId: user.teacher.userId,
+                isDeleted: false,
+                isActive: true,
+                subjectSection: { isDeleted: false, subjectId: lesson.subjectId },
+            },
+            select: { teacherId: true },
+        });
+        if (!assignment) {
+            throw new ForbiddenException('ليس لديك صلاحية للوصول لهذا المورد');
+        }
+
+        return this.reportsService.getStudentLessonReview(schoolId, studentUuid, lessonUuid);
     }
 }
