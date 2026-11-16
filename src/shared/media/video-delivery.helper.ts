@@ -102,6 +102,7 @@ export function buildSanitizedVariantsMap(
         clientVariants[key] = {
           etag: typeof v.etag === 'string' ? v.etag : null,
           size_bytes: typeof v.size_bytes === 'number' ? v.size_bytes : 0,
+          ...(typeof v.sha256 === 'string' ? { sha256: v.sha256 } : {}),
           content_type:
             typeof v.content_type === 'string' ? v.content_type : '',
           width: typeof v.width === 'number' ? v.width : undefined,
@@ -229,8 +230,134 @@ export async function buildMediaAssetStatusResponse(
 }
 
 /**
+ * سياسة نسخ الأنواع غير الفيديو (صور/صوت/وثائق) عند تقديمها من R2.
+ * - allowed: النسخ المسموح طلبها.
+ * - defaultVariant: يطابق افتراضيات مسار التنزيل المباشر الحالي.
+ * - fallbackToOriginal: إن لم تتوفر النسخة المطلوبة نقدّم original (مثل السلوك المحلي).
+ */
+const FLAT_VARIANT_POLICY: Record<
+  string,
+  { allowed: string[]; defaultVariant: string; fallbackToOriginal: boolean }
+> = {
+  IMAGE: {
+    allowed: ['original', 'medium', 'small', 'thumb'],
+    defaultVariant: 'medium',
+    fallbackToOriginal: true,
+  },
+  AUDIO: {
+    allowed: ['original', 'low'],
+    defaultVariant: 'low',
+    fallbackToOriginal: true,
+  },
+  DOCUMENT: {
+    allowed: ['original'],
+    defaultVariant: 'original',
+    fallbackToOriginal: false,
+  },
+};
+
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+
+export interface ResolvedFlatVariant {
+  variant: string;
+  storageKey: string;
+  sizeBytes: number;
+  sha256: string;
+  etag: string | null;
+  contentType: string;
+}
+
+/**
+ * يحدد النسخة المطلوب تقديمها من variants_json المسطح (original/medium/small/low/thumb)
+ * لأصل غير فيديو مخزّن على R2.
+ *
+ * لا تُعتبر النسخة متاحة إلا إذا كانت status = 'VERIFIED' ولها storage_key و sha256 و size_bytes،
+ * أي أنها رُفعت إلى R2 وتم التحقق من بصمتها فعلاً.
+ */
+export function resolveFlatR2Variant(
+  kind: string,
+  variantsJson: string,
+  requestedVariant?: string,
+): ResolvedFlatVariant {
+  const policy = FLAT_VARIANT_POLICY[kind];
+  if (!policy) {
+    throw new BadRequestException({
+      error: 'UNSUPPORTED_KIND',
+      message: 'نوع الوسيط غير مدعوم في التنزيل عبر الرابط الموقّع',
+    });
+  }
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = JSON.parse(variantsJson) as unknown;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      parsed = raw as Record<string, unknown>;
+    }
+  } catch {
+    parsed = {};
+  }
+
+  const verified: Record<string, ResolvedFlatVariant> = {};
+  for (const name of policy.allowed) {
+    const rec = parsed[name];
+    if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
+    const v = rec as Record<string, unknown>;
+    if (
+      v.status === 'VERIFIED' &&
+      typeof v.storage_key === 'string' &&
+      v.storage_key.length > 0 &&
+      typeof v.sha256 === 'string' &&
+      SHA256_HEX_RE.test(v.sha256) &&
+      typeof v.size_bytes === 'number' &&
+      v.size_bytes > 0
+    ) {
+      verified[name] = {
+        variant: name,
+        storageKey: v.storage_key,
+        sizeBytes: v.size_bytes,
+        sha256: v.sha256.toLowerCase(),
+        etag: typeof v.etag === 'string' ? v.etag : null,
+        contentType:
+          typeof v.content_type === 'string' && v.content_type
+            ? v.content_type
+            : kind === 'DOCUMENT'
+              ? 'application/pdf'
+              : 'application/octet-stream',
+      };
+    }
+  }
+
+  const availableVariants = Object.keys(verified);
+  if (availableVariants.length === 0) {
+    throw new ConflictException({
+      error: 'NOT_READY',
+      message: 'لا توجد نسخ متحقق منها لهذا الملف بعد',
+    });
+  }
+
+  const target = (requestedVariant ?? '').trim() || policy.defaultVariant;
+  if (!policy.allowed.includes(target)) {
+    throw new BadRequestException({
+      error: 'INVALID_VARIANT',
+      available_variants: availableVariants,
+      message: `النسخة المطلوبة (${target}) غير مسموحة لهذا النوع من الملفات`,
+    });
+  }
+
+  if (verified[target]) return verified[target];
+  if (policy.fallbackToOriginal && verified.original) return verified.original;
+
+  throw new BadRequestException({
+    error: 'INVALID_VARIANT',
+    available_variants: availableVariants,
+    message: `النسخة المطلوبة (${target}) غير متوفرة لهذا الملف`,
+  });
+}
+
+/**
  * يبني استجابة GET /{school|platform}/media/:uuid/download-url?variant=...
  * مع تطبيق جميع حراس الجاهزية والجودة وتوليد رابط R2 موقّع محلياً دون تسجيل الرابط في أي سجل.
+ * يدعم جميع الأنواع: VIDEO (manifest متداخل) و IMAGE/AUDIO/DOCUMENT (variants_json مسطح).
  */
 export async function generateMediaDownloadUrlResponse(params: {
   asset: MediaAsset;
@@ -257,11 +384,15 @@ export async function generateMediaDownloadUrlResponse(params: {
     });
   }
 
+  const isVideo = String(asset.kind) === 'VIDEO';
+
   if (String(asset.processingStatus) !== 'DONE') {
     throw new ConflictException({
       error: 'NOT_READY',
       processing_status: asset.processingStatus,
-      message: 'الفيديو لا يزال قيد المعالجة أو غير جاهز للتنزيل',
+      message: isVideo
+        ? 'الفيديو لا يزال قيد المعالجة أو غير جاهز للتنزيل'
+        : 'الملف لا يزال قيد المعالجة أو غير جاهز للتنزيل',
     });
   }
 
@@ -269,8 +400,38 @@ export async function generateMediaDownloadUrlResponse(params: {
     throw new ConflictException({
       error: 'NOT_READY',
       processing_status: asset.processingStatus,
-      message: 'بيانات نسخ الفيديو غير جاهزة بعد',
+      message: isVideo
+        ? 'بيانات نسخ الفيديو غير جاهزة بعد'
+        : 'بيانات نسخ الملف غير جاهزة بعد',
     });
+  }
+
+  if (!isVideo) {
+    const resolved = resolveFlatR2Variant(
+      String(asset.kind),
+      asset.variantsJson,
+      requestedVariant,
+    );
+    const ttlSec = videoConfig.r2PresignedGetTtlSeconds;
+    const signed = await r2Storage.getPresignedGetUrl(
+      resolved.storageKey,
+      ttlSec,
+    );
+
+    // ⚠️ قاعدة أمنية صارمة: لا نسجّل signed.url ولا storageKey في أي سجل أبداً
+    logger.log(
+      `🔗 [DownloadUrl] صدر رابط موقّع: actor=${actorLabel}, asset=${asset.uuid}, kind=${asset.kind}, variant=${resolved.variant}, ttl=${ttlSec}s`,
+    );
+
+    return {
+      url: signed.url,
+      expires_at: signed.expiresAt.toISOString(),
+      variant: resolved.variant,
+      size_bytes: resolved.sizeBytes,
+      sha256: resolved.sha256,
+      etag: resolved.etag,
+      content_type: resolved.contentType,
+    };
   }
 
   const manifest = parseVariantsManifest(asset.variantsJson);

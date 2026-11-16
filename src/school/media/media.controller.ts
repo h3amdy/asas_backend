@@ -82,6 +82,7 @@ export class MediaController {
     @Param('uuid') uuid: string,
     @Query('variant') variant: string | undefined,
     @Req() req: SchoolMediaRequest,
+    @Query('quality') quality?: string,
   ) {
     const schoolId: number = req.schoolContext.id;
     const asset = await this.mediaService.getAsset(uuid, schoolId);
@@ -101,7 +102,7 @@ export class MediaController {
     return this.mediaService.getDownloadUrl(
       uuid,
       schoolId,
-      variant,
+      variant || quality,
       actorLabel,
       asset,
     );

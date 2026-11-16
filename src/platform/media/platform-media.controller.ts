@@ -62,6 +62,7 @@ export class PlatformMediaController {
     @Param('uuid') uuid: string,
     @Query('variant') variant: string | undefined,
     @Req() req: PlatformMediaRequest,
+    @Query('quality') quality?: string,
   ) {
     const asset = await this.mediaService.getAsset(uuid);
     const actorLabel =
@@ -69,7 +70,12 @@ export class PlatformMediaController {
         ? req.user.sub
         : String(req?.user?.id ?? 'platform-user');
 
-    return this.mediaService.getDownloadUrl(uuid, variant, actorLabel, asset);
+    return this.mediaService.getDownloadUrl(
+      uuid,
+      variant || quality,
+      actorLabel,
+      asset,
+    );
   }
 
   /**
