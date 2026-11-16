@@ -93,6 +93,7 @@ export class PlatformMediaService {
       asset_uuid: asset.uuid,
       kind: asset.kind,
       content_type: asset.contentType,
+      storage_provider: asset.storageProvider,
       variants: clientVariants,
       processing_status: asset.processingStatus,
       updated_at: asset.updatedAt,

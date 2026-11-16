@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MediaBackupResult } from './backup-engine.interface';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { isPathInside } from '../../../shared/media/storage.service';
 
 /**
  * محرك نسخ الوسائط (DEC-008 Consistency)
@@ -42,19 +43,14 @@ export class MediaBackupEngine {
       let totalSize = BigInt(0);
       const missingStorageKeys: string[] = [];
 
-      this.logger.log(
-        `Starting media backup: ${filesExpected} files expected`,
-      );
-
+      this.logger.log(`Starting media backup: ${filesExpected} files expected`);
 
       for (const storageKey of storageKeys) {
         let sourcePath = path.resolve(mediaBasePath, storageKey);
 
         // ⚠️ حماية أمنية ضد Path Traversal
-        if (!sourcePath.startsWith(resolvedBase)) {
-          this.logger.warn(
-            `Path traversal detected, skipping: ${storageKey}`,
-          );
+        if (!isPathInside(resolvedBase, sourcePath)) {
+          this.logger.warn(`Path traversal detected, skipping: ${storageKey}`);
           missingStorageKeys.push(storageKey);
           continue;
         }
@@ -66,10 +62,13 @@ export class MediaBackupEngine {
         try {
           await fsp.access(sourcePath);
         } catch {
-          const webpKey = storageKey.replace(/\.(jpg|jpeg|png|gif|bin)$/i, '.webp');
+          const webpKey = storageKey.replace(
+            /\.(jpg|jpeg|png|gif|bin)$/i,
+            '.webp',
+          );
           if (webpKey !== storageKey) {
             const webpPath = path.resolve(mediaBasePath, webpKey);
-            if (webpPath.startsWith(resolvedBase)) {
+            if (isPathInside(resolvedBase, webpPath)) {
               try {
                 await fsp.access(webpPath);
                 sourcePath = webpPath;
@@ -142,8 +141,7 @@ export class MediaBackupEngine {
       };
     } catch (error) {
       const durationMs = Date.now() - startTime;
-      const errorMsg =
-        error instanceof Error ? error.message : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Media backup failed: ${errorMsg}`);
 
       return {

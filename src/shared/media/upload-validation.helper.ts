@@ -18,9 +18,19 @@ import {
   GoneException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
-import { MediaKind, MediaUploadStatus, Prisma } from '@prisma/client';
+import {
+  MediaKind,
+  MediaUploadStatus,
+  Prisma,
+  ProcessingStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  isSniffCompatibleWithKind,
+  sniffFileMediaType,
+} from './media-magic-bytes';
 import { StorageService } from './storage.service';
 import { VideoMediaConfig } from './video-media.config';
 
@@ -63,6 +73,9 @@ export const ALLOWED_VIDEO_MIME_TYPES = new Set([
   'video/mp4',
   'video/quicktime',
 ]);
+
+/** SEC-MEDIA-04: أنواع صور نصية قد تحمل سكربتات */
+export const BLOCKED_IMAGE_MIME_TYPES = new Set(['image/svg+xml', 'image/svg']);
 
 /** خريطة امتدادات contentType (تشمل الفيديو) */
 const CONTENT_TYPE_EXT_MAP: Readonly<Record<string, string>> = {
@@ -178,11 +191,12 @@ export class UploadValidationHelper {
     kind: MediaKind,
     ownerType: 'SCHOOL' | 'PLATFORM' = 'SCHOOL',
   ): void {
-    const ct = (contentType ?? '').trim();
+    const ct = (contentType ?? '').trim().toLowerCase();
     let valid = false;
 
     if (kind === MediaKind.IMAGE) {
-      valid = ct.startsWith('image/');
+      // SEC-MEDIA-04: SVG نص XML قد يحمل سكربتات ← ممنوع
+      valid = ct.startsWith('image/') && !BLOCKED_IMAGE_MIME_TYPES.has(ct);
     } else if (kind === MediaKind.AUDIO) {
       valid = ct.startsWith('audio/');
     } else if (kind === MediaKind.DOCUMENT) {
@@ -199,6 +213,56 @@ export class UploadValidationHelper {
         content_type: contentType,
       });
     }
+  }
+
+  /**
+   * SEC-MEDIA-04: يتحقق من المحتوى الحقيقي للملف المرفوع (Magic Bytes) قبل نقله وتخزينه.
+   * لغير الفيديو فقط (الفيديو يُفحص بـ ffprobe في مساره الخاص).
+   *
+   * عند عدم التطابق: يحذف الملف المؤقت، ويعلّم الجلسة FAILED والأصل ERROR،
+   * ثم يرمي 422 UNSUPPORTED_MEDIA_CONTENT (لا يمكن إعادة المحاولة بنفس الملف).
+   */
+  async assertUploadedContentMatchesKind(
+    prisma: PrismaService,
+    storage: StorageService,
+    session: {
+      id: number;
+      uuid: string;
+      mediaAssetId: number;
+      kind: MediaKind;
+    },
+  ): Promise<void> {
+    const tempPath = storage.getTempPath(session.uuid);
+    let sniff: Awaited<ReturnType<typeof sniffFileMediaType>> = null;
+    try {
+      sniff = await sniffFileMediaType(tempPath);
+    } catch {
+      sniff = null;
+    }
+
+    if (isSniffCompatibleWithKind(sniff, session.kind)) return;
+
+    await storage.deleteTempFile(session.uuid).catch(() => undefined);
+    await prisma.$transaction([
+      prisma.mediaUploadSession.update({
+        where: { id: session.id },
+        data: {
+          status: MediaUploadStatus.FAILED,
+          processingStatus: ProcessingStatus.ERROR,
+        },
+      }),
+      prisma.mediaAsset.update({
+        where: { id: session.mediaAssetId },
+        data: { processingStatus: ProcessingStatus.ERROR },
+      }),
+    ]);
+
+    throw new UnprocessableEntityException({
+      error: 'UNSUPPORTED_MEDIA_CONTENT',
+      kind: session.kind,
+      detected: sniff?.contentType ?? null,
+      message: 'محتوى الملف لا يطابق نوعه المعلن أو أنه صيغة غير مدعومة',
+    });
   }
 
   /**

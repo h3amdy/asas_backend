@@ -114,6 +114,9 @@ model School {
   studentAccessPeriods     StudentAccessPeriod[]
   activationCodeBatches    ActivationCodeBatch[]
   activationCodes          ActivationCode[]
+
+  // SEC-MEDIA-06: /public/media يبحث بهذا العمود في كل طلب شعار
+  @@index([logoMediaAssetId])
 }
 
 model GradeDictionary {

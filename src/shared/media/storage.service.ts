@@ -15,6 +15,17 @@ export interface TempFileReconciliationResult {
  * - المسار المؤقت: /storage/tmp/{session_uuid}.part
  * - قابل للترحيل لاحقاً إلى S3/R2
  */
+/** SEC-MEDIA-06: هل المسار target داخل base فعلاً (لا يكفي startsWith)؟ */
+export function isPathInside(base: string, target: string): boolean {
+  const rel = path.relative(path.resolve(base), path.resolve(target));
+  return (
+    rel !== '' &&
+    rel !== '..' &&
+    !rel.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(rel)
+  );
+}
+
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
@@ -59,9 +70,17 @@ export class StorageService {
     return `${schoolUuid}/${assetUuid}/${variant}.${ext}`;
   }
 
-  /** Resolve storage key → absolute path */
+  /**
+   * Resolve storage key → absolute path
+   * SEC-MEDIA-06: يرفض أي مفتاح يخرج عن مجلد التخزين (../ أو مسار مطلق).
+   */
   resolvePath(storageKey: string): string {
-    return path.join(this.basePath, storageKey);
+    const resolved = path.resolve(this.basePath, storageKey);
+    // الجذر نفسه مسموح (يُستعمل resolvePath('') للحصول على مجلد التخزين)
+    if (resolved !== this.basePath && !isPathInside(this.basePath, resolved)) {
+      throw new Error('STORAGE_KEY_OUTSIDE_BASE');
+    }
+    return resolved;
   }
 
   // ── File Operations ──

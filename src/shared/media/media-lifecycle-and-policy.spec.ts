@@ -150,11 +150,58 @@ describe('P4-5a — MediaAccessPolicyService (S4 Read Isolation & W-061 Write Is
       ).toThrow(NotFoundException);
     });
 
-    it('Decision 3: يحافظ على السلوك الحالي لأصول المنصة غير الفيديو (IMAGE/AUDIO/DOCUMENT) دون استعلام توزيع الفيديو', async () => {
-      await expect(
-        policy.assertSchoolCanReadAsset(platformImageAsset, 99),
-      ).resolves.toBeUndefined();
-      expect(prismaMock.lessonBlockItem.findFirst).not.toHaveBeenCalled();
+    describe('SEC-MEDIA-02: أصول المنصة غير الفيديو', () => {
+      const extraModels = [
+        'lessonTemplate',
+        'question',
+        'questionOption',
+        'questionMatchingPair',
+        'questionOrderingItem',
+        'schoolBook',
+        'subjectDictionary',
+        'subject',
+      ];
+      beforeEach(() => {
+        prismaMock.lessonBlockItem.findFirst.mockResolvedValue(null);
+        prismaMock.lessonContent.findFirst.mockResolvedValue(null);
+        for (const m of extraModels) {
+          prismaMock[m] = { findFirst: jest.fn().mockResolvedValue(null) };
+        }
+      });
+
+      it('يرفض بـ 404 صورة منصة غير مرتبطة بأي محتوى موزع للمدرسة (تخمين UUID)', async () => {
+        await expect(
+          policy.assertSchoolCanReadAsset(platformImageAsset, 99),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it.each(extraModels)(
+        'يسمح بالقراءة عند الارتباط المشروع عبر %s',
+        async (model) => {
+          prismaMock[model].findFirst.mockResolvedValueOnce({ id: 1 });
+          await expect(
+            policy.assertSchoolCanReadAsset(platformImageAsset, 99),
+          ).resolves.toBeUndefined();
+        },
+      );
+
+      it('يسمح بصورة منصة داخل فقرة درس موزع (نفس قاعدة الفيديو)', async () => {
+        prismaMock.lessonBlockItem.findFirst.mockResolvedValueOnce({ id: 7 });
+        await expect(
+          policy.assertSchoolCanReadAsset(platformImageAsset, 99),
+        ).resolves.toBeUndefined();
+      });
+
+      it('غلاف المادة يُقيَّد بمواد المدرسة نفسها', async () => {
+        await policy
+          .assertSchoolCanReadAsset(platformImageAsset, 99)
+          .catch(() => undefined);
+        expect(prismaMock.subject.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ schoolId: 99 }),
+          }),
+        );
+      });
     });
   });
 

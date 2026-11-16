@@ -431,12 +431,132 @@ export class MediaAccessPolicyService {
   }
 
   /**
+   * SEC-MEDIA-02: هل يحق للمدرسة قراءة أصل منصة غير فيديو (IMAGE / AUDIO / DOCUMENT)؟
+   * يُسمح فقط إذا كان الأصل مرتبطاً بمسار مشروع فعلاً:
+   *  1) محتوى درس موزع/مستنسخ للمدرسة (نفس قاعدة الفيديو)
+   *  2) غلاف قالب درس موزع/مستنسخ للمدرسة
+   *  3) وسائط سؤال (أو خياراته/أزواج التوصيل/عناصر الترتيب) في قالب موزع/مستنسخ للمدرسة
+   *  4) كتاب مدرسي من الفهرس العام (غلاف أو PDF) — الكتب مشتركة لكل المدارس
+   *  5) غلاف مادة في القاموس العام، أو غلاف مادة تملكها المدرسة نفسها
+   * أي أصل منصة غير مرتبط بأي مما سبق (مسودات، أصول مرفوعة غير منشورة) ← 404.
+   */
+  async isPlatformNonVideoAssetReadableBySchool(
+    assetId: number,
+    schoolId: number,
+    client: PrismaTxOrClient = this.prisma,
+  ): Promise<boolean> {
+    if (
+      await this.isPlatformAssetDistributedOrClonedToSchool(
+        assetId,
+        schoolId,
+        client,
+      )
+    ) {
+      return true;
+    }
+
+    const templateScopeFilter: Prisma.LessonTemplateWhereInput = {
+      isDeleted: false,
+      OR: [
+        { schoolId, sourceTemplateId: { not: null } },
+        {
+          ownerType: 'PLATFORM',
+          distributionsAsSource: {
+            some: { schoolId, status: 'ACTIVE', isDeleted: false },
+          },
+        },
+      ],
+    };
+
+    const templateCover = await client.lessonTemplate.findFirst({
+      where: { AND: [{ coverMediaAssetId: assetId }, templateScopeFilter] },
+      select: { id: true },
+    });
+    if (templateCover) return true;
+
+    const questionScope: Prisma.QuestionWhereInput = {
+      isDeleted: false,
+      template: templateScopeFilter,
+    };
+
+    const question = await client.question.findFirst({
+      where: {
+        ...questionScope,
+        OR: [
+          { questionImageAssetId: assetId },
+          { questionAudioAssetId: assetId },
+          { explanationImageAssetId: assetId },
+          { explanationAudioAssetId: assetId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (question) return true;
+
+    const option = await client.questionOption.findFirst({
+      where: {
+        isDeleted: false,
+        question: questionScope,
+        OR: [{ imageAssetId: assetId }, { audioAssetId: assetId }],
+      },
+      select: { id: true },
+    });
+    if (option) return true;
+
+    const pair = await client.questionMatchingPair.findFirst({
+      where: {
+        isDeleted: false,
+        question: questionScope,
+        OR: [
+          { leftImageAssetId: assetId },
+          { leftAudioAssetId: assetId },
+          { rightImageAssetId: assetId },
+          { rightAudioAssetId: assetId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (pair) return true;
+
+    const orderingItem = await client.questionOrderingItem.findFirst({
+      where: {
+        isDeleted: false,
+        question: questionScope,
+        OR: [{ imageAssetId: assetId }, { audioAssetId: assetId }],
+      },
+      select: { id: true },
+    });
+    if (orderingItem) return true;
+
+    const book = await client.schoolBook.findFirst({
+      where: {
+        isDeleted: false,
+        OR: [{ coverMediaAssetId: assetId }, { pdfMediaAssetId: assetId }],
+      },
+      select: { id: true },
+    });
+    if (book) return true;
+
+    const dictCover = await client.subjectDictionary.findFirst({
+      where: { isDeleted: false, coverMediaAssetId: assetId },
+      select: { id: true },
+    });
+    if (dictCover) return true;
+
+    const subjectCover = await client.subject.findFirst({
+      where: { isDeleted: false, schoolId, coverMediaAssetId: assetId },
+      select: { id: true },
+    });
+    return !!subjectCover;
+  }
+
+  /**
    * عزل القراءة S4 في سياق المدرسة:
    * - يُرجع دائماً 404 ASSET_NOT_FOUND (وليس 403) عند عدم الوجود أو الحذف أو مخالفة النطاق لمنع استكشاف الـ UUIDs.
    * - إذا كان الأصل SCHOOL: يجب أن يطابق asset.schoolId === schoolId.
    * - إذا كان الأصل PLATFORM:
-   *   - لنوع VIDEO: يشترط وجود توزيع نشط (ContentDistribution) أو نسخة درس مستنسخة للمدرسة (Policy A).
-   *   - للأنواع IMAGE / AUDIO / DOCUMENT: يُحافظ على السلوك الحالي دون تقييدها بقواعد الفيديو (Decision 3).
+   *   - VIDEO: يشترط وجود توزيع نشط (ContentDistribution) أو نسخة درس مستنسخة للمدرسة (Policy A).
+   *   - IMAGE / AUDIO / DOCUMENT: يشترط ارتباطاً مشروعاً (درس/سؤال/غلاف موزع، كتاب عام، غلاف مادة) — SEC-MEDIA-02.
    */
   async assertSchoolCanReadAsset(
     asset: AssetAccessSnapshot | null | undefined,
@@ -461,18 +581,24 @@ export class MediaAccessPolicyService {
     }
 
     if (asset.ownerType === 'PLATFORM') {
-      if (String(asset.kind) === 'VIDEO') {
-        const isAllowed = await this.isPlatformAssetDistributedOrClonedToSchool(
-          asset.id,
-          schoolId,
-          client,
-        );
-        if (!isAllowed) {
-          throw new NotFoundException({
-            error: 'ASSET_NOT_FOUND',
-            message: 'ASSET_NOT_FOUND',
-          });
-        }
+      // SEC-MEDIA-02: الفيديو بقاعدة التوزيع، وبقية الأنواع بقاعدة المسارات المشروعة
+      const isAllowed =
+        String(asset.kind) === 'VIDEO'
+          ? await this.isPlatformAssetDistributedOrClonedToSchool(
+              asset.id,
+              schoolId,
+              client,
+            )
+          : await this.isPlatformNonVideoAssetReadableBySchool(
+              asset.id,
+              schoolId,
+              client,
+            );
+      if (!isAllowed) {
+        throw new NotFoundException({
+          error: 'ASSET_NOT_FOUND',
+          message: 'ASSET_NOT_FOUND',
+        });
       }
       return;
     }

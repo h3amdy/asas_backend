@@ -266,6 +266,18 @@ export class MediaUploadService {
         await this.storage.reconcileTempFile(session.uuid, expected);
       }
 
+      // SEC-MEDIA-04: التحقق من المحتوى الحقيقي قبل النقل والمعالجة
+      await this.validation.assertUploadedContentMatchesKind(
+        this.prisma,
+        this.storage,
+        {
+          id: session.id,
+          uuid: session.uuid,
+          mediaAssetId: session.mediaAssetId,
+          kind: session.kind,
+        },
+      );
+
       // Determine extension and move temp → original
       const ext = this.validation.getExtFromContentType(session.contentType);
       const originalStorageKey = this.storage.buildStorageKey(

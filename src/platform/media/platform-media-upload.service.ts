@@ -18,11 +18,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { MediaKind, MediaUploadStatus, ProcessingStatus } from '@prisma/client';
-import { createHash, randomUUID } from 'crypto';
-import * as fs from 'fs';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InitUploadSessionDto } from '../../school/media/dto/init-upload-session.dto';
 import { MediaAccessPolicyService } from '../../shared/media/media-access-policy.service';
+import { computeFileDigest } from '../../shared/media/file-digest.util';
 import { MediaProcessingService } from '../../shared/media/media-processing.service';
 import { StorageService } from '../../shared/media/storage.service';
 import { UploadValidationHelper } from '../../shared/media/upload-validation.helper';
@@ -237,6 +237,18 @@ export class PlatformMediaUploadService {
         await this.storage.reconcileTempFile(session.uuid, expected);
       }
 
+      // SEC-MEDIA-04: التحقق من المحتوى الحقيقي قبل النقل والمعالجة
+      await this.validation.assertUploadedContentMatchesKind(
+        this.prisma,
+        this.storage,
+        {
+          id: session.id,
+          uuid: session.uuid,
+          mediaAssetId: session.mediaAssetId,
+          kind: session.kind,
+        },
+      );
+
       // Storage key: platform/{assetUuid}/{variant}.{ext}
       const ext = this.validation.getExtFromContentType(session.contentType);
       const originalStorageKey = this.storage.buildStorageKey(
@@ -268,14 +280,16 @@ export class PlatformMediaUploadService {
       // DOCUMENT (PDF) — لا يحتاج processing، يكتمل فوراً
       if (session.kind === MediaKind.DOCUMENT) {
         const filePath = this.storage.resolvePath(originalStorageKey);
-        const fileBuffer = await fs.promises.readFile(filePath);
-        const etag = `"${createHash('sha256').update(fileBuffer).digest('hex').substring(0, 32)}"`;
+        // SEC-MEDIA-07: البصمة بالتدفق بدل تحميل الـ PDF كاملاً في الذاكرة
+        const digest = await computeFileDigest(filePath);
+        const etag = `"${digest.sha256Hex.substring(0, 32)}"`;
 
         const variantsJson = JSON.stringify({
           original: {
             storage_key: originalStorageKey,
             etag: etag,
-            size_bytes: fileBuffer.length,
+            size_bytes: digest.sizeBytes,
+            sha256: digest.sha256Hex,
             content_type: session.contentType,
           },
         });
@@ -289,7 +303,7 @@ export class PlatformMediaUploadService {
           data: {
             processingStatus: ProcessingStatus.DONE,
             variantsJson: variantsJson,
-            sizeBytes: BigInt(fileBuffer.length),
+            sizeBytes: BigInt(digest.sizeBytes),
             etag: etag,
           },
         });

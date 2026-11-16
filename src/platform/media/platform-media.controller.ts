@@ -13,6 +13,7 @@ import {
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { StorageService } from '../../shared/media/storage.service';
+import { sendLocalFile } from '../../shared/media/local-file-response.helper';
 import { assertNotR2DirectStreamAsset } from '../../shared/media/video-delivery.helper';
 import { PlatformJwtAuthGuard } from '../auth/guards/platform-jwt-auth.guard';
 import { PlatformMediaService } from './platform-media.service';
@@ -134,37 +135,13 @@ export class PlatformMediaController {
     res.setHeader('Content-Type', resolved.contentType);
     res.setHeader('Cache-Control', 'private, max-age=86400');
 
-    if (rangeHeader) {
-      const rangeMatch = rangeHeader.match(/^bytes=(\d+)-(\d*)$/);
-      if (rangeMatch) {
-        const start = parseInt(rangeMatch[1], 10);
-        const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1;
-
-        if (start >= fileSize) {
-          res
-            .status(416)
-            .setHeader('Content-Range', `bytes */${fileSize}`)
-            .end();
-          return;
-        }
-
-        const chunkSize = end - start + 1;
-        res.status(206);
-        res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
-        res.setHeader('Content-Length', chunkSize);
-
-        const stream = this.storage.getReadStream(
-          resolved.storageKey,
-          start,
-          end,
-        );
-        stream.pipe(res);
-        return;
-      }
-    }
-
-    res.setHeader('Content-Length', fileSize);
-    const stream = this.storage.getReadStream(resolved.storageKey);
-    stream.pipe(res);
+    // SEC-MEDIA-05: نطاق مُقلَّص لحجم الملف + pipeline آمن
+    await sendLocalFile(res, {
+      fileSize,
+      rangeHeader,
+      openStream: (start, end) =>
+        this.storage.getReadStream(resolved.storageKey, start, end),
+      logLabel: `platform-media:${uuid}`,
+    });
   }
 }
