@@ -712,6 +712,8 @@ describe('VIDEO P4-7B — Real FFmpeg Staging & E2E Validation (asas-media-poc)'
           videoUpload,
           validation,
           accessPolicy,
+          config as any, // B6: VideoMediaConfig
+          {} as any,     // B6: R2StorageProvider (unused in video tests)
         );
 
         queue = new MediaJobQueueService(prisma, config);

@@ -1,7 +1,9 @@
-// src/school/media/media-processing.service.ts
+// src/shared/media/media-processing.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from './storage.service';
+import { VideoMediaConfig } from './video-media.config';
+import { R2StorageProvider } from './r2-storage.provider';
 import { MediaKind, ProcessingStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -9,10 +11,31 @@ import * as path from 'path';
 import { computeFileDigest } from './file-digest.util';
 
 /**
+ * المعرّف الثابت للمنصة في storage keys — يُستخدم بدلاً من UUID المدرسة.
+ * يظهر كأول جزء في المفتاح: `platform/{assetUuid}/{variant}.{ext}`
+ */
+export const PLATFORM_OWNER_ID = 'platform';
+
+/**
+ * يحدد نوع المالك بناءً على معرّف المدرسة.
+ * `'platform'` → PLATFORM، أي UUID آخر → SCHOOL.
+ */
+export function resolveOwnerType(
+  schoolUuid: string,
+): 'PLATFORM' | 'SCHOOL' {
+  return schoolUuid === PLATFORM_OWNER_ID ? 'PLATFORM' : 'SCHOOL';
+}
+
+/**
  * 🔄 خدمة معالجة الوسائط (Variant Generation Pipeline)
  *
  * Image → small (200px) / medium (600px) / original
  * Audio → low (opus 64kbps) / original
+ *
+ * B6: بعد المعالجة المحلية، إذا كان resolveTargetProvider === 'R2':
+ *   → رفع كل variants إلى R2 (مع تحقق SHA-256 تلقائي)
+ *   → تحديث storageProvider: 'R2' في DB
+ *   → عند فشل الرفع أو تحديث DB: تنظيف R2 → يبقى LOCAL (fail-safe)
  *
  * يتم استدعاؤها بعد complete() لجلسة الرفع
  */
@@ -23,10 +46,16 @@ export class MediaProcessingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly config: VideoMediaConfig,
+    private readonly r2Storage: R2StorageProvider,
   ) {}
 
   /**
    * Process an uploaded file: generate variants + update MediaAsset
+   *
+   * B6: بعد إنشاء variants محلياً، يُحدَّد الهدف (LOCAL أو R2) عبر resolveTargetProvider.
+   * إذا كان R2 → رفع كل variant → تحقق → تحديث storageProvider.
+   * فشل R2 لا يمنع حفظ الوسائط محلياً (fail-safe).
    */
   async processAsset(
     mediaAssetId: number,
@@ -72,24 +101,78 @@ export class MediaProcessingService {
       // Get processed original variant info
       const processedOriginal = variants['original'];
 
-      // Update MediaAsset with variants + final metadata
-      await this.prisma.mediaAsset.update({
-        where: { id: mediaAssetId },
-        data: {
-          storageKey: processedOriginal.storage_key,
-          contentType: processedOriginal.content_type,
-          preferredVariant: 'original',
-          variantsJson: JSON.stringify(variants),
-          sizeBytes: BigInt(processedOriginal.size_bytes),
-          etag: processedOriginal.etag,
-          processingStatus: ProcessingStatus.DONE,
-          rowVersion: { increment: 1 },
-          updatedAt: new Date(),
-        },
-      });
+      // ── B6: رفع إلى R2 إذا كان الهدف R2 ──
+      const ownerType = resolveOwnerType(schoolUuid);
+      const targetProvider = this.config.resolveTargetProvider(kind, ownerType);
+      let storageProvider: 'LOCAL' | 'R2' = 'LOCAL';
+      const uploadedR2Keys: string[] = [];
+
+      if (targetProvider === 'R2') {
+        try {
+          // جمع نتائج الرفع لإثراء variants بـ sha256 بعد نجاح الكل
+          const uploadResults: Record<string, { sha256Hex: string }> = {};
+          for (const [variantName, variantMeta] of Object.entries(variants)) {
+            const localPath = this.storage.resolvePath(variantMeta.storage_key);
+            const result = await this.r2Storage.uploadFromFile(localPath, variantMeta.storage_key, {
+              contentType: variantMeta.content_type,
+            });
+            uploadedR2Keys.push(variantMeta.storage_key);
+            uploadResults[variantName] = result;
+            this.logger.debug(
+              `R2 upload OK: ${assetUuid}/${variantName} → ${variantMeta.storage_key}`,
+            );
+          }
+
+          // إثراء كل variant بحالة التحقق — مطلوب لـ resolveFlatR2Variant في download-url
+          const verifiedAt = new Date().toISOString();
+          for (const [variantName, variantMeta] of Object.entries(variants)) {
+            variantMeta.status = 'VERIFIED';
+            variantMeta.sha256 =
+              variantMeta.sha256 ?? uploadResults[variantName]?.sha256Hex;
+            variantMeta.verified_at = verifiedAt;
+          }
+
+          storageProvider = 'R2';
+        } catch (r2Error) {
+          const msg = r2Error instanceof Error ? r2Error.message : String(r2Error);
+          this.logger.warn(
+            `R2 upload failed for ${assetUuid} (${kind}), falling back to LOCAL: ${msg}`,
+          );
+          await this.cleanupR2Keys(uploadedR2Keys);
+          // يبقى LOCAL — fail-safe
+        }
+      }
+
+      // Update MediaAsset with variants + final metadata + storageProvider
+      try {
+        await this.prisma.mediaAsset.update({
+          where: { id: mediaAssetId },
+          data: {
+            storageKey: processedOriginal.storage_key,
+            contentType: processedOriginal.content_type,
+            preferredVariant: 'original',
+            variantsJson: JSON.stringify(variants),
+            sizeBytes: BigInt(processedOriginal.size_bytes),
+            etag: processedOriginal.etag,
+            storageProvider,
+            processingStatus: ProcessingStatus.DONE,
+            rowVersion: { increment: 1 },
+            updatedAt: new Date(),
+          },
+        });
+      } catch (dbError) {
+        // فشل تحديث DB بعد نجاح رفع R2 → تنظيف R2 لمنع orphan objects
+        if (storageProvider === 'R2' && uploadedR2Keys.length > 0) {
+          this.logger.error(
+            `DB update failed after successful R2 upload for ${assetUuid}. Cleaning up ${uploadedR2Keys.length} R2 objects.`,
+          );
+          await this.cleanupR2Keys(uploadedR2Keys);
+        }
+        throw dbError; // يُلتقط بالـ catch الخارجي → يُسجّل ERROR
+      }
 
       this.logger.log(
-        `Asset ${assetUuid} processed successfully. Variants: ${Object.keys(variants).join(', ')}`,
+        `Asset ${assetUuid} processed successfully (${storageProvider}). Variants: ${Object.keys(variants).join(', ')}`,
       );
     } catch (error) {
       this.logger.error(`Error processing asset ${assetUuid}:`, error);
@@ -311,5 +394,23 @@ export class MediaProcessingService {
     return (
       map[contentType] || (contentType.startsWith('image/') ? 'webp' : 'bin')
     );
+  }
+
+  /**
+   * تنظيف مفاتيح R2 التي رُفعت جزئياً عند فشل العملية.
+   * لا يرمي خطأ — يسجّل الفشل فقط لأن التنظيف best-effort.
+   */
+  private async cleanupR2Keys(keys: string[]): Promise<void> {
+    for (const key of keys) {
+      try {
+        await this.r2Storage.deleteObject(key);
+        this.logger.debug(`R2 cleanup: deleted ${key}`);
+      } catch (cleanupErr) {
+        const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+        this.logger.error(
+          `R2 cleanup failed for key ${key}: ${msg}. This may leave an orphan object in R2.`,
+        );
+      }
+    }
   }
 }

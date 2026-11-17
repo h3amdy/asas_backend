@@ -804,6 +804,8 @@ describeIfSandbox(
         videoUploadService,
         uploadValidation,
         accessPolicy,
+        videoConfig as any, // B6: VideoMediaConfig
+        {} as any,          // B6: R2StorageProvider (unused in video tests)
       );
 
       queueService = new MediaJobQueueService(prisma, videoConfig);

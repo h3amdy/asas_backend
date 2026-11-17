@@ -321,6 +321,8 @@ describe('VIDEO P4-3 — UploadAuthAndBoundsSpec (صلاحيات الإسناد 
         {} as any,
         validation,
         {} as any,
+        {} as any, // B6: VideoMediaConfig mock
+        {} as any, // B6: R2StorageProvider mock
       );
 
       // معلم منصة آخر (id=8) → مرفوض

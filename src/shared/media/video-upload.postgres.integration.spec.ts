@@ -378,6 +378,8 @@ describe('VIDEO P4-3 — PostgreSQL Integration Tests (Real DB + Real FS + SHA-2
       videoUpload,
       validation,
       accessPolicy,
+      videoConfig as any, // B6: VideoMediaConfig
+      {} as any,          // B6: R2StorageProvider (unused in video tests)
     );
     const cleanupService = new MediaCleanupService(dbClient, storage);
 

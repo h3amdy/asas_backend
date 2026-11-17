@@ -23,9 +23,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { InitUploadSessionDto } from '../../school/media/dto/init-upload-session.dto';
 import { MediaAccessPolicyService } from '../../shared/media/media-access-policy.service';
 import { computeFileDigest } from '../../shared/media/file-digest.util';
-import { MediaProcessingService } from '../../shared/media/media-processing.service';
+import {
+  MediaProcessingService,
+  PLATFORM_OWNER_ID,
+} from '../../shared/media/media-processing.service';
+import { R2StorageProvider } from '../../shared/media/r2-storage.provider';
 import { StorageService } from '../../shared/media/storage.service';
 import { UploadValidationHelper } from '../../shared/media/upload-validation.helper';
+import { VideoMediaConfig } from '../../shared/media/video-media.config';
 import { VideoUploadService } from '../../shared/media/video-upload.service';
 
 const DEFAULT_CHUNK_SIZE = 1048576; // 1MB
@@ -47,6 +52,8 @@ export class PlatformMediaUploadService {
     private readonly video: VideoUploadService,
     private readonly validation: UploadValidationHelper,
     private readonly accessPolicy: MediaAccessPolicyService,
+    private readonly config: VideoMediaConfig,
+    private readonly r2Storage: R2StorageProvider,
   ) {}
 
   /**
@@ -284,7 +291,8 @@ export class PlatformMediaUploadService {
         const digest = await computeFileDigest(filePath);
         const etag = `"${digest.sha256Hex.substring(0, 32)}"`;
 
-        const variantsJson = JSON.stringify({
+        // بناء variants ككائن أولاً لإمكانية إثرائه بحالة التحقق بعد R2
+        const variantData: Record<string, any> = {
           original: {
             storage_key: originalStorageKey,
             etag: etag,
@@ -292,21 +300,73 @@ export class PlatformMediaUploadService {
             sha256: digest.sha256Hex,
             content_type: session.contentType,
           },
-        });
+        };
+
+        // ── B6: رفع PDF إلى R2 إذا كان الهدف R2 ──
+        const targetProvider = this.config.resolveTargetProvider(
+          'DOCUMENT',
+          'PLATFORM',
+        );
+        let storageProvider: 'LOCAL' | 'R2' = 'LOCAL';
+
+        if (targetProvider === 'R2') {
+          try {
+            await this.r2Storage.uploadFromFile(filePath, originalStorageKey, {
+              contentType: session.contentType,
+              digest,
+            });
+            storageProvider = 'R2';
+            // إثراء variant بحالة التحقق — مطلوب لـ resolveFlatR2Variant
+            variantData.original.status = 'VERIFIED';
+            variantData.original.verified_at = new Date().toISOString();
+            this.logger.log(
+              `R2 upload OK for PDF ${session.mediaAsset.uuid} → ${originalStorageKey}`,
+            );
+          } catch (r2Error) {
+            const msg =
+              r2Error instanceof Error ? r2Error.message : String(r2Error);
+            this.logger.warn(
+              `R2 upload failed for PDF ${session.mediaAsset.uuid}, keeping LOCAL: ${msg}`,
+            );
+            // يبقى LOCAL — fail-safe
+          }
+        }
+
+        const variantsJson = JSON.stringify(variantData);
 
         await this.prisma.mediaUploadSession.update({
           where: { id: session.id },
           data: { processingStatus: ProcessingStatus.DONE },
         });
-        await this.prisma.mediaAsset.update({
-          where: { id: session.mediaAssetId },
-          data: {
-            processingStatus: ProcessingStatus.DONE,
-            variantsJson: variantsJson,
-            sizeBytes: BigInt(digest.sizeBytes),
-            etag: etag,
-          },
-        });
+
+        try {
+          await this.prisma.mediaAsset.update({
+            where: { id: session.mediaAssetId },
+            data: {
+              processingStatus: ProcessingStatus.DONE,
+              variantsJson: variantsJson,
+              sizeBytes: BigInt(digest.sizeBytes),
+              etag: etag,
+              storageProvider,
+            },
+          });
+        } catch (dbError) {
+          // فشل تحديث DB بعد نجاح رفع R2 → تنظيف R2 لمنع orphan objects
+          if (storageProvider === 'R2') {
+            this.logger.error(
+              `DB update failed after R2 upload for PDF ${session.mediaAsset.uuid}. Cleaning up R2 key.`,
+            );
+            try {
+              await this.r2Storage.deleteObject(originalStorageKey);
+            } catch (cleanupErr) {
+              this.logger.error(
+                `R2 cleanup failed for ${originalStorageKey}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+              );
+            }
+          }
+          throw dbError;
+        }
+
         return {
           media_asset_uuid: session.mediaAsset.uuid,
           processing_status: 'DONE',

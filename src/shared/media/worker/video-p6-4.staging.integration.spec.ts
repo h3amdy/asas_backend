@@ -701,6 +701,8 @@ describe('VIDEO P6 (Stage 2) — Backend Video Pipeline Live Integration (p6-liv
           videoUpload,
           validation,
           accessPolicy,
+          config as any, // B6: VideoMediaConfig
+          {} as any,     // B6: R2StorageProvider (unused in video tests)
         );
 
         queue = new MediaJobQueueService(prisma, config);
