@@ -18,6 +18,7 @@ import { VideoTranscodeProcessor } from './worker/video-transcode.processor';
 import { MoveSourceProcessor } from './worker/move-source.processor';
 import { MediaWorkerService } from './worker/media-worker.service';
 import { DeleteObjectsProcessor } from './worker/delete-objects.processor';
+import { MediaR2MigrationService } from './media-r2-migration.service';
 
 /**
  * 🎬 وحدة الوسائط المشتركة
@@ -57,6 +58,7 @@ import { DeleteObjectsProcessor } from './worker/delete-objects.processor';
     MoveSourceProcessor,
     DeleteObjectsProcessor,
     MediaWorkerService,
+    MediaR2MigrationService,
   ],
   exports: [
     StorageService,
@@ -76,6 +78,7 @@ import { DeleteObjectsProcessor } from './worker/delete-objects.processor';
     MoveSourceProcessor,
     DeleteObjectsProcessor,
     MediaWorkerService,
+    MediaR2MigrationService,
   ],
 })
 export class SharedMediaModule {}

@@ -24,7 +24,11 @@
     "staging:seed": "npx dotenv -e .env.staging -- npx ts-node src/tools/staging-seed.ts",
     "staging:reset": "bash scripts/staging-reset.sh",
     "staging:e2e": "npx dotenv -e .env.staging -- jest --config ./test/jest-e2e.json --testPathPatterns=staging --runInBand --forceExit",
-    "test:retention:integration": "jest src/owner/backup/retention.integration.spec.ts --runInBand --testTimeout=60000"
+    "test:retention:integration": "jest src/owner/backup/retention.integration.spec.ts --runInBand --testTimeout=60000",
+    "media:r2:migrate:dry-run": "npx ts-node src/tools/media-r2-migration.cli.ts migrate --dry-run",
+    "media:r2:migrate": "npx ts-node src/tools/media-r2-migration.cli.ts migrate --execute",
+    "media:r2:cleanup:dry-run": "npx ts-node src/tools/media-r2-migration.cli.ts cleanup-local --dry-run",
+    "media:r2:cleanup": "npx ts-node src/tools/media-r2-migration.cli.ts cleanup-local --execute"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1162.0",
