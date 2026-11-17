@@ -7,6 +7,8 @@ import { MediaUploadService } from './media-upload.service';
 import { MediaCleanupService } from './media-cleanup.service';
 import { MediaController } from './media.controller';
 import { MediaUploadController } from './media-upload.controller';
+import { SchoolMediaFromUrlController } from './media-from-url.controller';
+import { SchoolMediaFromUrlService } from './media-from-url.service';
 
 /**
  * 🎬 وحدة الوسائط — المدارس
@@ -18,11 +20,12 @@ import { MediaUploadController } from './media-upload.controller';
  */
 @Module({
     imports: [PrismaModule, SharedMediaModule],
-    controllers: [MediaController, MediaUploadController],
+    controllers: [MediaController, MediaUploadController, SchoolMediaFromUrlController],
     providers: [
         MediaService,
         MediaUploadService,
         MediaCleanupService,
+        SchoolMediaFromUrlService,
     ],
     exports: [MediaService],
 })
