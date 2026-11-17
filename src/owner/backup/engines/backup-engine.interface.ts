@@ -21,14 +21,29 @@ export interface BackupEngineResult {
   errorMessage?: string;
 }
 
+/**
+ * بيانات ملف وسائط مُخزّن في R2 — تُسجّل في r2_manifest.json داخل الأرشيف
+ * لتمكين التحقق عند الاستعادة بدون الحاجة لنسخ الملفات محلياً.
+ */
+export interface R2ManifestEntry {
+  /** مفتاح التخزين في R2 (مثال: owner-uuid/image/uuid.webp) */
+  storageKey: string;
+  /** نوع الوسائط (IMAGE, VIDEO, DOCUMENT, …) */
+  kind: string;
+  /** UUID الخاص بالـ media asset */
+  assetUuid: string;
+}
+
 export interface DatabaseBackupResult extends BackupEngineResult {
   details: {
     /** SHA-256 لملف الـ dump */
     sha256: string;
-    /** قائمة storage_keys من الـ snapshot لنسخ الوسائط */
+    /** قائمة storage_keys المحلية فقط (LOCAL) لنسخها في الأرشيف */
     mediaStorageKeys: string[];
+    /** قائمة ملفات R2 — لا تُنسخ بل تُسجّل في r2_manifest.json */
+    r2MediaKeys: R2ManifestEntry[];
     /**
-     * ⚠️ قيد معروف: القائمة تُحفظ كاملة في الذاكرة.
+     * ⚠️ قيد معروف: القوائم تُحفظ كاملة في الذاكرة.
      * إذا تجاوز عدد الملفات مئات الآلاف، يجب الانتقال إلى
      * Stream/Iterator أو ملف مؤقت.
      */

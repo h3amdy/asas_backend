@@ -276,8 +276,89 @@ export interface VideoMediaSettings {
   ffprobeBin: string;
 }
 
+// ── B4: أعلام التفعيل التدريجي لنقل الوسائط غير الفيديو إلى R2 ──
+
+/** الأنواع غير الفيديو التي يمكن توجيهها إلى R2 عبر MEDIA_R2_KINDS */
+export const MEDIA_R2_ROLLOUT_KINDS = ['IMAGE', 'AUDIO', 'DOCUMENT'] as const;
+export type MediaR2RolloutKind = (typeof MEDIA_R2_ROLLOUT_KINDS)[number];
+
+/** المالكون المسموحون في MEDIA_R2_OWNERS */
+export const MEDIA_R2_ROLLOUT_OWNERS = ['PLATFORM', 'SCHOOL'] as const;
+export type MediaR2RolloutOwner = (typeof MEDIA_R2_ROLLOUT_OWNERS)[number];
+
+export interface ParsedMediaR2Rollout {
+  /** الأنواع المفعّلة (فارغة افتراضياً = كل غير الفيديو يبقى محلياً) */
+  kinds: MediaR2RolloutKind[];
+  /** المالكون المفعّلون (افتراضياً PLATFORM و SCHOOL) */
+  owners: MediaR2RolloutOwner[];
+  /** مشاكل في قيم الأعلام (قيم غير معروفة…) */
+  problems: string[];
+  /** ملاحظات غير مانعة (مثل VIDEO في القائمة) */
+  notes: string[];
+}
+
+/**
+ * B4 — دالة نقية لتحليل MEDIA_R2_KINDS و MEDIA_R2_OWNERS.
+ * - القيم مفصولة بفواصل، غير حساسة لحالة الأحرف، والمكررات تُحذف.
+ * - VIDEO يُتجاهل (يحكمه VIDEO_UPLOAD_ENABLED بشكل مستقل).
+ * - أي قيمة غير معروفة تُسجَّل مشكلةً (تُفشل الإقلاع إذا كان R2 مطلوباً).
+ */
+export function parseMediaR2Rollout(env: Env): ParsedMediaR2Rollout {
+  const problems: string[] = [];
+  const notes: string[] = [];
+
+  const splitList = (raw: string | undefined): string[] =>
+    (raw ?? '')
+      .split(',')
+      .map((v) => v.trim().toUpperCase())
+      .filter((v) => v.length > 0);
+
+  const kinds: MediaR2RolloutKind[] = [];
+  for (const value of splitList(env.MEDIA_R2_KINDS)) {
+    if (value === 'VIDEO') {
+      notes.push(
+        'MEDIA_R2_KINDS: القيمة VIDEO تُتجاهل — الفيديو يُحكم بـ VIDEO_UPLOAD_ENABLED.',
+      );
+      continue;
+    }
+    if (!(MEDIA_R2_ROLLOUT_KINDS as readonly string[]).includes(value)) {
+      problems.push(
+        `MEDIA_R2_KINDS: قيمة غير معروفة "${value}" (المسموح: ${MEDIA_R2_ROLLOUT_KINDS.join(', ')}).`,
+      );
+      continue;
+    }
+    if (!kinds.includes(value as MediaR2RolloutKind)) {
+      kinds.push(value as MediaR2RolloutKind);
+    }
+  }
+
+  const rawOwners = splitList(env.MEDIA_R2_OWNERS);
+  let owners: MediaR2RolloutOwner[] = [];
+  if (rawOwners.length === 0) {
+    owners = [...MEDIA_R2_ROLLOUT_OWNERS];
+  } else {
+    for (const value of rawOwners) {
+      if (!(MEDIA_R2_ROLLOUT_OWNERS as readonly string[]).includes(value)) {
+        problems.push(
+          `MEDIA_R2_OWNERS: قيمة غير معروفة "${value}" (المسموح: ${MEDIA_R2_ROLLOUT_OWNERS.join(', ')}).`,
+        );
+        continue;
+      }
+      if (!owners.includes(value as MediaR2RolloutOwner)) {
+        owners.push(value as MediaR2RolloutOwner);
+      }
+    }
+  }
+
+  return { kinds, owners, problems, notes };
+}
+
 export interface ParsedVideoMediaEnv {
   settings: VideoMediaSettings;
+  /** B4: أعلام التفعيل التدريجي للوسائط غير الفيديو */
+  rollout: ParsedMediaR2Rollout;
+  /** B4: هل R2 مطلوب؟ (الفيديو مفعّل أو MEDIA_R2_KINDS غير فارغ) */
+  r2Required: boolean;
   /** null عند التعطيل أو عند نقص أي متغير */
   r2: R2Credentials | null;
   /** أسماء متغيرات R2 الناقصة (الأسماء فقط — لا قيم) */
@@ -290,7 +371,7 @@ export interface ParsedVideoMediaEnv {
 export class VideoMediaConfigError extends Error {
   constructor(public readonly problems: string[]) {
     super(
-      '[VideoMediaConfig] VIDEO_UPLOAD_ENABLED=true لكن الإعدادات غير مكتملة — تم إيقاف الإقلاع:\n' +
+      '[VideoMediaConfig] VIDEO_UPLOAD_ENABLED=true أو MEDIA_R2_KINDS غير فارغ لكن الإعدادات غير مكتملة — تم إيقاف الإقلاع:\n' +
         problems.map((p) => `  - ${p}`).join('\n'),
     );
     this.name = 'VideoMediaConfigError';
@@ -543,18 +624,29 @@ export function parseVideoMediaEnv(env: Env): ParsedVideoMediaEnv {
   const warnings: string[] = [];
   const errors: string[] = [];
 
+  // B4: R2 مطلوب إذا كان الفيديو مفعّلاً أو MEDIA_R2_KINDS غير فارغ
+  const rollout = parseMediaR2Rollout(env);
+  const r2Required = uploadEnabled || rollout.kinds.length > 0;
+  warnings.push(...rollout.notes);
+
   if (uploadEnabled) {
     errors.push(...numericProblems);
-    if (missingR2Vars.length > 0) {
-      errors.push(`متغيرات R2 ناقصة: ${missingR2Vars.join(', ')}`);
-    }
   } else {
     warnings.push(...numericProblems);
   }
 
-  // بيانات R2 لا تُحمَّل إلا عند التفعيل واكتمال المتغيرات (عزل كامل عند التعطيل)
+  if (r2Required) {
+    errors.push(...rollout.problems);
+    if (missingR2Vars.length > 0) {
+      errors.push(`متغيرات R2 ناقصة: ${missingR2Vars.join(', ')}`);
+    }
+  } else {
+    warnings.push(...rollout.problems);
+  }
+
+  // بيانات R2 لا تُحمَّل إلا عند الحاجة واكتمال المتغيرات (عزل كامل عند التعطيل)
   const r2: R2Credentials | null =
-    uploadEnabled && missingR2Vars.length === 0
+    r2Required && missingR2Vars.length === 0
       ? {
           accountId: env.R2_ACCOUNT_ID!.trim(),
           accessKeyId: env.R2_ACCESS_KEY_ID!.trim(),
@@ -565,6 +657,8 @@ export function parseVideoMediaEnv(env: Env): ParsedVideoMediaEnv {
 
   return {
     settings: { uploadEnabled, maxSizeBytes, chunkSizeBytes, ffprobeBin },
+    rollout,
+    r2Required,
     r2,
     missingR2Vars: [...missingR2Vars],
     warnings,
@@ -589,6 +683,19 @@ export class VideoMediaConfig implements OnModuleInit {
     }
 
     if (!this.parsed.settings.uploadEnabled) {
+      if (this.parsed.r2Required) {
+        // B4: الفيديو معطّل لكن MEDIA_R2_KINDS غير فارغ ← R2 مطلوب (بلا ffprobe)
+        if (this.parsed.errors.length > 0) {
+          const error = new VideoMediaConfigError(this.parsed.errors);
+          this.logger.error(error.message);
+          throw error;
+        }
+        this.logger.log(
+          `☁️ رفع الفيديو معطّل، لكن R2 مفعّل للأنواع: ${this.parsed.rollout.kinds.join(',')} ` +
+            `(المالكون: ${this.parsed.rollout.owners.join(',')}), bucket=${this.parsed.r2!.bucketName}`,
+        );
+        return;
+      }
       this.logger.log(
         '🎬 رفع الفيديو معطّل (VIDEO_UPLOAD_ENABLED≠true) — لم يُهيَّأ R2 ولا ffprobe؛ ' +
           'الصور والصوت والمستندات تعمل كالمعتاد.',
@@ -645,6 +752,34 @@ export class VideoMediaConfig implements OnModuleInit {
       .trim()
       .toUpperCase();
     return raw === 'LOCAL' ? 'LOCAL' : 'R2';
+  }
+
+  /** B4: الأنواع غير الفيديو المفعّلة لـ R2 (MEDIA_R2_KINDS) */
+  get mediaR2Kinds(): ReadonlySet<MediaR2RolloutKind> {
+    return new Set(this.parsed.rollout.kinds);
+  }
+
+  /** B4: المالكون المفعّلون لـ R2 (MEDIA_R2_OWNERS) */
+  get mediaR2Owners(): ReadonlySet<MediaR2RolloutOwner> {
+    return new Set(this.parsed.rollout.owners);
+  }
+
+  /**
+   * B4 — الدالة الوحيدة لتحديد مزود التخزين المستهدف لأي أصل جديد.
+   * - VIDEO ← R2 دائماً (السلوك الحالي، يحكمه VIDEO_UPLOAD_ENABLED).
+   * - غير الفيديو ← R2 فقط إذا كان النوع في MEDIA_R2_KINDS والمالك في
+   *   MEDIA_R2_OWNERS وبيانات R2 مكتملة؛ وإلا LOCAL (fail-safe).
+   * التراجع: إزالة النوع من MEDIA_R2_KINDS يعيد الرفع الجديد إلى المحلي فوراً.
+   */
+  resolveTargetProvider(kind: string, ownerType: string): StorageProviderName {
+    const k = String(kind).toUpperCase();
+    if (k === 'VIDEO') return 'R2';
+    if (this.parsed.r2 === null) return 'LOCAL';
+    const o = String(ownerType).toUpperCase();
+    return this.parsed.rollout.kinds.includes(k as MediaR2RolloutKind) &&
+      this.parsed.rollout.owners.includes(o as MediaR2RolloutOwner)
+      ? 'R2'
+      : 'LOCAL';
   }
 
   get workerMinFreeBytes(): number {
@@ -841,6 +976,8 @@ export class VideoMediaConfig implements OnModuleInit {
       ffprobeBin: this.parsed.settings.ffprobeBin,
       r2Configured: this.parsed.r2 !== null,
       missingR2Vars: this.parsed.missingR2Vars,
+      mediaR2Kinds: [...this.parsed.rollout.kinds],
+      mediaR2Owners: [...this.parsed.rollout.owners],
     };
   }
 

@@ -64,6 +64,8 @@ export interface ManifestMediaComponent {
   filesExpected: number;
   filesCopied: number;
   sizeBytes: number;
+  /** عدد ملفات الوسائط المُخزّنة في R2 (لا تُنسخ في الأرشيف) */
+  r2MediaKeysCount?: number;
 }
 
 export interface ManifestConfigComponent {

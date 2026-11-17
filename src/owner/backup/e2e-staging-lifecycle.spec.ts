@@ -561,6 +561,7 @@ INSERT INTO platform_settings (key, value) VALUES ('never_executed_key', 'SHOULD
       mockBackupLogger,
       mockBackupOrchestrator,
       realDbRestoreEngine,
+      { headObject: jest.fn().mockResolvedValue({ kind: 'FOUND' }) } as any,
     );
 
     // 5. تنفيذ الاستعادة عبر المنسق (RestoreOrchestratorService)
@@ -884,6 +885,7 @@ INSERT INTO platform_settings (key, value) VALUES ('never_executed_key', 'SHOULD
       mockBackupLogger,
       mockBackupOrchestrator,
       realDbRestoreEngine,
+      { headObject: jest.fn().mockResolvedValue({ kind: 'FOUND' }) } as any,
     );
 
     try {

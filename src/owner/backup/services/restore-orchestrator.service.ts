@@ -8,6 +8,8 @@ import { BackupLoggerService } from './backup-logger.service';
 import { BackupOrchestratorService } from './backup-orchestrator.service';
 import { DbRestoreEngine } from '../engines/db-restore.engine';
 import { BackupManifest } from '../types/manifest.type';
+import { R2ManifestEntry } from '../engines/backup-engine.interface';
+import { R2StorageProvider } from '../../../shared/media/r2-storage.provider';
 import { RestoreJobStatus } from '@prisma/client';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -56,6 +58,7 @@ export class RestoreOrchestratorService {
     private readonly backupLogger: BackupLoggerService,
     private readonly backupOrchestrator: BackupOrchestratorService,
     private readonly dbRestoreEngine: DbRestoreEngine,
+    private readonly r2Storage: R2StorageProvider,
   ) {}
 
   /**
@@ -786,6 +789,9 @@ export class RestoreOrchestratorService {
         this.logger.log(
           `✅ Post-restore stats: units=${unitsCount}, lessons=${lessonsCount}, contents=${contentsCount}`,
         );
+
+        // ── فحص R2 عينة — التحقق من وجود ملفات R2 المسجّلة في النسخة ──
+        await this.verifyR2ManifestSample(workDir, currentJobId);
       } catch (error) {
         const msg =
           error instanceof Error ? error.message : String(error);
@@ -1705,6 +1711,104 @@ export class RestoreOrchestratorService {
     }
 
     return files;
+  }
+
+  /**
+   * فحص عينة من ملفات R2 المسجّلة في r2_manifest.json
+   *
+   * يقرأ الملف من مجلد العمل المستخرج، ويفحص أول 10 مفاتيح
+   * باستخدام headObject — للتأكد أن الملفات لا تزال موجودة في R2.
+   *
+   * النتيجة تُسجّل في سجل الاستعادة فقط (لا تُفشل العملية).
+   */
+  private async verifyR2ManifestSample(
+    workDir: string,
+    restoreJobId: number,
+  ): Promise<void> {
+    const r2ManifestPath = path.join(workDir, 'r2_manifest.json');
+
+    try {
+      await fsp.access(r2ManifestPath);
+    } catch {
+      // لا يوجد r2_manifest.json — نسخة قديمة بدون R2
+      return;
+    }
+
+    const r2VerifyStart = Date.now();
+
+    try {
+      const raw = await fsp.readFile(r2ManifestPath, 'utf-8');
+      const r2Manifest = JSON.parse(raw) as {
+        totalKeys: number;
+        keys: R2ManifestEntry[];
+      };
+
+      if (!r2Manifest.keys || r2Manifest.keys.length === 0) {
+        return;
+      }
+
+      const sampleSize = Math.min(10, r2Manifest.keys.length);
+      const sample = r2Manifest.keys.slice(0, sampleSize);
+
+      let found = 0;
+      let missing = 0;
+      let errors = 0;
+      const missingKeys: string[] = [];
+
+      for (const entry of sample) {
+        try {
+          const result = await this.r2Storage.headObject(entry.storageKey);
+          if (result.kind === 'FOUND') {
+            found++;
+          } else if (result.kind === 'NOT_FOUND') {
+            missing++;
+            missingKeys.push(entry.storageKey);
+          } else {
+            // FORBIDDEN أو ERROR
+            errors++;
+          }
+        } catch {
+          errors++;
+        }
+      }
+
+      const level = missing > 0 || errors > 0 ? 'WARN' : 'INFO';
+      await this.backupLogger.writeLog({
+        restoreJobId,
+        level,
+        phase: 'RESTORE_VERIFY',
+        message: `R2 media verification (sample ${sampleSize}/${r2Manifest.totalKeys}): ${found} found, ${missing} missing, ${errors} errors`,
+        durationMs: Date.now() - r2VerifyStart,
+        metadata: {
+          totalR2Keys: r2Manifest.totalKeys,
+          sampleSize,
+          found,
+          missing,
+          errors,
+          ...(missingKeys.length > 0 ? { missingKeys } : {}),
+        },
+      });
+
+      if (missing > 0) {
+        this.logger.warn(
+          `⚠️ R2 media verification: ${missing}/${sampleSize} sampled keys missing from R2`,
+        );
+      } else {
+        this.logger.log(
+          `✅ R2 media verification: ${found}/${sampleSize} sampled keys confirmed in R2`,
+        );
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      // R2 غير متاح أو خطأ في القراءة — لا نُفشل الاستعادة
+      await this.backupLogger.writeLog({
+        restoreJobId,
+        level: 'WARN',
+        phase: 'RESTORE_VERIFY',
+        message: `R2 media verification skipped: ${msg}`,
+        durationMs: Date.now() - r2VerifyStart,
+      });
+    }
   }
 }
 

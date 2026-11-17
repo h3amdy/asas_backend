@@ -1,7 +1,10 @@
 // src/owner/backup/engines/pg-dump.engine.ts
 
 import { Injectable, Logger } from '@nestjs/common';
-import { DatabaseBackupResult } from './backup-engine.interface';
+import {
+  DatabaseBackupResult,
+  R2ManifestEntry,
+} from './backup-engine.interface';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
@@ -63,10 +66,11 @@ export class PgDumpEngine {
 
       // 2. استخراج قائمة الوسائط بـ Streaming (DEC-008)
       // يقرأ سطراً بسطر — لا يحمّل الملف كاملاً في الذاكرة
-      const mediaStorageKeys =
+      // يفصل بين ملفات LOCAL (تُنسخ في الأرشيف) و R2 (تُسجّل فقط)
+      const { localKeys: mediaStorageKeys, r2Keys: r2MediaKeys } =
         await this.extractMediaKeysFromDump(sqlFile);
       this.logger.log(
-        `Extracted ${mediaStorageKeys.length} media storage keys from dump`,
+        `Extracted ${mediaStorageKeys.length} LOCAL + ${r2MediaKeys.length} R2 media storage keys from dump`,
       );
 
       // 3. ضغط بـ gzip
@@ -94,6 +98,7 @@ export class PgDumpEngine {
         details: {
           sha256,
           mediaStorageKeys,
+          r2MediaKeys,
         },
       };
     } catch (error) {
@@ -111,6 +116,7 @@ export class PgDumpEngine {
         details: {
           sha256: '',
           mediaStorageKeys: [],
+          r2MediaKeys: [],
         },
       };
     }
@@ -123,16 +129,22 @@ export class PgDumpEngine {
    * بدلاً من تحميله كاملاً في الذاكرة — ضروري لملفات dump كبيرة (عشرات GB).
    *
    * يقرأ SQL dump ويستخرج storage_key من جدول media_asset_variants.
+   * يفصل بين ملفات LOCAL (تُنسخ في الأرشيف) و R2 (تُسجّل في r2_manifest.json).
+   *
    * هذا يضمن أن قائمة الملفات مأخوذة من نفس لحظة الـ snapshot.
    */
   private extractMediaKeysFromDump(
     sqlFilePath: string,
-  ): Promise<string[]> {
+  ): Promise<{ localKeys: string[]; r2Keys: R2ManifestEntry[] }> {
     return new Promise((resolve, reject) => {
-      const keysSet = new Set<string>();
+      const localKeysSet = new Set<string>();
+      const r2KeysMap = new Map<string, R2ManifestEntry>();
       let inMediaTable = false;
       let storageKeyIndex = -1;
       let variantsJsonIndex = -1;
+      let storageProviderIndex = -1;
+      let uuidIndex = -1;
+      let kindIndex = -1;
 
       const rl = readline.createInterface({
         input: fs.createReadStream(sqlFilePath, { encoding: 'utf-8' }),
@@ -146,7 +158,7 @@ export class PgDumpEngine {
           line.includes('media_assets')
         ) {
           inMediaTable = true;
-          // استخراج ترتيب الأعمدة لمعرفة موقع storage_key و variants_json
+          // استخراج ترتيب الأعمدة لمعرفة موقع كل عمود
           const columnsMatch = line.match(/\(([^)]+)\)/);
           if (columnsMatch) {
             const columns = columnsMatch[1]
@@ -154,6 +166,9 @@ export class PgDumpEngine {
               .map((c) => c.trim());
             storageKeyIndex = columns.indexOf('storage_key');
             variantsJsonIndex = columns.indexOf('variants_json');
+            storageProviderIndex = columns.indexOf('storage_provider');
+            uuidIndex = columns.indexOf('uuid');
+            kindIndex = columns.indexOf('kind');
           }
           return;
         }
@@ -168,11 +183,32 @@ export class PgDumpEngine {
         if (inMediaTable) {
           const fields = line.split('\t');
 
+          // تحديد storage_provider — الافتراضي LOCAL (توافق مع بيانات قديمة قبل إضافة العمود)
+          const provider =
+            storageProviderIndex >= 0 && fields.length > storageProviderIndex
+              ? fields[storageProviderIndex]
+              : 'LOCAL';
+          const isR2 = provider === 'R2';
+
+          // UUID و kind — مطلوبان لتسجيل R2 entries
+          const assetUuid =
+            uuidIndex >= 0 && fields.length > uuidIndex
+              ? fields[uuidIndex]
+              : '';
+          const kind =
+            kindIndex >= 0 && fields.length > kindIndex
+              ? fields[kindIndex]
+              : '';
+
           // 1. storage_key الأساسي
           if (storageKeyIndex >= 0 && fields.length > storageKeyIndex) {
             const key = fields[storageKeyIndex];
             if (key && key !== '\\N') {
-              keysSet.add(key);
+              if (isR2) {
+                r2KeysMap.set(key, { storageKey: key, kind, assetUuid });
+              } else {
+                localKeysSet.add(key);
+              }
             }
           }
 
@@ -187,7 +223,15 @@ export class PgDumpEngine {
                 for (const variantName of Object.keys(variants)) {
                   const variant = variants[variantName];
                   if (variant?.storage_key) {
-                    keysSet.add(variant.storage_key);
+                    if (isR2) {
+                      r2KeysMap.set(variant.storage_key, {
+                        storageKey: variant.storage_key,
+                        kind,
+                        assetUuid,
+                      });
+                    } else {
+                      localKeysSet.add(variant.storage_key);
+                    }
                   }
                 }
               } catch {
@@ -198,13 +242,18 @@ export class PgDumpEngine {
         }
       });
 
-      rl.on('close', () => resolve(Array.from(keysSet)));
+      rl.on('close', () =>
+        resolve({
+          localKeys: Array.from(localKeysSet),
+          r2Keys: Array.from(r2KeysMap.values()),
+        }),
+      );
       rl.on('error', (err) => {
         this.logger.warn(
           `Failed to extract media keys from dump: ${err.message}`,
         );
-        // لا نفشل العملية — نعود بقائمة فارغة
-        resolve([]);
+        // لا نفشل العملية — نعود بقوائم فارغة
+        resolve({ localKeys: [], r2Keys: [] });
       });
     });
   }

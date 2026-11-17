@@ -13,6 +13,7 @@ import { MediaBackupEngine } from './engines/media-backup.engine';
 import { ConfigBackupEngine } from './engines/config-backup.engine';
 import { DbRestoreEngine } from './engines/db-restore.engine';
 import { BackupController } from './backup.controller';
+import { SharedMediaModule } from '../../shared/media/shared-media.module';
 
 /**
  * وحدة النسخ الاحتياطي والاستعادة (BKP-001)
@@ -22,8 +23,10 @@ import { BackupController } from './backup.controller';
  * 2. محرك النسخ (Engines + Orchestrator)
  * 3. API + الجدولة (Controller, Scheduler, Retention)
  * 4. الاستعادة (Restore Orchestrator + DB Restore Engine)
+ * 5. دعم R2 — فصل LOCAL/R2 في النسخ + r2_manifest.json + فحص R2 عند الاستعادة
  */
 @Module({
+  imports: [SharedMediaModule],
   controllers: [BackupController],
   providers: [
     // Storage

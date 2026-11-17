@@ -14,6 +14,11 @@ import * as archiveSafety from '../utils/archive-safety';
 
 const execFileAsync = promisify(execFile);
 
+/** mock لـ R2StorageProvider — headObject يُرجع FOUND دائماً (يُغيَّر في اختبارات محددة) */
+const mockR2Storage = {
+  headObject: jest.fn().mockResolvedValue({ kind: 'FOUND', info: { key: 'test', sizeBytes: 100, etag: '"abc"' } }),
+} as any;
+
 describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Handling', () => {
   let sandboxDir: string;
 
@@ -240,6 +245,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     await (orchestrator as any).runPipeline(101, {
@@ -361,6 +367,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     await (orchestrator as any).runPipeline(102, {
@@ -452,6 +459,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     await (orchestrator as any).runPipeline(103, {
@@ -581,6 +589,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     // استعادة تشمل DB و Media و Config
@@ -716,6 +725,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     await (orchestrator as any).runPipeline(105, {
@@ -808,6 +818,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     // استعادة Config فقط (لم يتم لمس DB أو Media)
@@ -916,6 +927,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     await (orchestrator as any).runPipeline(107, {
@@ -1020,6 +1032,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
       mockBackupLogger,
       mockBackupOrchestrator,
       mockDbRestoreEngine,
+      mockR2Storage,
     );
 
     // تشغيل خط الأنابيب — الفشل التشغيلي يجب أن يُسجل ويُطبع في stderr ولا يُعتبر نجاحاً
@@ -1082,6 +1095,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         {} as any,
         {} as any,
         {} as any,
+        mockR2Storage,
       );
 
       const files = await (orchestrator as any).listFilesRecursive(sourceDir);
@@ -1262,6 +1276,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       await (orchestrator as any).attemptRollback({
@@ -1338,6 +1353,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       await (orchestrator as any).attemptRollback({
@@ -1414,6 +1430,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'restore-work-3');
@@ -1504,6 +1521,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'restore-work-4');
@@ -1577,6 +1595,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'restore-work-5');
@@ -1655,6 +1674,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         { execute: jest.fn() } as any,
+        mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'restore-work-6');
@@ -1727,6 +1747,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         { execute: jest.fn() } as any,
+        mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'restore-work-7');
@@ -1801,6 +1822,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'restore-work-8');
@@ -1892,6 +1914,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'restore-work-9');
@@ -2064,6 +2087,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         {} as any,
+        mockR2Storage,
       );
 
       // محاكاة التحقق وإعادة التسجيل كما هو في السطور 470-520
@@ -2137,6 +2161,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         {} as any,
         {} as any,
         {} as any,
+        mockR2Storage,
       );
 
       const nonExistentPath = path.join(mockStoragePath, 'completed', 'non_existent.tar.gz');
@@ -2287,6 +2312,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'work-dir-1');
@@ -2393,6 +2419,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'work-dir-2');
@@ -2479,6 +2506,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'work-dir-3');
@@ -2617,6 +2645,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'work-dir-4');
@@ -2784,6 +2813,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'work-dir-5');
@@ -2905,6 +2935,7 @@ describe('RestoreOrchestratorService — Safety Rollback & SQL/Config Error Hand
         mockBackupLogger,
         {} as any,
         mockDbRestoreEngine,
+      mockR2Storage,
       );
 
       const workDir = path.join(specTempDir, 'work-dir-6');

@@ -14,6 +14,7 @@ import {
   DatabaseBackupResult,
   MediaBackupResult,
   ConfigBackupResult,
+  R2ManifestEntry,
 } from '../engines/backup-engine.interface';
 import {
   BackupTriggerType,
@@ -257,6 +258,32 @@ export class BackupOrchestratorService {
         return;
       }
 
+      // ── 4b. R2 MANIFEST — تسجيل ملفات R2 بدون نسخها ──
+      const r2MediaKeys = dbResult.details.r2MediaKeys;
+      if (r2MediaKeys.length > 0) {
+        const r2ManifestPath = path.join(workDir, 'r2_manifest.json');
+        await fsp.writeFile(
+          r2ManifestPath,
+          JSON.stringify(
+            {
+              version: '1.0',
+              createdAt: new Date().toISOString(),
+              totalKeys: r2MediaKeys.length,
+              keys: r2MediaKeys,
+            },
+            null,
+            2,
+          ),
+          'utf-8',
+        );
+
+        await this.backupLogger.info(
+          jobId,
+          'MEDIA_COPY',
+          `R2 manifest written: ${r2MediaKeys.length} keys registered (not copied to archive)`,
+        );
+      }
+
       // ── 5. CONFIG COPY ──
       const projectRoot = resolveProjectRoot();
       const configResult = await this.configEngine.execute(
@@ -470,7 +497,7 @@ export class BackupOrchestratorService {
             systemVersion: process.env.APP_VERSION ?? 'unknown',
             databaseSchemaVersion: dbSchemaVersion,
             containsDatabase: true,
-            containsMedia: mediaResult.details.filesExpected > 0,
+            containsMedia: mediaResult.details.filesExpected > 0 || r2MediaKeys.length > 0,
             containsConfiguration: configResult.details.files.length > 0,
             dbSizeBytes: dbResult.sizeBytes,
             mediaFilesCount: mediaResult.details.filesExpected,
@@ -478,8 +505,15 @@ export class BackupOrchestratorService {
             mediaSizeBytes: mediaResult.sizeBytes,
             configSizeBytes: configResult.sizeBytes,
             missingMedia:
-              mediaResult.details.missingStorageKeys.length > 0
-                ? mediaResult.details.missingStorageKeys
+              mediaResult.details.missingStorageKeys.length > 0 || r2MediaKeys.length > 0
+                ? {
+                    ...(mediaResult.details.missingStorageKeys.length > 0
+                      ? { missingKeys: mediaResult.details.missingStorageKeys }
+                      : {}),
+                    ...(r2MediaKeys.length > 0
+                      ? { r2MediaKeysCount: r2MediaKeys.length }
+                      : {}),
+                  }
                 : undefined,
           },
         });
@@ -583,6 +617,8 @@ export class BackupOrchestratorService {
         `sha256:${dbResult.details.sha256}`;
     }
 
+    const r2KeysCount = dbResult.details.r2MediaKeys.length;
+
     return {
       backupId,
       backupFormatVersion: '1.0',
@@ -610,6 +646,7 @@ export class BackupOrchestratorService {
               filesExpected: mediaResult.details.filesExpected,
               filesCopied: mediaResult.details.filesCopied,
               sizeBytes: Number(mediaResult.sizeBytes),
+              ...(r2KeysCount > 0 ? { r2MediaKeysCount: r2KeysCount } : {}),
             }
           : null,
         config: configResult.details.files.length > 0 || (configResult.details.failedRequired?.length ?? 0) > 0
