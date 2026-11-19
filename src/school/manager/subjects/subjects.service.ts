@@ -48,7 +48,10 @@ export class SubjectsService {
                 grade: { select: { id: true, displayName: true } },
                 coverMediaAsset: { select: { uuid: true } },
                 subjectSections: {
-                    where: { isDeleted: false },
+                    where: {
+                        isDeleted: false,
+                        section: { isDeleted: false, grade: { schoolId } },
+                    },
                     include: {
                         section: { select: { id: true, name: true } },
                         teachers: {
@@ -69,7 +72,10 @@ export class SubjectsService {
                 grade: { select: { id: true, displayName: true } },
                 coverMediaAsset: { select: { uuid: true } },
                 subjectSections: {
-                    where: { isDeleted: false },
+                    where: {
+                        isDeleted: false,
+                        section: { isDeleted: false, grade: { schoolId } },
+                    },
                     include: {
                         section: { select: { id: true, name: true } },
                         teachers: {
@@ -222,17 +228,36 @@ export class SubjectsService {
     // ═══════ إسناد الشعب ═══════
 
     async assignToSections(schoolId: number, subjectId: number, dto: AssignSubjectSectionsDto) {
-        // 🛡️ التحقق
+        // 🛡️ التحقق من ملكية المادة للمدرسة
         const subject = await this.prisma.subject.findFirst({
             where: { id: subjectId, schoolId, isDeleted: false },
         });
         if (!subject) throw new NotFoundException('SUBJECT_NOT_FOUND');
 
-        for (const sectionId of dto.sectionIds) {
-            await this.prisma.subjectSection.upsert({
-                where: { subjectId_sectionId: { subjectId, sectionId } },
-                create: { subjectId, sectionId },
-                update: { isDeleted: false, deletedAt: null },
+        const uniqueSectionIds = [...new Set(dto.sectionIds)];
+        if (uniqueSectionIds.length > 0) {
+            // 🛡️ التحقق من أن جميع الشُعب تتبع لنفس المدرسة ونفس صف المادة
+            const validSections = await this.prisma.section.findMany({
+                where: {
+                    id: { in: uniqueSectionIds },
+                    gradeId: subject.gradeId,
+                    isDeleted: false,
+                    grade: { schoolId, isDeleted: false },
+                },
+                select: { id: true },
+            });
+            if (validSections.length !== uniqueSectionIds.length) {
+                throw new BadRequestException('INVALID_SECTIONS_FOR_SUBJECT');
+            }
+
+            await this.prisma.$transaction(async (tx) => {
+                for (const sectionId of uniqueSectionIds) {
+                    await tx.subjectSection.upsert({
+                        where: { subjectId_sectionId: { subjectId, sectionId } },
+                        create: { subjectId, sectionId },
+                        update: { isDeleted: false, deletedAt: null },
+                    });
+                }
             });
         }
         return this.getSubjectById(schoolId, subjectId);
@@ -246,7 +271,12 @@ export class SubjectsService {
         if (!subject) throw new NotFoundException('SUBJECT_NOT_FOUND');
 
         await this.prisma.subjectSection.updateMany({
-            where: { subjectId, sectionId, isDeleted: false },
+            where: {
+                subjectId,
+                sectionId,
+                isDeleted: false,
+                section: { grade: { schoolId } },
+            },
             data: { isDeleted: true, deletedAt: new Date() },
         });
         return { success: true };
@@ -264,7 +294,10 @@ export class SubjectsService {
             include: {
                 grade: { select: { displayName: true } },
                 subjectSections: {
-                    where: { isDeleted: false },
+                    where: {
+                        isDeleted: false,
+                        section: { isDeleted: false, grade: { schoolId } },
+                    },
                     orderBy: { section: { orderIndex: 'asc' } },
                     include: {
                         section: { select: { id: true, name: true } },
@@ -312,12 +345,13 @@ export class SubjectsService {
         sectionId: number,
         teacherUuid: string,
     ) {
-        // 🛡️ 1. التحقق من المادة + الشعبة
+        // 🛡️ 1. التحقق من المادة + الشعبة وملكية الشعبة لنفس المدرسة
         const subjectSection = await this.prisma.subjectSection.findFirst({
             where: {
                 sectionId,
                 isDeleted: false,
                 subject: { uuid: subjectUuid, schoolId, isDeleted: false },
+                section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
             },
             include: {
                 teachers: {
@@ -331,7 +365,7 @@ export class SubjectsService {
 
         // 🛡️ 2. التحقق من المعلم (عبر User)
         const user = await this.prisma.user.findFirst({
-            where: { uuid: teacherUuid, schoolId },
+            where: { uuid: teacherUuid, schoolId, userType: 'TEACHER', isDeleted: false },
             include: { teacher: true },
         });
         if (!user || !user.teacher) throw new NotFoundException('TEACHER_NOT_FOUND');
@@ -413,6 +447,7 @@ export class SubjectsService {
                 sectionId,
                 isDeleted: false,
                 subject: { uuid: subjectUuid, schoolId, isDeleted: false },
+                section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
             },
         });
         if (!subjectSection) throw new NotFoundException('SECTION_NOT_FOUND');

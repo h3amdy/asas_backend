@@ -132,9 +132,9 @@ export class TeachersService {
 
     // ─── SRS-TCH-03: Teacher Profile ────────────────────────
 
-    async getTeacherProfile(uuid: string) {
+    async getTeacherProfile(uuid: string, schoolId: number) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid, userType: 'TEACHER', isDeleted: false },
+            where: { uuid, schoolId, userType: 'TEACHER', isDeleted: false },
             select: {
                 uuid: true,
                 name: true,
@@ -166,9 +166,9 @@ export class TeachersService {
 
     // ─── SRS-TCH-04: Update Teacher ─────────────────────────
 
-    async updateTeacher(uuid: string, dto: UpdateTeacherDto) {
+    async updateTeacher(uuid: string, schoolId: number, dto: UpdateTeacherDto) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid, userType: 'TEACHER', isDeleted: false },
+            where: { uuid, schoolId, userType: 'TEACHER', isDeleted: false },
             select: { id: true },
         });
         if (!user) throw new NotFoundException('TEACHER_NOT_FOUND');
@@ -201,15 +201,15 @@ export class TeachersService {
         });
 
         // إرجاع الملف المحدّث
-        return this.getTeacherProfile(uuid);
+        return this.getTeacherProfile(uuid, schoolId);
     }
 
     // ─── SRS-TCH-05: Reset Password ─────────────────────────
 
-    async resetPassword(uuid: string, newPassword?: string, schoolId?: number) {
+    async resetPassword(uuid: string, schoolId: number, newPassword?: string) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid, userType: 'TEACHER', isDeleted: false },
-            select: { id: true, code: true, schoolId: true },
+            where: { uuid, schoolId, userType: 'TEACHER', isDeleted: false },
+            select: { id: true, code: true },
         });
         if (!user) throw new NotFoundException('TEACHER_NOT_FOUND');
 
@@ -222,7 +222,7 @@ export class TeachersService {
 
         // جلب كود المدرسة
         const school = await this.prisma.school.findUnique({
-            where: { id: user.schoolId! },  // المعلّم دائمًا تابع لمدرسة
+            where: { id: schoolId },
             select: { schoolCode: true },
         });
 
@@ -261,9 +261,9 @@ export class TeachersService {
 
     // ─── SRS-TCH-07: Toggle Active (Block/Unblock) ──────────
 
-    async toggleActive(uuid: string, isActive: boolean) {
+    async toggleActive(uuid: string, schoolId: number, isActive: boolean) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid, userType: 'TEACHER', isDeleted: false },
+            where: { uuid, schoolId, userType: 'TEACHER', isDeleted: false },
             select: { id: true },
         });
         if (!user) throw new NotFoundException('TEACHER_NOT_FOUND');

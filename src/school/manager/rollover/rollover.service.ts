@@ -86,7 +86,7 @@ export class RolloverService {
                 _count: {
                     select: {
                         enrollments: {
-                            where: { isCurrent: true, isDeleted: false },
+                            where: { yearId: currentYear.id, isCurrent: true, isDeleted: false },
                         },
                     },
                 },
@@ -125,6 +125,14 @@ export class RolloverService {
     // ==================== 1b. جلب الطلاب للترحيل ====================
 
     async getStudentsForRollover(schoolId: number) {
+        const currentYear = await this.prisma.year.findFirst({
+            where: { schoolId, isCurrent: true, isDeleted: false },
+            select: { id: true },
+        });
+        if (!currentYear) {
+            return { grades: [] };
+        }
+
         const grades = await this.prisma.schoolGrade.findMany({
             where: { schoolId, isDeleted: false, isActive: true },
             orderBy: { sortOrder: 'asc' },
@@ -134,7 +142,7 @@ export class RolloverService {
                     orderBy: { orderIndex: 'asc' },
                     include: {
                         enrollments: {
-                            where: { isCurrent: true, isDeleted: false },
+                            where: { yearId: currentYear.id, isCurrent: true, isDeleted: false },
                             include: {
                                 student: {
                                     include: { user: true },
@@ -201,9 +209,10 @@ export class RolloverService {
             const targetGradeId = migrationMap.get(grade.id);
             const isGraduating = targetGradeId === null || targetGradeId === undefined;
 
-            // جلب enrollments لهذا الصف
+            // جلب enrollments لهذا الصف (السنة الحالية فقط)
             const enrollments = await this.prisma.studentEnrollment.findMany({
                 where: {
+                    yearId: eligibility.currentYear!.id,
                     gradeId: grade.id,
                     isCurrent: true,
                     isDeleted: false,
@@ -283,8 +292,16 @@ export class RolloverService {
             throw new ConflictException(eligibility.reason || 'NOT_ELIGIBLE');
         }
 
-        // التحقق من خريطة الصفوف
+        // التحقق من خريطة الصفوف (منع التكرار والترحيل الذاتي)
+        const seenSourceGrades = new Set<number>();
         for (const m of dto.gradeMigrations) {
+            if (seenSourceGrades.has(m.sourceGradeId)) {
+                throw new BadRequestException(`DUPLICATE_SOURCE_GRADE_${m.sourceGradeId}`);
+            }
+            seenSourceGrades.add(m.sourceGradeId);
+            if (m.targetGradeId != null && m.targetGradeId === m.sourceGradeId) {
+                throw new BadRequestException(`SELF_MIGRATION_NOT_ALLOWED_${m.sourceGradeId}`);
+            }
             const src = eligibility.grades.find(g => g.id === m.sourceGradeId);
             if (!src) throw new BadRequestException(`INVALID_SOURCE_GRADE_${m.sourceGradeId}`);
             if (m.targetGradeId != null) {
@@ -307,9 +324,41 @@ export class RolloverService {
 
         // ───── Transaction ─────
         return this.prisma.$transaction(async (tx) => {
+            // ══════ Step 0: قفل صف المدرسة لمنع تداخل الترحيل مع إضافة طلاب/فصول ══════
+            await tx.$queryRawUnsafe(
+                `SELECT id FROM "School" WHERE id = $1 FOR UPDATE`,
+                schoolId,
+            );
+
+            // إعادة التحقق من الأهلية داخل المعاملة لمنع السباق (TOCTOU)
+            const lockedCurrentYear = await tx.year.findFirst({
+                where: { schoolId, isCurrent: true, isDeleted: false },
+                include: { terms: { where: { isDeleted: false } } },
+            });
+            if (!lockedCurrentYear) {
+                throw new ConflictException('NO_CURRENT_YEAR');
+            }
+            if (lockedCurrentYear.id !== eligibility.currentYear!.id) {
+                throw new ConflictException('ALREADY_ROLLED_OVER');
+            }
+            if (lockedCurrentYear.terms.some(t => t.isCurrent)) {
+                throw new ConflictException('ACTIVE_TERM_EXISTS');
+            }
+            const newerYear = await tx.year.findFirst({
+                where: {
+                    schoolId,
+                    isDeleted: false,
+                    id: { not: lockedCurrentYear.id },
+                    createdAt: { gt: lockedCurrentYear.createdAt },
+                },
+            });
+            if (newerYear) {
+                throw new ConflictException('ALREADY_ROLLED_OVER');
+            }
+
             // ══════ Step 1: إلغاء السنة القديمة أولاً (لتجنب قيد Unique) ══════
             await tx.year.update({
-                where: { id: eligibility.currentYear!.id },
+                where: { id: lockedCurrentYear.id },
                 data: { isCurrent: false },
             });
 
@@ -394,19 +443,22 @@ export class RolloverService {
                 }
             }
 
-            // ══════ Step 5: ترحيل الطلاب ══════
+            // ══════ Step 5: ترحيل الطلاب (تنازلياً + مقيداً بالسنة القديمة فقط) ══════
             let promotedCount = 0;
             let repeatedCount = 0;
             let withdrawnCount = 0;
             let graduatedCount = 0;
 
-            for (const grade of eligibility.grades) {
+            const gradesDesc = [...eligibility.grades].sort((a, b) => b.sortOrder - a.sortOrder);
+
+            for (const grade of gradesDesc) {
                 const targetGradeId = migrationMap.get(grade.id);
                 const isGraduating = targetGradeId === null || targetGradeId === undefined;
 
-                // جلب جميع enrollments الحالية لهذا الصف
+                // جلب enrollments السنة المنتهية فقط (منع القفز المتسلسل SEC-ROL-01)
                 const enrollments = await tx.studentEnrollment.findMany({
                     where: {
+                        yearId: lockedCurrentYear.id,
                         gradeId: grade.id,
                         isCurrent: true,
                         isDeleted: false,
@@ -495,7 +547,7 @@ export class RolloverService {
             // ══════ Step 6: نسخ الجدول الدراسي (اختياري) ══════
             let timetableCopied = false;
             if (dto.copyTimetable) {
-                timetableCopied = await this.copyTimetable(tx, schoolId, eligibility.currentYear!.id, newYear.id);
+                timetableCopied = await this.copyTimetable(tx, schoolId, lockedCurrentYear.id, newYear.id);
             }
 
             return {
@@ -555,12 +607,16 @@ export class RolloverService {
 
         if (!lastOldTerm || !firstNewTerm) return false;
 
-        // جلب جميع الجداول (timetables) للفصل القديم مع حصصها
+        // جلب جميع الجداول (timetables) للفصل القديم لهذه المدرسة فقط مع حصصها
         const sourceTimetables = await tx.timetable.findMany({
             where: {
                 yearId: oldYearId,
                 termId: lastOldTerm.id,
                 isDeleted: false,
+                section: {
+                    isDeleted: false,
+                    grade: { schoolId, isDeleted: false },
+                },
             },
             include: {
                 slots: { where: { isDeleted: false } },

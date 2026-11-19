@@ -32,6 +32,32 @@ export class TeacherLessonTargetingService {
         return { subjectId: subject.id };
     }
 
+    private async assertOwnsTemplateSubject(
+        schoolId: number,
+        teacherId: number,
+        subjectId: number | null,
+    ) {
+        if (!subjectId) {
+            throw new ForbiddenException('ليس لديك صلاحية لهذا الدرس');
+        }
+        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
+            where: {
+                teacherId,
+                isDeleted: false,
+                isActive: true,
+                subjectSection: {
+                    subjectId,
+                    isDeleted: false,
+                    subject: { schoolId, isDeleted: false },
+                },
+            },
+            select: { id: true },
+        });
+        if (!assignment) {
+            throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
+        }
+    }
+
     // SRS-P4-01: الشُعب المتاحة
     async getAvailableSections(schoolId: number, userUuid: string, subjectUuid: string) {
         const { teacherId } = await this.getTeacherContext(schoolId, userUuid);
@@ -85,6 +111,14 @@ export class TeacherLessonTargetingService {
         });
         if (!ss) throw new NotFoundException('المادة غير مرتبطة بهذه الشعبة');
 
+        const teacherAssignment = await this.prisma.subjectSectionTeacher.findFirst({
+            where: { teacherId, subjectSectionId: ss.id, isActive: true, isDeleted: false },
+            select: { id: true },
+        });
+        if (!teacherAssignment) {
+            throw new ForbiddenException('الشعبة غير مسندة لك في هذه المادة');
+        }
+
         // جلب الفصل الحالي (termStartDate / termEndDate)
         const cy = await this.prisma.year.findFirst({
             where: { schoolId, isCurrent: true, isDeleted: false },
@@ -108,7 +142,7 @@ export class TeacherLessonTargetingService {
             orderBy: [{ weekday: 'asc' }, { lessonNumber: 'asc' }],
             include: {
                 lessonTimetableSlots: {
-                    where: { lesson: { isDeleted: false } },
+                    where: { lesson: { schoolId, isDeleted: false } },
                     include: {
                         lesson: { include: { template: { select: { title: true } } } },
                     },
@@ -160,6 +194,7 @@ export class TeacherLessonTargetingService {
             where: { uuid: lessonTemplateUuid, schoolId, isDeleted: false },
         });
         if (!template) throw new NotFoundException('الدرس غير موجود');
+        await this.assertOwnsTemplateSubject(schoolId, teacherId, template.subjectId);
         if (template.status !== 'READY') {
             throw new BadRequestException('الدرس يجب أن يكون "جاهز" قبل الاستهداف');
         }
@@ -172,11 +207,37 @@ export class TeacherLessonTargetingService {
             throw new BadRequestException('لا يوجد سنة أو فصل دراسي حالي');
         }
 
+        const uniqueSectionUuids = [...new Set(dto.sectionUuids)];
         const sections = await this.prisma.section.findMany({
-            where: { uuid: { in: dto.sectionUuids }, isDeleted: false, isActive: true, grade: { schoolId } },
+            where: {
+                uuid: { in: uniqueSectionUuids },
+                isDeleted: false,
+                isActive: true,
+                grade: { schoolId, isDeleted: false },
+            },
         });
-        if (sections.length !== dto.sectionUuids.length) {
+        if (sections.length !== uniqueSectionUuids.length) {
             throw new BadRequestException('بعض الشُعب غير موجودة');
+        }
+
+        const assignedSections = await this.prisma.subjectSectionTeacher.findMany({
+            where: {
+                teacherId,
+                isActive: true,
+                isDeleted: false,
+                subjectSection: {
+                    subjectId: template.subjectId!,
+                    sectionId: { in: sections.map((s) => s.id) },
+                    isDeleted: false,
+                },
+            },
+            select: { subjectSection: { select: { sectionId: true } } },
+        });
+        const assignedSectionIds = new Set(
+            assignedSections.map((a) => a.subjectSection.sectionId),
+        );
+        if (assignedSectionIds.size !== sections.length) {
+            throw new ForbiddenException('بعض الشُعب المختارة غير مسندة لك في هذه المادة');
         }
 
         const existing = await this.prisma.lesson.findFirst({
@@ -239,23 +300,52 @@ export class TeacherLessonTargetingService {
                 }
 
                 for (const sa of dto.slotAssignments) {
-                    const slot = await tx.timetableSlot.findFirst({
-                        where: { uuid: sa.slotUuid, isDeleted: false },
-                    });
-                    if (slot) {
-                        // ربط الحصة بالـ target المناسب
-                        const sectionId = sectionUuidToId.get(sa.sectionUuid);
-                        const targetId = sectionId ? sectionIdToTargetId.get(sectionId) : undefined;
-
-                        await tx.lessonTimetableSlot.create({
-                            data: {
-                                lessonId: lesson.id,
-                                timetableSlotId: slot.id,
-                                targetId: targetId ?? null,
-                                weekDate: sa.weekDate ? new Date(sa.weekDate) : null, // MS-13A: per-week
-                            },
-                        });
+                    const sectionId = sectionUuidToId.get(sa.sectionUuid);
+                    if (!sectionId) {
+                        throw new BadRequestException(
+                            'الشعبة المرتبطة بالحصة غير موجودة ضمن الشعب المستهدفة',
+                        );
                     }
+
+                    const slot = await tx.timetableSlot.findFirst({
+                        where: {
+                            uuid: sa.slotUuid,
+                            isDeleted: false,
+                            timetable: {
+                                sectionId,
+                                status: 'PUBLISHED',
+                                isDeleted: false,
+                                section: { grade: { schoolId, isDeleted: false } },
+                            },
+                            subjectSection: {
+                                subjectId: template.subjectId!,
+                                sectionId,
+                                isDeleted: false,
+                                teachers: {
+                                    some: {
+                                        teacherId,
+                                        isActive: true,
+                                        isDeleted: false,
+                                    },
+                                },
+                            },
+                        },
+                    });
+                    if (!slot) {
+                        throw new ForbiddenException(
+                            'الحصة الدراسية غير صالحة أو لا تتبع لهذه المادة والشعبة',
+                        );
+                    }
+
+                    const targetId = sectionIdToTargetId.get(sectionId);
+                    await tx.lessonTimetableSlot.create({
+                        data: {
+                            lessonId: lesson.id,
+                            timetableSlotId: slot.id,
+                            targetId: targetId ?? null,
+                            weekDate: sa.weekDate ? new Date(sa.weekDate) : null, // MS-13A: per-week
+                        },
+                    });
                 }
             }
 
@@ -283,12 +373,13 @@ export class TeacherLessonTargetingService {
 
     // جلب الاستهداف الحالي
     async getTargeting(schoolId: number, userUuid: string, lessonTemplateUuid: string) {
-        await this.getTeacherContext(schoolId, userUuid);
+        const { teacherId } = await this.getTeacherContext(schoolId, userUuid);
 
         const template = await this.prisma.lessonTemplate.findFirst({
             where: { uuid: lessonTemplateUuid, schoolId, isDeleted: false },
         });
         if (!template) throw new NotFoundException('الدرس غير موجود');
+        await this.assertOwnsTemplateSubject(schoolId, teacherId, template.subjectId);
 
         const lesson = await this.prisma.lesson.findFirst({
             where: { templateId: template.id, isDeleted: false },
@@ -297,6 +388,12 @@ export class TeacherLessonTargetingService {
                     include: { section: { select: { uuid: true, name: true } } },
                 },
                 timetableSlots: {
+                    where: {
+                        timetableSlot: {
+                            isDeleted: false,
+                            timetable: { section: { grade: { schoolId } } },
+                        },
+                    },
                     include: {
                         timetableSlot: {
                             select: { uuid: true, weekday: true, lessonNumber: true },
@@ -333,12 +430,13 @@ export class TeacherLessonTargetingService {
 
     // SRS-P4-05: نشر الدرس — يتحقق من سياسة المدرسة
     async publishLesson(schoolId: number, userUuid: string, lessonTemplateUuid: string) {
-        const { userId } = await this.getTeacherContext(schoolId, userUuid);
+        const { userId, teacherId } = await this.getTeacherContext(schoolId, userUuid);
 
         const template = await this.prisma.lessonTemplate.findFirst({
             where: { uuid: lessonTemplateUuid, schoolId, isDeleted: false },
         });
         if (!template) throw new NotFoundException('الدرس غير موجود');
+        await this.assertOwnsTemplateSubject(schoolId, teacherId, template.subjectId);
 
         const lesson = await this.prisma.lesson.findFirst({
             where: { templateId: template.id, isDeleted: false },
@@ -368,12 +466,13 @@ export class TeacherLessonTargetingService {
 
     // SRS-P4-07: إلغاء الجدولة
     async cancelSchedule(schoolId: number, userUuid: string, lessonTemplateUuid: string) {
-        const { userId } = await this.getTeacherContext(schoolId, userUuid);
+        const { userId, teacherId } = await this.getTeacherContext(schoolId, userUuid);
 
         const template = await this.prisma.lessonTemplate.findFirst({
             where: { uuid: lessonTemplateUuid, schoolId, isDeleted: false },
         });
         if (!template) throw new NotFoundException('الدرس غير موجود');
+        await this.assertOwnsTemplateSubject(schoolId, teacherId, template.subjectId);
 
         const lesson = await this.prisma.lesson.findFirst({
             where: { templateId: template.id, isDeleted: false },
@@ -388,12 +487,13 @@ export class TeacherLessonTargetingService {
 
     // حالة النشر التفصيلية — per-target status
     async getDeliveryStatus(schoolId: number, userUuid: string, lessonTemplateUuid: string) {
-        await this.getTeacherContext(schoolId, userUuid);
+        const { teacherId } = await this.getTeacherContext(schoolId, userUuid);
 
         const template = await this.prisma.lessonTemplate.findFirst({
             where: { uuid: lessonTemplateUuid, schoolId, isDeleted: false },
         });
         if (!template) throw new NotFoundException('الدرس غير موجود');
+        await this.assertOwnsTemplateSubject(schoolId, teacherId, template.subjectId);
 
         const lesson = await this.prisma.lesson.findFirst({
             where: { templateId: template.id, isDeleted: false },

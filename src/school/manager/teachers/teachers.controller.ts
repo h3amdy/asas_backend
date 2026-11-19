@@ -60,29 +60,29 @@ export class TeachersController {
     // ─── SRS-TCH-03: Teacher Profile ────────────────────────
 
     @Get(':uuid')
-    getProfile(@Param('uuid') uuid: string) {
-        return this.service.getTeacherProfile(uuid);
+    getProfile(@Req() req: any, @Param('uuid') uuid: string) {
+        return this.service.getTeacherProfile(uuid, req.schoolContext.id);
     }
 
     // ─── SRS-TCH-04: Update Teacher ─────────────────────────
 
     @Patch(':uuid')
-    update(@Param('uuid') uuid: string, @Body() dto: UpdateTeacherDto) {
-        return this.service.updateTeacher(uuid, dto);
+    update(@Req() req: any, @Param('uuid') uuid: string, @Body() dto: UpdateTeacherDto) {
+        return this.service.updateTeacher(uuid, req.schoolContext.id, dto);
     }
 
     // ─── SRS-TCH-07: Block/Unblock ──────────────────────────
 
     @Patch(':uuid/toggle-active')
-    toggleActive(@Param('uuid') uuid: string, @Body() dto: ToggleActiveDto) {
-        return this.service.toggleActive(uuid, dto.isActive);
+    toggleActive(@Req() req: any, @Param('uuid') uuid: string, @Body() dto: ToggleActiveDto) {
+        return this.service.toggleActive(uuid, req.schoolContext.id, dto.isActive);
     }
 
     // ─── SRS-TCH-05: Reset Password ─────────────────────────
 
     @Post(':uuid/reset-password')
-    resetPassword(@Param('uuid') uuid: string, @Body() dto: ResetPasswordDto) {
-        return this.service.resetPassword(uuid, dto.newPassword);
+    resetPassword(@Req() req: any, @Param('uuid') uuid: string, @Body() dto: ResetPasswordDto) {
+        return this.service.resetPassword(uuid, req.schoolContext.id, dto.newPassword);
     }
 
     // ─── SRS-TCH-06: Get Credentials ────────────────────────

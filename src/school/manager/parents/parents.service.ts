@@ -247,36 +247,58 @@ export class ParentsService {
     // ─── SRS-PAR-08: Link Children ──────────────────────────
 
     async linkChildren(userUuid: string, schoolId: number, dto: LinkChildrenDto) {
-        const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, userType: 'PARENT', isDeleted: false, schoolId },
-            select: { id: true },
-        });
-        if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
-
-        // Resolve student UUIDs to user IDs
-        const students = await this.prisma.user.findMany({
-            where: {
-                uuid: { in: dto.studentUuids },
-                userType: 'STUDENT',
-                isDeleted: false,
-                schoolId, // SR-NUM-004: لا ربط بطلاب مدرسة أخرى
-            },
-            select: { id: true, uuid: true },
-        });
-
-        if (students.length === 0) {
-            throw new NotFoundException('NO_VALID_STUDENTS_FOUND');
+        if (!Array.isArray(dto.studentUuids) || dto.studentUuids.length === 0) {
+            throw new BadRequestException('INVALID_STUDENTS_FOR_SCHOOL');
         }
 
-        for (const student of students) {
-            await this.prisma.parentStudent.upsert({
-                where: { parentId_studentId: { parentId: user.id, studentId: student.id } },
-                create: { parentId: user.id, studentId: student.id },
-                update: { isDeleted: false, deletedAt: null },
+        const normalizedUuids = dto.studentUuids.map((uuid) =>
+            typeof uuid === 'string' ? uuid.trim() : '',
+        );
+        if (normalizedUuids.some((uuid) => uuid.length === 0)) {
+            throw new BadRequestException('INVALID_STUDENTS_FOR_SCHOOL');
+        }
+
+        const uniqueStudentUuids = [...new Set(normalizedUuids)];
+
+        return this.prisma.$transaction(async (tx) => {
+            const user = await tx.user.findFirst({
+                where: {
+                    uuid: userUuid,
+                    userType: 'PARENT',
+                    isDeleted: false,
+                    schoolId,
+                    parent: { isNot: null },
+                },
+                select: { id: true },
             });
-        }
+            if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
 
-        return { success: true, linked: students.length };
+            // التحقق من ملكية جميع المعرفات الفريدة للمدرسة الحالية قبل أي كتابة
+            const students = await tx.user.findMany({
+                where: {
+                    uuid: { in: uniqueStudentUuids },
+                    userType: 'STUDENT',
+                    isDeleted: false,
+                    schoolId, // SR-NUM-004: لا ربط بطلاب مدرسة أخرى
+                    student: { isNot: null },
+                },
+                select: { id: true, uuid: true },
+            });
+
+            if (students.length !== uniqueStudentUuids.length) {
+                throw new BadRequestException('INVALID_STUDENTS_FOR_SCHOOL');
+            }
+
+            for (const student of students) {
+                await tx.parentStudent.upsert({
+                    where: { parentId_studentId: { parentId: user.id, studentId: student.id } },
+                    create: { parentId: user.id, studentId: student.id },
+                    update: { isDeleted: false, deletedAt: null },
+                });
+            }
+
+            return { success: true, linked: students.length };
+        });
     }
 
     // ─── SRS-PAR-08: Unlink Child ───────────────────────────
