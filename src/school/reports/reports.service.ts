@@ -468,10 +468,14 @@ export class ReportsService {
             throw new NotFoundException('الطالب غير موجود');
         }
 
-        // ── جلب الدرس ──
+        // ── جلب الدرس مع رقم مراجعة الأسئلة ──
         const lesson = await this.prisma.lesson.findFirst({
             where: { uuid: lessonUuid, schoolId, isDeleted: false },
-            select: { id: true, templateId: true },
+            select: {
+                id: true,
+                templateId: true,
+                template: { select: { questionsRevision: true } },
+            },
         });
 
         if (!lesson) {
@@ -484,6 +488,26 @@ export class ReportsService {
             orderBy: { calculatedAt: 'desc' },
         });
         if (!result) throw new NotFoundException('RESULT_NOT_FOUND');
+
+        const reviewAvailable =
+            result.questionsRevisionAtSubmit === null ||
+            result.questionsRevisionAtSubmit === lesson.template?.questionsRevision;
+
+        if (!reviewAvailable) {
+            return {
+                result: {
+                    resultUuid: result.uuid,
+                    totalQuestions: result.totalQuestions,
+                    correctQuestions: result.correctQuestions,
+                    totalPoints: result.totalPoints,
+                    earnedPoints: result.earnedPoints,
+                    percent: Math.round(result.percent),
+                    gradeLabel: result.gradeLabel,
+                },
+                reviewAvailable: false,
+                questions: [],
+            };
+        }
 
         // ── الأسئلة (نفس بنية parent-children.service) ──
         const questions = await this.prisma.question.findMany({
@@ -636,6 +660,7 @@ export class ReportsService {
                 percent: Math.round(result.percent),
                 gradeLabel: result.gradeLabel,
             },
+            reviewAvailable: true,
             questions: reviewQuestions,
         };
     }

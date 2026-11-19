@@ -5,6 +5,8 @@ import { SchoolContextGuard } from '../../common/guards/school-context.guard';
 import { ParentStudentContextGuard } from '../../common/guards/parent-student-context.guard';
 import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 import { SubscriptionGuard } from '../../common/guards/subscription.guard';
+import { CheckAnswerDto } from './dto/check-answer.dto';
+import { SubmitQuizDto } from './dto/submit-quiz.dto';
 
 /**
  * 📝 Student Quiz Controller (STD-050 → STD-071)
@@ -44,7 +46,7 @@ export class StudentQuizController {
     checkAnswer(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,
-        @Body() body: { questionUuid: string; answerValue: any },
+        @Body() body: CheckAnswerDto,
     ) {
         return this.service.checkAnswer(
             req.schoolContext.id,
@@ -63,17 +65,13 @@ export class StudentQuizController {
     submitQuiz(
         @Req() req: any,
         @Param('lessonUuid') lessonUuid: string,
-        @Body() body: {
-            questionsRevision?: number;
-            answers: { questionUuid: string; answerValue: any; isCorrect: boolean }[];
-        },
+        @Body() body: SubmitQuizDto,
     ) {
         return this.service.submitQuiz(
             req.schoolContext.id,
             req.user.sub,
             lessonUuid,
-            body.answers,
-            body.questionsRevision,
+            body,
         );
     }
 

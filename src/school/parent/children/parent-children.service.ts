@@ -1,6 +1,7 @@
 // src/school/parent/children/parent-children.service.ts
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { SUB_ERROR } from '../../common/guards/subscription.guard';
 import { StudentProgressSummaryService } from '../../common/services/student-progress-summary.service';
 import { StudentResultsAggregationService } from '../../common/services/student-results-aggregation.service';
 
@@ -718,13 +719,60 @@ export class ParentChildrenService {
         childUuid: string,
         lessonUuid: string,
     ) {
-        const { childStudentId } =
+        const { childStudentId, enrollment } =
             await this.verifyParentChildLink(schoolId, parentUserUuid, childUuid);
 
-        // جلب الدرس
+        if (!enrollment) {
+            throw new NotFoundException('ENROLLMENT_NOT_FOUND');
+        }
+
+        // SEC-SUB-01: التحقق من اشتراك الابن الفعلي قبل كشف مراجعة الأسئلة والإجابات
+        const settings = await this.prisma.schoolSubscriptionSettings.findUnique({
+            where: { schoolId },
+            select: { isActivated: true },
+        });
+        if (settings?.isActivated) {
+            const now = new Date();
+            const activePeriod = await this.prisma.studentAccessPeriod.findFirst({
+                where: {
+                    schoolId,
+                    studentUserId: childStudentId,
+                    endedEarlyAt: null,
+                    expiresAt: { gt: now },
+                },
+                select: { id: true },
+            });
+            if (!activePeriod) {
+                const anyPeriod = await this.prisma.studentAccessPeriod.findFirst({
+                    where: { schoolId, studentUserId: childStudentId },
+                    select: { id: true },
+                });
+                throw new ForbiddenException(
+                    anyPeriod ? SUB_ERROR.SUBSCRIPTION_EXPIRED : SUB_ERROR.SUBSCRIPTION_REQUIRED,
+                );
+            }
+        }
+
+        // جلب الدرس بشرط استهدافه ونشره لشعبة الابن الحالية ومراجعة أسئلته (SEC-SUB-01 + SEC-R3-07)
         const lesson = await this.prisma.lesson.findFirst({
-            where: { uuid: lessonUuid, schoolId, isDeleted: false },
-            select: { id: true, templateId: true },
+            where: {
+                uuid: lessonUuid,
+                schoolId,
+                isDeleted: false,
+                isActive: true,
+                status: { not: 'ARCHIVED' },
+                targets: {
+                    some: {
+                        sectionId: enrollment.sectionId,
+                        publishedAt: { not: null },
+                    },
+                },
+            },
+            select: {
+                id: true,
+                templateId: true,
+                template: { select: { questionsRevision: true } },
+            },
         });
 
         if (!lesson) {
@@ -737,6 +785,27 @@ export class ParentChildrenService {
             orderBy: { calculatedAt: 'desc' },
         });
         if (!result) throw new NotFoundException('RESULT_NOT_FOUND');
+
+        // SEC-R3-07: مقارنة مراجعة الأسئلة وقت التسليم بمراجعة القالب الحالية
+        const reviewAvailable =
+            result.questionsRevisionAtSubmit === null ||
+            result.questionsRevisionAtSubmit === lesson.template?.questionsRevision;
+
+        if (!reviewAvailable) {
+            return {
+                result: {
+                    resultUuid: result.uuid,
+                    totalQuestions: result.totalQuestions,
+                    correctQuestions: result.correctQuestions,
+                    totalPoints: result.totalPoints,
+                    earnedPoints: result.earnedPoints,
+                    percent: Math.round(result.percent),
+                    gradeLabel: result.gradeLabel,
+                },
+                reviewAvailable: false,
+                questions: [],
+            };
+        }
 
         // 2. جلب الأسئلة مع كل البيانات
         const questions = await this.prisma.question.findMany({
@@ -889,6 +958,7 @@ export class ParentChildrenService {
                 percent: Math.round(result.percent),
                 gradeLabel: result.gradeLabel,
             },
+            reviewAvailable: true,
             questions: reviewQuestions,
         };
     }

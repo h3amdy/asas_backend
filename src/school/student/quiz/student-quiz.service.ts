@@ -1,6 +1,19 @@
 // src/school/student/quiz/student-quiz.service.ts
-import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+    Injectable,
+    ForbiddenException,
+    NotFoundException,
+    BadRequestException,
+    ConflictException,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import {
+    QUESTION_EVALUATION_INCLUDE,
+    evaluateQuestionAnswer,
+    getGradeLabel,
+} from './helpers/answer-evaluator';
+import { SubmitQuizAnswerDto, SubmitQuizDto } from './dto/submit-quiz.dto';
 
 // TODO: لاحقاً سيكون من إعدادات المدرسة
 const MAX_ATTEMPTS = 999;
@@ -11,16 +24,21 @@ export class StudentQuizService {
 
     // ─────── Helpers ─────────────────────────────────────────────────────────
 
-    private async getStudentAndLesson(schoolId: number, userUuid: string, lessonUuid: string) {
+    private async getStudentAndLesson(
+        schoolId: number,
+        userUuid: string,
+        lessonUuid: string,
+        db: Prisma.TransactionClient | PrismaService = this.prisma,
+    ) {
         // 1. جلب الطالب
-        const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, schoolId },
+        const user = await db.user.findFirst({
+            where: { uuid: userUuid, schoolId, userType: 'STUDENT', isDeleted: false },
             include: { student: { select: { userId: true } } },
         });
         if (!user || !user.student) throw new ForbiddenException('USER_IS_NOT_STUDENT');
 
         // 2. جلب الالتحاق
-        const enrollment = await this.prisma.studentEnrollment.findFirst({
+        const enrollment = await db.studentEnrollment.findFirst({
             where: {
                 studentId: user.student.userId,
                 isCurrent: true,
@@ -32,7 +50,7 @@ export class StudentQuizService {
 
         // 3. جلب الدرس مع التحقق من الاستهداف
         // DEC-020 v3.0: Per-Target visibility
-        const lesson = await this.prisma.lesson.findFirst({
+        const lesson = await db.lesson.findFirst({
             where: {
                 uuid: lessonUuid,
                 schoolId,
@@ -40,6 +58,9 @@ export class StudentQuizService {
                 isActive: true,
                 status: { not: 'ARCHIVED' },
                 targets: { some: { sectionId: enrollment.sectionId, publishedAt: { not: null } } },
+            },
+            include: {
+                template: { select: { questionsRevision: true } },
             },
         });
         if (!lesson) throw new NotFoundException('LESSON_NOT_FOUND');
@@ -247,23 +268,21 @@ export class StudentQuizService {
         questionUuid: string,
         answerValue: any,
     ) {
-        // تحقق فقط أن الدرس والطالب صحيحان
-        await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
+        // التحقق من الطالب والدرس، ثم ربط السؤال بنفس قالب الدرس (SEC-QUIZ-02)
+        const { lesson } = await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
 
-        // جلب السؤال مع الإجابات الصحيحة  
         const question = await this.prisma.question.findFirst({
-            where: { uuid: questionUuid, isDeleted: false },
-            include: {
-                options: { where: { isDeleted: false } },
-                matchingPairs: { where: { isDeleted: false } },
-                orderingItems: { where: { isDeleted: false } },
-                fillAnswers: { where: { isDeleted: false } },
+            where: {
+                uuid: questionUuid,
+                templateId: lesson.templateId,
+                isDeleted: false,
             },
+            include: QUESTION_EVALUATION_INCLUDE,
         });
 
         if (!question) throw new NotFoundException('QUESTION_NOT_FOUND');
 
-        const isCorrect = this.evaluateAnswer(question, answerValue);
+        const isCorrect = evaluateQuestionAnswer(question, answerValue);
 
         return {
             questionUuid,
@@ -275,134 +294,251 @@ export class StudentQuizService {
     // ─────── Submit quiz ─────────────────────────────────────────────────────
 
     /**
-     * إنهاء المحاولة + حفظ النتيجة النهائية + حفظ الإجابات
+     * إنهاء المحاولة + حفظ النتيجة النهائية + حفظ الإجابات ذرياً مع إعادة التقييم الكامل على الخادم
      */
     async submitQuiz(
         schoolId: number,
         userUuid: string,
         lessonUuid: string,
-        answers: { questionUuid: string; answerValue: any; isCorrect: boolean }[],
-        questionsRevision?: number,
+        dtoOrAnswers: SubmitQuizDto | SubmitQuizAnswerDto[],
+        _legacyQuestionsRevision?: number,
     ) {
-        const { studentId, lesson } = await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
+        const answers: SubmitQuizAnswerDto[] = Array.isArray(dtoOrAnswers)
+            ? dtoOrAnswers
+            : dtoOrAnswers?.answers;
+        const clientAttemptUuid =
+            !Array.isArray(dtoOrAnswers) &&
+            typeof dtoOrAnswers?.clientAttemptUuid === 'string' &&
+            dtoOrAnswers.clientAttemptUuid.trim().length > 0
+                ? dtoOrAnswers.clientAttemptUuid.trim()
+                : undefined;
 
-        // التحقق من عدد المحاولات
-        const attemptCount = await this.prisma.studentLessonResult.count({
-            where: { studentId, lessonId: lesson.id, isDeleted: false },
-        });
-
-        if (attemptCount >= MAX_ATTEMPTS) {
-            throw new BadRequestException('MAX_ATTEMPTS_EXCEEDED');
+        if (!Array.isArray(answers)) {
+            throw new BadRequestException('INVALID_ANSWERS_PAYLOAD');
         }
 
-        // جلب الأسئلة لحساب الدرجات
-        const questions = await this.prisma.question.findMany({
-            where: { templateId: lesson.templateId, isDeleted: false },
-            select: { id: true, uuid: true, score: true },
-        });
-
-        const totalQuestions = questions.length;
-        const totalPoints = questions.reduce((sum, q) => sum + q.score, 0);
-
-        let correctCount = 0;
-        let earnedPoints = 0;
-
-        // الاعتماد على isCorrect المرسل من العميل (تم تصحيحه فورياً)
+        // رفض تكرار السؤال داخل المحاولة الواحدة (Decision #6 / SEC-QUIZ-01)
+        const seenQuestionUuids = new Set<string>();
         for (const ans of answers) {
-            const question = questions.find(q => q.uuid === ans.questionUuid);
-            if (!question) continue;
-
-            if (ans.isCorrect) {
-                correctCount++;
-                earnedPoints += question.score;
+            if (!ans || typeof ans.questionUuid !== 'string' || ans.questionUuid.trim().length === 0) {
+                throw new BadRequestException('INVALID_QUESTION_FOR_LESSON');
             }
+            if (seenQuestionUuids.has(ans.questionUuid)) {
+                throw new BadRequestException('DUPLICATE_QUESTION_IN_SUBMISSION');
+            }
+            seenQuestionUuids.add(ans.questionUuid);
         }
 
-        const percent = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
-        const gradeLabel = this.getGradeLabel(percent);
+        return this.prisma.$transaction(async (tx) => {
+            const { studentId, lesson } = await this.getStudentAndLesson(
+                schoolId,
+                userUuid,
+                lessonUuid,
+                tx,
+            );
 
-        // حفظ النتيجة
-        const result = await this.prisma.studentLessonResult.create({
-            data: {
-                studentId,
-                lessonId: lesson.id,
+            // قفل استشاري لمنع تداخل المحاولات المتزامنة (SEC-R3-02)
+            await tx.$executeRaw(
+                Prisma.sql`SELECT pg_advisory_xact_lock(CAST(${studentId} AS INTEGER), CAST(${lesson.id} AS INTEGER))`,
+            );
+
+            // التحقق من تكرار الإرسال الآمن إذا وفّر العميل clientAttemptUuid
+            if (clientAttemptUuid) {
+                const existingAttempt = await tx.processedClientChange.findUnique({
+                    where: { clientChangeUuid: clientAttemptUuid },
+                    select: { studentId: true, entityUuid: true },
+                });
+                if (existingAttempt) {
+                    if (existingAttempt.studentId !== studentId) {
+                        throw new ConflictException('CLIENT_ATTEMPT_CONFLICT');
+                    }
+                    const priorResult = await tx.studentLessonResult.findFirst({
+                        where: {
+                            uuid: existingAttempt.entityUuid,
+                            studentId,
+                            lessonId: lesson.id,
+                            isDeleted: false,
+                        },
+                    });
+                    if (priorResult) {
+                        const currentAttempts = await tx.studentLessonResult.count({
+                            where: { studentId, lessonId: lesson.id, isDeleted: false },
+                        });
+                        return {
+                            resultUuid: priorResult.uuid,
+                            totalQuestions: priorResult.totalQuestions,
+                            correctQuestions: priorResult.correctQuestions,
+                            totalPoints: priorResult.totalPoints,
+                            earnedPoints: priorResult.earnedPoints,
+                            percent: Math.round(priorResult.percent),
+                            gradeLabel: priorResult.gradeLabel,
+                            attemptNumber: priorResult.version,
+                            remainingAttempts: Math.max(0, MAX_ATTEMPTS - currentAttempts),
+                            idempotentReplay: true,
+                        };
+                    }
+                }
+            }
+
+            // التحقق من عدد المحاولات داخل القفل
+            const attemptCount = await tx.studentLessonResult.count({
+                where: { studentId, lessonId: lesson.id, isDeleted: false },
+            });
+
+            if (attemptCount >= MAX_ATTEMPTS) {
+                throw new BadRequestException('MAX_ATTEMPTS_EXCEEDED');
+            }
+
+            // جلب كافة أسئلة القالب مع بيانات التصحيح الكاملة من الخادم
+            const questions = await tx.question.findMany({
+                where: { templateId: lesson.templateId, isDeleted: false },
+                include: QUESTION_EVALUATION_INCLUDE,
+            });
+
+            if (answers.length > questions.length) {
+                throw new BadRequestException('TOO_MANY_ANSWERS');
+            }
+
+            const questionMap = new Map(questions.map((q) => [q.uuid, q]));
+            const totalQuestions = questions.length;
+            const totalPoints = questions.reduce((sum, q) => sum + q.score, 0);
+
+            let correctCount = 0;
+            let earnedPoints = 0;
+
+            const evaluatedAnswers: Array<{
+                question: any;
+                answerValue: any;
+                isCorrect: boolean;
+                scoreAwarded: number;
+            }> = [];
+
+            for (const ans of answers) {
+                const question = questionMap.get(ans.questionUuid);
+                if (!question) {
+                    throw new BadRequestException('INVALID_QUESTION_FOR_LESSON');
+                }
+
+                // التصحيح الكامل على الخادم وتجاهل ans.isCorrect كلياً
+                const isCorrect = evaluateQuestionAnswer(question, ans.answerValue);
+                const scoreAwarded = isCorrect ? question.score : 0;
+
+                if (isCorrect) {
+                    correctCount++;
+                    earnedPoints += question.score;
+                }
+
+                evaluatedAnswers.push({
+                    question,
+                    answerValue: ans.answerValue,
+                    isCorrect,
+                    scoreAwarded,
+                });
+            }
+
+            const percent =
+                totalPoints > 0 ? Math.min(100, (earnedPoints / totalPoints) * 100) : 0;
+            const gradeLabel = getGradeLabel(percent);
+
+            // ترقيم الإصدار بشكل تصاعدي رتيب داخل القفل (SEC-R3-02)
+            const versionAgg = await tx.studentLessonResult.aggregate({
+                where: { studentId, lessonId: lesson.id },
+                _max: { version: true },
+            });
+            const nextVersion = (versionAgg._max.version ?? 0) + 1;
+
+            // الخادم هو المرجع لرقم المراجعة وقت التسليم (SEC-R3-07)
+            const serverQuestionsRevision = lesson.template?.questionsRevision ?? 1;
+
+            const result = await tx.studentLessonResult.create({
+                data: {
+                    studentId,
+                    lessonId: lesson.id,
+                    totalQuestions,
+                    correctQuestions: correctCount,
+                    totalPoints,
+                    earnedPoints,
+                    percent,
+                    gradeLabel,
+                    calculatedAt: new Date(),
+                    version: nextVersion,
+                    questionsRevisionAtSubmit: serverQuestionsRevision,
+                },
+            });
+
+            if (clientAttemptUuid) {
+                await tx.processedClientChange.create({
+                    data: {
+                        clientChangeUuid: clientAttemptUuid,
+                        entityType: 'quiz_submission',
+                        entityUuid: result.uuid,
+                        studentId,
+                    },
+                });
+            }
+
+            // حفظ الإجابات المقيّمة خادمياً بالـ upsert الذري
+            for (const ev of evaluatedAnswers) {
+                const serializedAnswer =
+                    typeof ev.answerValue === 'string'
+                        ? ev.answerValue
+                        : JSON.stringify(ev.answerValue ?? null);
+
+                await tx.studentAnswer.upsert({
+                    where: {
+                        studentId_questionId: { studentId, questionId: ev.question.id },
+                    },
+                    update: {
+                        resultId: result.id,
+                        answerValue: serializedAnswer,
+                        correctness: ev.isCorrect ? 'CORRECT' : 'WRONG',
+                        isCorrect: ev.isCorrect,
+                        scoreAwarded: ev.scoreAwarded,
+                        isDeleted: false,
+                        deletedAt: null,
+                    },
+                    create: {
+                        studentId,
+                        questionId: ev.question.id,
+                        resultId: result.id,
+                        answerValue: serializedAnswer,
+                        correctness: ev.isCorrect ? 'CORRECT' : 'WRONG',
+                        isCorrect: ev.isCorrect,
+                        scoreAwarded: ev.scoreAwarded,
+                    },
+                });
+            }
+
+            // تحديث progress بالمفتاح المركّب الفريد لتفادي خطأ id: 0 (SEC-R3-01)
+            await tx.studentLessonProgress.upsert({
+                where: {
+                    studentId_lessonId: { studentId, lessonId: lesson.id },
+                },
+                update: {
+                    status: 'COMPLETED',
+                    isDeleted: false,
+                    deletedAt: null,
+                },
+                create: {
+                    studentId,
+                    lessonId: lesson.id,
+                    status: 'COMPLETED',
+                    lastPosition: JSON.stringify({ attemptNumber: nextVersion }),
+                },
+            });
+
+            return {
+                resultUuid: result.uuid,
                 totalQuestions,
                 correctQuestions: correctCount,
                 totalPoints,
                 earnedPoints,
-                percent,
+                percent: Math.round(percent),
                 gradeLabel,
-                calculatedAt: new Date(),
-                version: 1,
-                questionsRevisionAtSubmit: questionsRevision ?? null,  // DEC-026 Phase 7
-            },
+                attemptNumber: attemptCount + 1,
+                remainingAttempts: Math.max(0, MAX_ATTEMPTS - (attemptCount + 1)),
+            };
         });
-
-        // حفظ الإجابات (upsert — الأخيرة تطغى على السابقة)
-        for (const ans of answers) {
-            const question = questions.find(q => q.uuid === ans.questionUuid);
-            if (!question) continue;
-
-            const existing = await this.prisma.studentAnswer.findUnique({
-                where: { studentId_questionId: { studentId, questionId: question.id } },
-            });
-
-            if (existing) {
-                await this.prisma.studentAnswer.update({
-                    where: { id: existing.id },
-                    data: {
-                        resultId: result.id,
-                        answerValue: JSON.stringify(ans.answerValue),
-                        correctness: ans.isCorrect ? 'CORRECT' : 'WRONG',
-                        isCorrect: ans.isCorrect,
-                        scoreAwarded: ans.isCorrect ? question.score : 0,
-                    },
-                });
-            } else {
-                await this.prisma.studentAnswer.create({
-                    data: {
-                        studentId,
-                        questionId: question.id,
-                        resultId: result.id,
-                        answerValue: JSON.stringify(ans.answerValue),
-                        correctness: ans.isCorrect ? 'CORRECT' : 'WRONG',
-                        isCorrect: ans.isCorrect,
-                        scoreAwarded: ans.isCorrect ? question.score : 0,
-                    },
-                });
-            }
-        }
-
-        // تحديث progress
-        await this.prisma.studentLessonProgress.upsert({
-            where: {
-                id: (await this.prisma.studentLessonProgress.findFirst({
-                    where: { studentId, lessonId: lesson.id },
-                }))?.id ?? 0,
-            },
-            update: {
-                status: 'COMPLETED',
-                updatedAt: new Date(),
-            },
-            create: {
-                studentId,
-                lessonId: lesson.id,
-                status: 'COMPLETED',
-                lastPosition: JSON.stringify({ attemptNumber: attemptCount + 1 }),
-            },
-        });
-
-        return {
-            resultUuid: result.uuid,
-            totalQuestions,
-            correctQuestions: correctCount,
-            totalPoints,
-            earnedPoints,
-            percent: Math.round(percent),
-            gradeLabel,
-            attemptNumber: attemptCount + 1,
-            remainingAttempts: MAX_ATTEMPTS - (attemptCount + 1),
-        };
     }
 
     // ─────── Get result ──────────────────────────────────────────────────────
@@ -636,119 +772,100 @@ export class StudentQuizService {
         userUuid: string,
         lessonUuid: string,
     ) {
-        const { studentId, lesson } = await this.getStudentAndLesson(schoolId, userUuid, lessonUuid);
+        return this.prisma.$transaction(async (tx) => {
+            const { studentId, lesson } = await this.getStudentAndLesson(
+                schoolId,
+                userUuid,
+                lessonUuid,
+                tx,
+            );
 
-        // التحقق أن الدرس ليس فيه أسئلة
-        const questionCount = await this.prisma.question.count({
-            where: { templateId: lesson.templateId, isDeleted: false },
-        });
+            // قفل استشاري لمنع إنشاء عدة نتائج 100% بالتوازي (SEC-R3-02)
+            await tx.$executeRaw(
+                Prisma.sql`SELECT pg_advisory_xact_lock(CAST(${studentId} AS INTEGER), CAST(${lesson.id} AS INTEGER))`,
+            );
 
-        if (questionCount > 0) {
-            throw new BadRequestException('هذا الدرس يحتوي على أسئلة — استخدم submit-quiz');
-        }
+            // التحقق أن الدرس ليس فيه أسئلة
+            const questionCount = await tx.question.count({
+                where: { templateId: lesson.templateId, isDeleted: false },
+            });
 
-        // التحقق أنه لم يُكمل من قبل
-        const existing = await this.prisma.studentLessonResult.findFirst({
-            where: { studentId, lessonId: lesson.id, isDeleted: false },
-        });
-
-        if (existing) {
-            return { message: 'تم إنجاز الدرس مسبقاً', alreadyCompleted: true };
-        }
-
-        // إنشاء نتيجة 100% (درس قرائي)
-        const result = await this.prisma.studentLessonResult.create({
-            data: {
-                studentId,
-                lessonId: lesson.id,
-                totalQuestions: 0,
-                correctQuestions: 0,
-                totalPoints: 0,
-                earnedPoints: 0,
-                percent: 100,
-                gradeLabel: 'تمت القراءة',
-                calculatedAt: new Date(),
-                version: 1,
-            },
-        });
-
-        // تحديث progress
-        await this.prisma.studentLessonProgress.upsert({
-            where: {
-                id: (await this.prisma.studentLessonProgress.findFirst({
-                    where: { studentId, lessonId: lesson.id },
-                }))?.id ?? 0,
-            },
-            update: {
-                status: 'COMPLETED',
-                updatedAt: new Date(),
-            },
-            create: {
-                studentId,
-                lessonId: lesson.id,
-                status: 'COMPLETED',
-                lastPosition: JSON.stringify({ type: 'mark_read' }),
-            },
-        });
-
-        return {
-            message: 'تم إنجاز الدرس بنجاح',
-            resultUuid: result.uuid,
-            alreadyCompleted: false,
-        };
-    }
-
-    // ─────── Evaluation Logic ────────────────────────────────────────────────
-
-    private evaluateAnswer(question: any, answerValue: any): boolean {
-        switch (question.type) {
-            case 'MCQ':
-            case 'TRUE_FALSE': {
-                const correctOption = question.options.find((o: any) => o.isCorrect);
-                return correctOption && answerValue?.selectedOptionUuid === correctOption.uuid;
+            if (questionCount > 0) {
+                throw new BadRequestException('هذا الدرس يحتوي على أسئلة — استخدم submit-quiz');
             }
 
-            case 'MATCHING': {
-                if (!answerValue?.pairs || !Array.isArray(answerValue.pairs)) return false;
-                const correctPairs = question.matchingPairs;
-                if (answerValue.pairs.length !== correctPairs.length) return false;
-                return correctPairs.every((cp: any) =>
-                    answerValue.pairs.some((ap: any) =>
-                        ap.leftPairKey === cp.pairKey && ap.rightPairKey === cp.pairKey
-                    )
-                );
-            }
+            // التحقق أنه لم يُكمل من قبل داخل القفل
+            const existing = await tx.studentLessonResult.findFirst({
+                where: { studentId, lessonId: lesson.id, isDeleted: false },
+            });
 
-            case 'ORDERING':
-            case 'IMAGE_STEP_SORTING': {
-                if (!answerValue?.orderedItemUuids || !Array.isArray(answerValue.orderedItemUuids)) return false;
-                const correctOrder = question.orderingItems
-                    .sort((a: any, b: any) => a.correctIndex - b.correctIndex)
-                    .map((i: any) => i.uuid);
-                return JSON.stringify(answerValue.orderedItemUuids) === JSON.stringify(correctOrder);
-            }
-
-            case 'FILL': {
-                if (!answerValue?.blanks || !Array.isArray(answerValue.blanks)) return false;
-                return answerValue.blanks.every((blank: any) => {
-                    const correctForBlank = question.fillAnswers
-                        .filter((a: any) => a.blankKey === blank.blankKey)
-                        .map((a: any) => a.answerText.trim().toLowerCase());
-                    return correctForBlank.includes(blank.answer?.trim()?.toLowerCase());
+            if (existing) {
+                await tx.studentLessonProgress.upsert({
+                    where: {
+                        studentId_lessonId: { studentId, lessonId: lesson.id },
+                    },
+                    update: {
+                        status: 'COMPLETED',
+                        isDeleted: false,
+                        deletedAt: null,
+                    },
+                    create: {
+                        studentId,
+                        lessonId: lesson.id,
+                        status: 'COMPLETED',
+                        lastPosition: JSON.stringify({ type: 'mark_read' }),
+                    },
                 });
+                return { message: 'تم إنجاز الدرس مسبقاً', alreadyCompleted: true };
             }
 
-            default:
-                return false;
-        }
-    }
+            const versionAgg = await tx.studentLessonResult.aggregate({
+                where: { studentId, lessonId: lesson.id },
+                _max: { version: true },
+            });
+            const nextVersion = (versionAgg._max.version ?? 0) + 1;
 
-    private getGradeLabel(percent: number): string {
-        if (percent >= 90) return 'ممتاز';
-        if (percent >= 80) return 'جيد جداً';
-        if (percent >= 70) return 'جيد';
-        if (percent >= 60) return 'مقبول';
-        return 'ضعيف';
+            // إنشاء نتيجة 100% (درس قرائي)
+            const result = await tx.studentLessonResult.create({
+                data: {
+                    studentId,
+                    lessonId: lesson.id,
+                    totalQuestions: 0,
+                    correctQuestions: 0,
+                    totalPoints: 0,
+                    earnedPoints: 0,
+                    percent: 100,
+                    gradeLabel: 'تمت القراءة',
+                    calculatedAt: new Date(),
+                    version: nextVersion,
+                    questionsRevisionAtSubmit: lesson.template?.questionsRevision ?? 1,
+                },
+            });
+
+            // تحديث progress بالمفتاح المركّب لتفادي خطأ id: 0 (SEC-R3-01)
+            await tx.studentLessonProgress.upsert({
+                where: {
+                    studentId_lessonId: { studentId, lessonId: lesson.id },
+                },
+                update: {
+                    status: 'COMPLETED',
+                    isDeleted: false,
+                    deletedAt: null,
+                },
+                create: {
+                    studentId,
+                    lessonId: lesson.id,
+                    status: 'COMPLETED',
+                    lastPosition: JSON.stringify({ type: 'mark_read' }),
+                },
+            });
+
+            return {
+                message: 'تم إنجاز الدرس بنجاح',
+                resultUuid: result.uuid,
+                alreadyCompleted: false,
+            };
+        });
     }
 
     private shuffleArray<T>(array: T[]): T[] {

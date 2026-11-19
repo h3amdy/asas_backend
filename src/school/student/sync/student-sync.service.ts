@@ -1,11 +1,22 @@
 // src/school/student/sync/student-sync.service.ts
-import { Injectable, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
+import {
+    BadRequestException,
+    ForbiddenException,
+    Injectable,
+    Logger,
+    NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { buildSanitizedVariantsMap } from '../../../shared/media/video-delivery.helper';
 import { SyncPullDto } from './dto/sync-pull.dto';
 import { SyncPushDto, ClientChange } from './dto/sync-push.dto';
 import { parseCursor, paginateResult, PaginatedSyncResult } from './helpers/cursor-paginator';
+import {
+    QUESTION_EVALUATION_INCLUDE,
+    evaluateQuestionAnswer,
+    getGradeLabel,
+} from '../quiz/helpers/answer-evaluator';
 
 /**
  * أنواع الكيانات المدعومة في Pull
@@ -14,9 +25,17 @@ const VALID_PULL_ENTITIES = ['subjects', 'lessons', 'questions', 'progress', 'ti
 type PullEntity = typeof VALID_PULL_ENTITIES[number];
 
 /**
- * أنواع الكيانات المدعومة في Push
+ * أنواع الكيانات المدعومة في Push (تم إيقاف lesson_result حسب قرار المنتج)
  */
-const VALID_PUSH_ENTITY_TYPES = ['student_answer', 'lesson_progress', 'lesson_result'] as const;
+const VALID_PUSH_ENTITY_TYPES = ['student_answer', 'lesson_progress'] as const;
+const VALID_PROGRESS_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'] as const;
+
+interface StudentSubscriptionWindow {
+    allowed: boolean;
+    active: boolean;
+    reason: 'SUBSCRIPTION_REQUIRED' | 'SUBSCRIPTION_EXPIRED' | null;
+    cutoff: Date | null;
+}
 
 @Injectable()
 export class StudentSyncService {
@@ -30,7 +49,7 @@ export class StudentSyncService {
 
     private async getStudentContext(schoolId: number, userUuid: string) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, schoolId },
+            where: { uuid: userUuid, schoolId, userType: 'STUDENT', isDeleted: false },
             include: { student: { select: { userId: true, uuid: true } } },
         });
 
@@ -655,46 +674,290 @@ export class StudentSyncService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // PUSH — دفع التغييرات من Outbox
+    // PUSH — دفع التغييرات من Outbox (ذري + مقيّد بالملكية والاحتساب الخادمي)
     // ═══════════════════════════════════════════════════════════════
+
+    private async getStudentSubscriptionWindow(
+        db: Prisma.TransactionClient | PrismaService,
+        schoolId: number,
+        studentId: number,
+    ): Promise<StudentSubscriptionWindow> {
+        const settings = await db.schoolSubscriptionSettings.findUnique({
+            where: { schoolId },
+            select: { isActivated: true },
+        });
+        if (!settings?.isActivated) {
+            return { allowed: true, active: true, reason: null, cutoff: null };
+        }
+
+        const periods = await db.studentAccessPeriod.findMany({
+            where: { schoolId, studentUserId: studentId },
+            select: { expiresAt: true, endedEarlyAt: true },
+        });
+
+        const now = new Date();
+        if (periods.some((p) => p.endedEarlyAt === null && p.expiresAt > now)) {
+            return { allowed: true, active: true, reason: null, cutoff: null };
+        }
+
+        if (periods.length === 0) {
+            return {
+                allowed: false,
+                active: false,
+                reason: 'SUBSCRIPTION_REQUIRED',
+                cutoff: null,
+            };
+        }
+
+        let cutoff: Date | null = null;
+        for (const p of periods) {
+            const effectiveEnd =
+                p.endedEarlyAt && p.endedEarlyAt < p.expiresAt ? p.endedEarlyAt : p.expiresAt;
+            if (!cutoff || effectiveEnd > cutoff) {
+                cutoff = effectiveEnd;
+            }
+        }
+
+        return {
+            allowed: true,
+            active: false,
+            reason: 'SUBSCRIPTION_EXPIRED',
+            cutoff,
+        };
+    }
+
+    private assertLessonSubscriptionAccess(
+        subWindow: StudentSubscriptionWindow,
+        lessonPublishedAt: Date | null | undefined,
+    ): void {
+        if (subWindow.active) {
+            return;
+        }
+        if (!subWindow.allowed) {
+            throw new ForbiddenException('SUBSCRIPTION_REQUIRED');
+        }
+        // قرار المنتج #3: قبول التقدم/الإجابات المنجزة أوفلاين لدروس نُشرت قبل انتهاء الاشتراك
+        if (lessonPublishedAt && subWindow.cutoff && lessonPublishedAt <= subWindow.cutoff) {
+            return;
+        }
+        throw new ForbiddenException('SUBSCRIPTION_EXPIRED');
+    }
+
+    private async resolveAccessibleLessonTx(
+        tx: Prisma.TransactionClient,
+        schoolId: number,
+        sectionId: number,
+        lessonUuid: unknown,
+    ) {
+        if (typeof lessonUuid !== 'string' || lessonUuid.trim().length === 0) {
+            throw new ForbiddenException('LESSON_NOT_ACCESSIBLE');
+        }
+
+        const lesson = await tx.lesson.findFirst({
+            where: {
+                uuid: lessonUuid,
+                schoolId,
+                isDeleted: false,
+                isActive: true,
+                status: { not: 'ARCHIVED' },
+                targets: {
+                    some: {
+                        sectionId,
+                        publishedAt: { not: null },
+                    },
+                },
+            },
+            select: {
+                id: true,
+                uuid: true,
+                templateId: true,
+                template: { select: { questionsRevision: true } },
+                targets: {
+                    where: { sectionId, publishedAt: { not: null } },
+                    select: { publishedAt: true },
+                    take: 1,
+                },
+            },
+        });
+
+        if (!lesson) {
+            throw new ForbiddenException('LESSON_NOT_ACCESSIBLE');
+        }
+
+        return lesson;
+    }
+
+    private async resolveAccessibleQuestionTx(
+        tx: Prisma.TransactionClient,
+        schoolId: number,
+        sectionId: number,
+        questionUuid: unknown,
+        lessonUuid?: unknown,
+    ) {
+        if (typeof questionUuid !== 'string' || questionUuid.trim().length === 0) {
+            throw new ForbiddenException('QUESTION_NOT_ACCESSIBLE');
+        }
+
+        if (typeof lessonUuid === 'string' && lessonUuid.trim().length > 0) {
+            const lesson = await this.resolveAccessibleLessonTx(tx, schoolId, sectionId, lessonUuid);
+            const question = await tx.question.findFirst({
+                where: {
+                    uuid: questionUuid,
+                    templateId: lesson.templateId,
+                    isDeleted: false,
+                },
+                include: QUESTION_EVALUATION_INCLUDE,
+            });
+            if (!question) {
+                throw new ForbiddenException('QUESTION_NOT_ACCESSIBLE');
+            }
+            return { lesson, question };
+        }
+
+        const accessibleLessonFilter = {
+            schoolId,
+            isDeleted: false,
+            isActive: true,
+            status: { not: 'ARCHIVED' as const },
+            targets: {
+                some: {
+                    sectionId,
+                    publishedAt: { not: null },
+                },
+            },
+        };
+
+        const question = await tx.question.findFirst({
+            where: {
+                uuid: questionUuid,
+                isDeleted: false,
+                template: {
+                    lessons: {
+                        some: accessibleLessonFilter,
+                    },
+                },
+            },
+            include: {
+                ...QUESTION_EVALUATION_INCLUDE,
+                template: {
+                    select: {
+                        questionsRevision: true,
+                        lessons: {
+                            where: accessibleLessonFilter,
+                            select: {
+                                id: true,
+                                uuid: true,
+                                templateId: true,
+                                template: { select: { questionsRevision: true } },
+                                targets: {
+                                    where: { sectionId, publishedAt: { not: null } },
+                                    select: { publishedAt: true },
+                                    take: 1,
+                                },
+                            },
+                            take: 1,
+                        },
+                    },
+                },
+            },
+        });
+
+        const lesson = question?.template?.lessons?.[0];
+        if (!question || !lesson) {
+            throw new ForbiddenException('QUESTION_NOT_ACCESSIBLE');
+        }
+
+        return { lesson, question };
+    }
 
     async push(schoolId: number, userUuid: string, dto: SyncPushDto) {
         const ctx = await this.getStudentContext(schoolId, userUuid);
+        const subWindow = await this.getStudentSubscriptionWindow(
+            this.prisma,
+            schoolId,
+            ctx.studentId,
+        );
         const results: { clientChangeUuid: string; status: string; error?: string }[] = [];
 
         for (const change of dto.changes) {
             try {
-                // 1. Idempotency check
-                const existing = await this.prisma.processedClientChange.findUnique({
-                    where: { clientChangeUuid: change.clientChangeUuid },
-                });
-
-                if (existing) {
-                    results.push({
-                        clientChangeUuid: change.clientChangeUuid,
-                        status: 'ALREADY_PROCESSED',
-                    });
-                    continue;
+                if (typeof change.clientChangeUuid !== 'string' || change.clientChangeUuid.trim().length === 0) {
+                    throw new BadRequestException('INVALID_CLIENT_CHANGE_UUID');
+                }
+                if (change.operation?.toLowerCase() !== 'upsert') {
+                    throw new BadRequestException('OPERATION_NOT_SUPPORTED');
+                }
+                if (change.entityType === 'lesson_result') {
+                    // قرار المنتج #7: رفض lesson_result المباشر من العميل
+                    throw new BadRequestException('ENTITY_TYPE_NOT_SUPPORTED');
+                }
+                if (!VALID_PUSH_ENTITY_TYPES.includes(change.entityType as any)) {
+                    throw new BadRequestException('UNKNOWN_ENTITY_TYPE');
                 }
 
-                // 2. Process the change
-                await this.processChange(ctx.studentId, schoolId, change);
+                // SEC-R3-03: التحقق من Idempotency وتسجيله وتنفيذ التغيير داخل معاملة ذرية واحدة
+                const status = await this.prisma.$transaction(async (tx) => {
+                    const existing = await tx.processedClientChange.findUnique({
+                        where: { clientChangeUuid: change.clientChangeUuid },
+                        select: { studentId: true },
+                    });
 
-                // 3. Mark as processed
-                await this.prisma.processedClientChange.create({
-                    data: {
-                        clientChangeUuid: change.clientChangeUuid,
-                        entityType: change.entityType,
-                        entityUuid: change.entityUuid,
-                        studentId: ctx.studentId,
-                    },
+                    if (existing) {
+                        if (existing.studentId !== ctx.studentId) {
+                            throw new ForbiddenException('CLIENT_CHANGE_CONFLICT');
+                        }
+                        return 'ALREADY_PROCESSED';
+                    }
+
+                    await tx.processedClientChange.create({
+                        data: {
+                            clientChangeUuid: change.clientChangeUuid,
+                            entityType: change.entityType,
+                            entityUuid: change.entityUuid ?? '',
+                            studentId: ctx.studentId,
+                        },
+                    });
+
+                    if (change.entityType === 'lesson_progress') {
+                        await this.processProgressChangeTx(tx, ctx, schoolId, subWindow, change);
+                    } else if (change.entityType === 'student_answer') {
+                        await this.processAnswerChangeTx(tx, ctx, schoolId, subWindow, change);
+                    }
+
+                    return 'OK';
                 });
 
                 results.push({
                     clientChangeUuid: change.clientChangeUuid,
-                    status: 'OK',
+                    status,
                 });
-            } catch (error) {
+            } catch (error: any) {
+                // عند تزامن اتصالين متوازيين بنفس clientChangeUuid، يسقط الثاني بـ P2002 وتنتفي الازدواجية
+                const isPrismaUniqueError =
+                    error?.code === 'P2002' ||
+                    (typeof error?.message === 'string' &&
+                        error.message.includes('Unique constraint'));
+
+                if (isPrismaUniqueError) {
+                    const existingRow = await this.prisma.processedClientChange.findUnique({
+                        where: { clientChangeUuid: change.clientChangeUuid },
+                        select: { studentId: true },
+                    });
+                    if (existingRow && existingRow.studentId === ctx.studentId) {
+                        results.push({
+                            clientChangeUuid: change.clientChangeUuid,
+                            status: 'ALREADY_PROCESSED',
+                        });
+                        continue;
+                    }
+                    results.push({
+                        clientChangeUuid: change.clientChangeUuid,
+                        status: 'ERROR',
+                        error: 'CLIENT_CHANGE_CONFLICT',
+                    });
+                    continue;
+                }
+
                 this.logger.error(
                     `Failed to process change ${change.clientChangeUuid}: ${error.message}`,
                     error.stack,
@@ -713,36 +976,44 @@ export class StudentSyncService {
         };
     }
 
-    private async processChange(studentId: number, schoolId: number, change: ClientChange) {
-        switch (change.entityType) {
-            case 'lesson_progress':
-                await this.processProgressChange(studentId, change);
-                break;
-            case 'student_answer':
-                await this.processAnswerChange(studentId, change);
-                break;
-            case 'lesson_result':
-                await this.processResultChange(studentId, change);
-                break;
-            default:
-                throw new Error(`Unknown entity type: ${change.entityType}`);
+    private async processProgressChangeTx(
+        tx: Prisma.TransactionClient,
+        ctx: { studentId: number; sectionId: number },
+        schoolId: number,
+        subWindow: StudentSubscriptionWindow,
+        change: ClientChange,
+    ) {
+        const { lessonUuid, status, lastPosition } = change.payload ?? {};
+
+        if (!VALID_PROGRESS_STATUSES.includes(status)) {
+            throw new BadRequestException('INVALID_PROGRESS_STATUS');
         }
-    }
 
-    private async processProgressChange(studentId: number, change: ClientChange) {
-        const { lessonUuid, status, lastPosition } = change.payload;
+        const lesson = await this.resolveAccessibleLessonTx(
+            tx,
+            schoolId,
+            ctx.sectionId,
+            lessonUuid,
+        );
 
-        const lesson = await this.prisma.lesson.findFirst({
-            where: { uuid: lessonUuid, isDeleted: false },
-        });
-        if (!lesson) throw new Error(`Lesson not found: ${lessonUuid}`);
+        this.assertLessonSubscriptionAccess(subWindow, lesson.targets[0]?.publishedAt ?? null);
 
-        const serializedPosition = lastPosition ? JSON.stringify(lastPosition) : null;
+        if (typeof (tx as any).$executeRaw === 'function') {
+            await tx.$executeRaw(
+                Prisma.sql`SELECT pg_advisory_xact_lock(CAST(${ctx.studentId} AS INTEGER), CAST(${lesson.id} AS INTEGER))`,
+            );
+        }
+
+        const serializedPosition =
+            lastPosition == null
+                ? null
+                : typeof lastPosition === 'string'
+                  ? lastPosition
+                  : JSON.stringify(lastPosition);
 
         // Decision 1 (P4-5d): حماية COMPLETED من التراجع إلى IN_PROGRESS ذرياً على مستوى قاعدة البيانات
-        // دون الحاجة لترحيل M4 أو عمود completed_at.
-        if (typeof (this.prisma as any).$executeRaw === 'function') {
-            await this.prisma.$executeRaw(Prisma.sql`
+        if (typeof (tx as any).$executeRaw === 'function') {
+            await tx.$executeRaw(Prisma.sql`
                 INSERT INTO "student_lesson_progress" (
                     "uuid",
                     "student_id",
@@ -753,7 +1024,7 @@ export class StudentSyncService {
                     "updated_at"
                 ) VALUES (
                     gen_random_uuid(),
-                    ${studentId},
+                    ${ctx.studentId},
                     ${lesson.id},
                     ${status},
                     ${serializedPosition},
@@ -770,13 +1041,15 @@ export class StudentSyncService {
                             THEN "student_lesson_progress"."last_position"
                         ELSE EXCLUDED."last_position"
                     END,
+                    "is_deleted" = false,
+                    "deleted_at" = NULL,
                     "updated_at" = NOW()
             `);
         } else {
-            const existingProgress = await this.prisma.studentLessonProgress?.findUnique?.({
+            const existingProgress = await tx.studentLessonProgress?.findUnique?.({
                 where: {
                     studentId_lessonId: {
-                        studentId,
+                        studentId: ctx.studentId,
                         lessonId: lesson.id,
                     },
                 },
@@ -789,19 +1062,21 @@ export class StudentSyncService {
                     ? existingProgress?.lastPosition ?? serializedPosition
                     : serializedPosition;
 
-            await this.prisma.studentLessonProgress.upsert({
+            await tx.studentLessonProgress.upsert({
                 where: {
                     studentId_lessonId: {
-                        studentId,
+                        studentId: ctx.studentId,
                         lessonId: lesson.id,
                     },
                 },
                 update: {
                     status: nextStatus,
                     lastPosition: nextLastPosition,
+                    isDeleted: false,
+                    deletedAt: null,
                 },
                 create: {
-                    studentId,
+                    studentId: ctx.studentId,
                     lessonId: lesson.id,
                     status,
                     lastPosition: serializedPosition,
@@ -809,167 +1084,171 @@ export class StudentSyncService {
             });
         }
 
-        // ── اشتقاق النتيجة تلقائياً إذا تم إنجاز الدرس ولم تكن هناك نتيجة مسبقاً ──
         if (status === 'COMPLETED') {
-            const existingResult = await this.prisma.studentLessonResult.findFirst({
-                where: { studentId, lessonId: lesson.id, isDeleted: false },
-            });
-
-            if (!existingResult) {
-                // جلب الأسئلة المرتبطة بالدرس
-                const questions = await this.prisma.question.findMany({
-                    where: { templateId: lesson.templateId, isDeleted: false },
-                    select: { id: true, score: true },
-                });
-
-                if (questions.length > 0) {
-                    // درس يحتوي على أسئلة (اختبار)
-                    const questionIds = questions.map(q => q.id);
-                    const answers = await this.prisma.studentAnswer.findMany({
-                        where: {
-                            studentId,
-                            questionId: { in: questionIds },
-                            isDeleted: false,
-                        },
-                    });
-
-                    // حساب النتيجة
-                    const totalQuestions = questions.length;
-                    const correctCount = answers.filter(a => a.isCorrect).length;
-                    const totalPoints = questions.reduce((sum, q) => sum + q.score, 0);
-                    const earnedPoints = answers
-                        .filter(a => a.isCorrect)
-                        .reduce((sum, a) => {
-                            const q = questions.find(q => q.id === a.questionId);
-                            return sum + (q ? q.score : 0);
-                        }, 0);
-
-                    const percent = totalPoints > 0 ? (earnedPoints / totalPoints) * 100 : 0;
-                    const gradeLabel = this.getGradeLabel(percent);
-
-                    const result = await this.prisma.studentLessonResult.create({
-                        data: {
-                            studentId,
-                            lessonId: lesson.id,
-                            totalQuestions,
-                            correctQuestions: correctCount,
-                            totalPoints,
-                            earnedPoints,
-                            percent,
-                            gradeLabel,
-                            calculatedAt: new Date(),
-                            version: 1,
-                            questionsRevisionAtSubmit: change.payload.questionsRevision ?? null,  // DEC-026 Phase 8
-                        },
-                    });
-
-                    // ربط الإجابات بالنتيجة المنشأة حديثاً
-                    await this.prisma.studentAnswer.updateMany({
-                        where: {
-                            studentId,
-                            questionId: { in: questionIds },
-                            isDeleted: false,
-                        },
-                        data: {
-                            resultId: result.id,
-                        },
-                    });
-                } else {
-                    // درس قرائي (بدون أسئلة)
-                    await this.prisma.studentLessonResult.create({
-                        data: {
-                            studentId,
-                            lessonId: lesson.id,
-                            totalQuestions: 0,
-                            correctQuestions: 0,
-                            totalPoints: 0,
-                            earnedPoints: 0,
-                            percent: 100,
-                            gradeLabel: 'تمت القراءة',
-                            calculatedAt: new Date(),
-                            version: 1,
-                        },
-                    });
-                }
-            }
+            await this.maybeDeriveLessonResultTx(tx, ctx.studentId, lesson);
         }
     }
 
-    private getGradeLabel(percent: number): string {
-        if (percent >= 90) return 'ممتاز';
-        if (percent >= 80) return 'جيد جداً';
-        if (percent >= 70) return 'جيد';
-        if (percent >= 60) return 'مقبول';
-        return 'ضعيف';
-    }
+    private async processAnswerChangeTx(
+        tx: Prisma.TransactionClient,
+        ctx: { studentId: number; sectionId: number },
+        schoolId: number,
+        subWindow: StudentSubscriptionWindow,
+        change: ClientChange,
+    ) {
+        const { questionUuid, answerValue, lessonUuid } = change.payload ?? {};
 
-    private async processAnswerChange(studentId: number, change: ClientChange) {
-        const { questionUuid, answerValue, scoreAwarded, correctness, isCorrect, resultUuid } = change.payload;
+        const { lesson, question } = await this.resolveAccessibleQuestionTx(
+            tx,
+            schoolId,
+            ctx.sectionId,
+            questionUuid,
+            lessonUuid,
+        );
 
-        const question = await this.prisma.question.findFirst({
-            where: { uuid: questionUuid, isDeleted: false },
-        });
-        if (!question) throw new Error(`Question not found: ${questionUuid}`);
+        this.assertLessonSubscriptionAccess(subWindow, lesson.targets[0]?.publishedAt ?? null);
 
-        // ربط بـ Result إن وُجد
-        let resultId: number | null = null;
-        if (resultUuid) {
-            const result = await this.prisma.studentLessonResult.findFirst({
-                where: { uuid: resultUuid },
-            });
-            resultId = result?.id ?? null;
+        if (typeof (tx as any).$executeRaw === 'function') {
+            await tx.$executeRaw(
+                Prisma.sql`SELECT pg_advisory_xact_lock(CAST(${ctx.studentId} AS INTEGER), CAST(${lesson.id} AS INTEGER))`,
+            );
         }
 
-        await this.prisma.studentAnswer.upsert({
+        // إعادة التقييم بالكامل على الخادم وتجاهل isCorrect/correctness/scoreAwarded/resultUuid القادمة من العميل
+        const isCorrect = evaluateQuestionAnswer(question, answerValue);
+        const correctness = isCorrect ? 'CORRECT' : 'WRONG';
+        const scoreAwarded = isCorrect ? question.score : 0;
+        const serializedAnswer =
+            typeof answerValue === 'string' ? answerValue : JSON.stringify(answerValue ?? null);
+
+        await tx.studentAnswer.upsert({
             where: {
                 studentId_questionId: {
-                    studentId,
+                    studentId: ctx.studentId,
                     questionId: question.id,
                 },
             },
             update: {
-                answerValue: typeof answerValue === 'string' ? answerValue : JSON.stringify(answerValue),
-                correctness: correctness ?? 'WRONG',
-                isCorrect: isCorrect ?? false,
-                scoreAwarded: scoreAwarded ?? 0,
-                resultId,
+                answerValue: serializedAnswer,
+                correctness,
+                isCorrect,
+                scoreAwarded,
+                isDeleted: false,
+                deletedAt: null,
             },
             create: {
-                studentId,
+                studentId: ctx.studentId,
                 questionId: question.id,
-                answerValue: typeof answerValue === 'string' ? answerValue : JSON.stringify(answerValue),
-                correctness: correctness ?? 'WRONG',
-                isCorrect: isCorrect ?? false,
-                scoreAwarded: scoreAwarded ?? 0,
-                resultId,
+                answerValue: serializedAnswer,
+                correctness,
+                isCorrect,
+                scoreAwarded,
             },
         });
+
+        // SEC-R3-04: إذا وصل التقدم COMPLETED قبل الإجابات، تشتق النتيجة تلقائياً بمجرد اكتمال إجابات القالب
+        const progress = await tx.studentLessonProgress.findUnique({
+            where: {
+                studentId_lessonId: {
+                    studentId: ctx.studentId,
+                    lessonId: lesson.id,
+                },
+            },
+            select: { status: true, isDeleted: true },
+        });
+        if (progress && !progress.isDeleted && progress.status === 'COMPLETED') {
+            await this.maybeDeriveLessonResultTx(tx, ctx.studentId, lesson);
+        }
     }
 
-    private async processResultChange(studentId: number, change: ClientChange) {
-        const {
-            lessonUuid,
-            totalQuestions,
-            correctQuestions,
-            totalPoints,
-            earnedPoints,
-            percent,
-            gradeLabel,
-        } = change.payload;
-
-        const lesson = await this.prisma.lesson.findFirst({
-            where: { uuid: lessonUuid, isDeleted: false },
+    private async maybeDeriveLessonResultTx(
+        tx: Prisma.TransactionClient,
+        studentId: number,
+        lesson: {
+            id: number;
+            templateId: number;
+            template?: { questionsRevision: number } | null;
+        },
+    ) {
+        const existingResult = await tx.studentLessonResult.findFirst({
+            where: { studentId, lessonId: lesson.id, isDeleted: false },
+            select: { id: true },
         });
-        if (!lesson) throw new Error(`Lesson not found: ${lessonUuid}`);
+        if (existingResult) {
+            return;
+        }
 
-        // حساب version (عدد المحاولات + 1)
-        const existingCount = await this.prisma.studentLessonResult.count({
+        const questions = await tx.question.findMany({
+            where: { templateId: lesson.templateId, isDeleted: false },
+            include: QUESTION_EVALUATION_INCLUDE,
+        });
+
+        const versionAgg = await tx.studentLessonResult.aggregate({
             where: { studentId, lessonId: lesson.id },
+            _max: { version: true },
+        });
+        const nextVersion = (versionAgg._max.version ?? 0) + 1;
+        const serverQuestionsRevision = lesson.template?.questionsRevision ?? 1;
+
+        if (questions.length === 0) {
+            // قرار المنتج #5: درس قرائي متاح بدون أسئلة → نتيجة 100%
+            await tx.studentLessonResult.create({
+                data: {
+                    studentId,
+                    lessonId: lesson.id,
+                    totalQuestions: 0,
+                    correctQuestions: 0,
+                    totalPoints: 0,
+                    earnedPoints: 0,
+                    percent: 100,
+                    gradeLabel: 'تمت القراءة',
+                    calculatedAt: new Date(),
+                    version: nextVersion,
+                    questionsRevisionAtSubmit: serverQuestionsRevision,
+                },
+            });
+            return;
+        }
+
+        const questionIds = questions.map((q) => q.id);
+        const answers = await tx.studentAnswer.findMany({
+            where: {
+                studentId,
+                questionId: { in: questionIds },
+                isDeleted: false,
+            },
         });
 
-        await this.prisma.studentLessonResult.create({
+        // SEC-R3-04: لا نشتق نتيجة 0% مبكرة قبل وصول إجابات كافة أسئلة القالب
+        if (answers.length < questions.length) {
+            return;
+        }
+
+        const answerByQuestionId = new Map(answers.map((a) => [a.questionId, a]));
+        const totalQuestions = questions.length;
+        const totalPoints = questions.reduce((sum, q) => sum + q.score, 0);
+
+        let correctQuestions = 0;
+        let earnedPoints = 0;
+
+        for (const q of questions) {
+            const ans = answerByQuestionId.get(q.id);
+            if (!ans) {
+                return;
+            }
+            const isCorrect = evaluateQuestionAnswer(q, ans.answerValue);
+            if (isCorrect) {
+                correctQuestions++;
+                earnedPoints += q.score;
+            }
+        }
+
+        const percent =
+            totalPoints > 0 ? Math.min(100, (earnedPoints / totalPoints) * 100) : 0;
+        const gradeLabel = getGradeLabel(percent);
+
+        const result = await tx.studentLessonResult.create({
             data: {
-                uuid: change.entityUuid,
                 studentId,
                 lessonId: lesson.id,
                 totalQuestions,
@@ -979,8 +1258,19 @@ export class StudentSyncService {
                 percent,
                 gradeLabel,
                 calculatedAt: new Date(),
-                version: existingCount + 1,
-                questionsRevisionAtSubmit: change.payload.questionsRevision ?? null,  // DEC-026 Phase 8
+                version: nextVersion,
+                questionsRevisionAtSubmit: serverQuestionsRevision,
+            },
+        });
+
+        await tx.studentAnswer.updateMany({
+            where: {
+                studentId,
+                questionId: { in: questionIds },
+                isDeleted: false,
+            },
+            data: {
+                resultId: result.id,
             },
         });
     }

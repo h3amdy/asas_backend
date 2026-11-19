@@ -1,5 +1,14 @@
 // src/school/student/sync/dto/sync-push.dto.ts
-import { IsArray, IsString, IsOptional, ValidateNested, IsObject, ArrayMaxSize } from 'class-validator';
+import {
+    IsArray,
+    IsNotEmpty,
+    IsObject,
+    IsOptional,
+    IsString,
+    MaxLength,
+    ValidateNested,
+    ArrayMaxSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -7,38 +16,47 @@ import { Type } from 'class-transformer';
  */
 export class ClientChange {
     /**
-     * UUID فريد لهذا التغيير — يُستخدم للـ Idempotency
-     * إذا أُعيد إرسال نفس الـ UUID، الباكيند يتجاهله
+     * معرّف فريد لهذا التغيير — يُستخدم للـ Idempotency
+     * قد يكون UUID v4 أو معرفاً مركباً من التطبيق مثل resync_answer_<uuid>
      */
     @IsString()
+    @IsNotEmpty()
+    @MaxLength(120)
     clientChangeUuid: string;
 
     /**
-     * نوع الكيان: "student_answer" | "lesson_progress" | "lesson_result"
+     * نوع الكيان المدعوم: "student_answer" | "lesson_progress"
      */
     @IsString()
+    @IsNotEmpty()
+    @MaxLength(50)
     entityType: string;
 
     /**
-     * UUID الكيان المتأثر (مثال: UUID السؤال أو UUID الدرس)
+     * معرّف الكيان المتأثر (مثال: UUID السؤال أو التقدم)
      */
     @IsString()
+    @MaxLength(120)
     entityUuid: string;
 
     /**
-     * نوع العملية: "upsert" | "delete"
-     * الطالب يُنشئ/يُعدّل فقط — لا حذف في MVP
+     * نوع العملية: "upsert"
      */
     @IsString()
+    @IsNotEmpty()
+    @MaxLength(30)
     operation: string;
 
     /**
+     * طابع زمني اختياري مرسل من العميل للتوافق مع بعض الطلبات القديمة
+     */
+    @IsOptional()
+    @IsString()
+    @MaxLength(64)
+    clientTimestamp?: string;
+
+    /**
      * البيانات الفعلية (JSON)
-     * المحتوى يعتمد على entityType:
-     * 
-     * student_answer: { questionUuid, answerValue, lessonUuid }
-     * lesson_progress: { lessonUuid, status, lastPosition }
-     * lesson_result: { lessonUuid, totalQuestions, correctQuestions, ... }
      */
     @IsObject()
     payload: Record<string, any>;

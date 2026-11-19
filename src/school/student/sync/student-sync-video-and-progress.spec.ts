@@ -275,13 +275,17 @@ describe('P4-5d: Legacy Sync Compatibility (W-049) & Monotonic COMPLETED Protect
     );
   });
 
-  it('Decision 1 (Unit): processProgressChange uses atomic ON CONFLICT SQL with monotonic COMPLETED guard', async () => {
+  it('Decision 1 (Unit): processProgressChangeTx uses atomic ON CONFLICT SQL with monotonic COMPLETED guard', async () => {
     const executedQueries: any[] = [];
-    const mockPrisma: any = {
+    const mockTx: any = {
       lesson: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValue({ id: 55, templateId: 10, isDeleted: false }),
+        findFirst: jest.fn().mockResolvedValue({
+          id: 55,
+          uuid: 'lesson-55',
+          templateId: 10,
+          template: { questionsRevision: 1 },
+          targets: [{ publishedAt: new Date('2026-01-01T00:00:00.000Z') }],
+        }),
       },
       $executeRaw: jest.fn().mockImplementation((sqlObj: any) => {
         executedQueries.push(sqlObj);
@@ -292,24 +296,34 @@ describe('P4-5d: Legacy Sync Compatibility (W-049) & Monotonic COMPLETED Protect
       },
     };
 
-    const syncService = new StudentSyncService(mockPrisma);
-    await (syncService as any).processProgressChange(10, {
-      entityType: 'lesson_progress',
-      operation: 'UPSERT',
-      clientTimestamp: new Date().toISOString(),
-      payload: {
-        lessonUuid: 'lesson-55',
-        status: 'IN_PROGRESS',
-        lastPosition: { blockIndex: 1 },
+    const syncService = new StudentSyncService({} as any);
+    await (syncService as any).processProgressChangeTx(
+      mockTx,
+      { studentId: 10, sectionId: 3 },
+      1,
+      { allowed: true, active: true, reason: null, cutoff: null },
+      {
+        clientChangeUuid: 'chg-unit-1',
+        entityType: 'lesson_progress',
+        entityUuid: 'prog-55',
+        operation: 'UPSERT',
+        clientTimestamp: new Date().toISOString(),
+        payload: {
+          lessonUuid: 'lesson-55',
+          status: 'IN_PROGRESS',
+          lastPosition: { blockIndex: 1 },
+        },
       },
-    });
-
-    expect(executedQueries).toHaveLength(1);
-    const sqlText = executedQueries[0].strings.join('?');
-    expect(sqlText).toContain(
-      'ON CONFLICT ("student_id", "lesson_id") DO UPDATE',
     );
-    expect(sqlText).toContain(
+
+    expect(executedQueries.length).toBeGreaterThanOrEqual(2);
+    const sqlTexts = executedQueries.map((q) => q.strings.join('?'));
+    expect(sqlTexts.some((s) => s.includes('pg_advisory_xact_lock'))).toBe(true);
+    const conflictSql = sqlTexts.find((s) =>
+      s.includes('ON CONFLICT ("student_id", "lesson_id") DO UPDATE'),
+    );
+    expect(conflictSql).toBeDefined();
+    expect(conflictSql).toContain(
       `WHEN "student_lesson_progress"."status" = 'COMPLETED' THEN 'COMPLETED'`,
     );
   });
