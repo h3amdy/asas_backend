@@ -722,7 +722,7 @@ export class ParentChildrenService {
         const { childStudentId, enrollment } =
             await this.verifyParentChildLink(schoolId, parentUserUuid, childUuid);
 
-        if (!enrollment) {
+        if (!enrollment || enrollment.status !== 'ACTIVE') {
             throw new NotFoundException('ENROLLMENT_NOT_FOUND');
         }
 
@@ -782,7 +782,7 @@ export class ParentChildrenService {
         // 1. جلب آخر نتيجة
         const result = await this.prisma.studentLessonResult.findFirst({
             where: { studentId: childStudentId, lessonId: lesson.id, isDeleted: false },
-            orderBy: { calculatedAt: 'desc' },
+            orderBy: [{ calculatedAt: 'desc' }, { version: 'desc' }],
         });
         if (!result) throw new NotFoundException('RESULT_NOT_FOUND');
 

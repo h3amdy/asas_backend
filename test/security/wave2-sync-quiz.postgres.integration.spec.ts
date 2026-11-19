@@ -1128,4 +1128,483 @@ describe('Wave 2 — Real PostgreSQL Sync & Quiz Security Integration (2 Connect
     expect(revAfterReport.reviewAvailable).toBe(false);
     expect(revAfterReport.questions).toEqual([]);
   });
+
+  it('T6 (B-1, B-2, B-3): post-result answer edits derive updated result version, cross-student/cross-lesson clientAttemptUuid fails cleanly (no P2002), and questionless submitQuiz is rejected', async () => {
+    // 1. B-1: Fresh quiz lesson with 2 MCQ questions (5 pts each)
+    const subjectA = await prismaA.subject.findFirstOrThrow({ where: { schoolId: schoolA.id } });
+    const unitA = await prismaA.unit.findFirstOrThrow({ where: { schoolId: schoolA.id } });
+
+    const postEditTpl = await prismaA.lessonTemplate.create({
+      data: {
+        schoolId: schoolA.id,
+        subjectId: subjectA.id,
+        unitId: unitA.id,
+        title: 'درس تعديل بعد النتيجة',
+        orderIndex: 20,
+        status: 'READY',
+        questionsRevision: 1,
+      },
+    });
+    const lessonPostEdit = await prismaA.lesson.create({
+      data: {
+        templateId: postEditTpl.id,
+        schoolId: schoolA.id,
+        teacherId: teacherAUser.id,
+        subjectId: subjectA.id,
+        yearId: yearA.id,
+        termId: termA.id,
+        status: 'PUBLISHED',
+        publishedAt: new Date('2026-10-15T10:00:00Z'),
+      },
+    });
+    await prismaA.lessonTarget.create({
+      data: {
+        lessonId: lessonPostEdit.id,
+        sectionId: secA1.id,
+        publishedAt: new Date('2026-10-15T10:00:00Z'),
+      },
+    });
+
+    const peQ1 = await prismaA.question.create({
+      data: { templateId: postEditTpl.id, type: 'MCQ', orderIndex: 1, questionText: 'س1', score: 5 },
+    });
+    const peQ1Right = await prismaA.questionOption.create({
+      data: { questionId: peQ1.id, optionText: 'ص1', isCorrect: true, orderIndex: 1 },
+    });
+    const peQ1Wrong = await prismaA.questionOption.create({
+      data: { questionId: peQ1.id, optionText: 'خ1', isCorrect: false, orderIndex: 2 },
+    });
+    const peQ2 = await prismaA.question.create({
+      data: { templateId: postEditTpl.id, type: 'MCQ', orderIndex: 2, questionText: 'س2', score: 5 },
+    });
+    const peQ2Right = await prismaA.questionOption.create({
+      data: { questionId: peQ2.id, optionText: 'ص2', isCorrect: true, orderIndex: 1 },
+    });
+
+    // Initial offline sync: Q1 WRONG + Q2 RIGHT + COMPLETED -> v1 = 50%
+    const initialPush = await syncServiceA.push(schoolA.id, studentA1User.uuid, {
+      changes: [
+        {
+          clientChangeUuid: `pe-q1-init-${crypto.randomUUID()}`,
+          entityType: 'student_answer',
+          entityUuid: peQ1.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: lessonPostEdit.uuid,
+            questionUuid: peQ1.uuid,
+            answerValue: JSON.stringify({ selectedOptionUuid: peQ1Wrong.uuid }),
+          },
+        },
+        {
+          clientChangeUuid: `pe-q2-init-${crypto.randomUUID()}`,
+          entityType: 'student_answer',
+          entityUuid: peQ2.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: lessonPostEdit.uuid,
+            questionUuid: peQ2.uuid,
+            answerValue: JSON.stringify({ selectedOptionUuid: peQ2Right.uuid }),
+          },
+        },
+        {
+          clientChangeUuid: `pe-prog-init-${crypto.randomUUID()}`,
+          entityType: 'lesson_progress',
+          entityUuid: 'prog-pe',
+          operation: 'upsert',
+          payload: { lessonUuid: lessonPostEdit.uuid, status: 'COMPLETED' },
+        },
+      ],
+    });
+    expect(initialPush.results.every((r) => r.status === 'OK')).toBe(true);
+
+    const v1 = await prismaA.studentLessonResult.findFirstOrThrow({
+      where: { studentId: studentA1User.id, lessonId: lessonPostEdit.id },
+      orderBy: [{ calculatedAt: 'desc' }, { version: 'desc' }],
+    });
+    expect(v1.version).toBe(1);
+    expect(v1.percent).toBe(50);
+
+    // Offline edit after v1 was already synced (enabled by OBS-W2-01): Q1 -> RIGHT with new clientChangeUuid
+    const editPush = await syncServiceA.push(schoolA.id, studentA1User.uuid, {
+      changes: [
+        {
+          clientChangeUuid: `pe-q1-edit-${crypto.randomUUID()}`,
+          entityType: 'student_answer',
+          entityUuid: peQ1.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: lessonPostEdit.uuid,
+            questionUuid: peQ1.uuid,
+            answerValue: JSON.stringify({ selectedOptionUuid: peQ1Right.uuid }),
+          },
+        },
+      ],
+    });
+    expect(editPush.results[0].status).toBe('OK');
+
+    const v2 = await prismaA.studentLessonResult.findFirstOrThrow({
+      where: { studentId: studentA1User.id, lessonId: lessonPostEdit.id },
+      orderBy: [{ calculatedAt: 'desc' }, { version: 'desc' }],
+    });
+    expect(v2.version).toBe(2);
+    expect(v2.percent).toBe(100);
+    expect(v2.earnedPoints).toBe(10);
+
+    const relinkedAnswers = await prismaA.studentAnswer.findMany({
+      where: { studentId: studentA1User.id, questionId: { in: [peQ1.id, peQ2.id] } },
+    });
+    expect(relinkedAnswers.every((a) => a.resultId === v2.id)).toBe(true);
+
+    // Same score re-push must NOT create a noisy v3 row
+    await syncServiceA.push(schoolA.id, studentA1User.uuid, {
+      changes: [
+        {
+          clientChangeUuid: `pe-q1-noop-${crypto.randomUUID()}`,
+          entityType: 'student_answer',
+          entityUuid: peQ1.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: lessonPostEdit.uuid,
+            questionUuid: peQ1.uuid,
+            answerValue: JSON.stringify({ selectedOptionUuid: peQ1Right.uuid }),
+          },
+        },
+      ],
+    });
+    expect(
+      await prismaA.studentLessonResult.count({
+        where: { studentId: studentA1User.id, lessonId: lessonPostEdit.id },
+      }),
+    ).toBe(2);
+
+    // 2. B-2: Cross-student concurrent race with identical clientAttemptUuid + sequential cross-lesson reuse
+    const sharedAttemptUuid = `shared-attempt-${crypto.randomUUID()}`;
+    const settled = await Promise.allSettled([
+      quizServiceA.submitQuiz(schoolA.id, studentA1User.uuid, lessonPostEdit.uuid, {
+        clientAttemptUuid: sharedAttemptUuid,
+        answers: [{ questionUuid: peQ1.uuid, answerValue: { selectedOptionUuid: peQ1Right.uuid } }],
+      }),
+      quizServiceB.submitQuiz(schoolB.id, studentBUser.uuid, lessonB1.uuid, {
+        clientAttemptUuid: sharedAttemptUuid,
+        answers: [{ questionUuid: qB1_mcq.uuid, answerValue: { selectedOptionUuid: 'any' } }],
+      }),
+    ]);
+    const fulfilled = settled.filter((s) => s.status === 'fulfilled');
+    const rejected = settled.filter((s) => s.status === 'rejected') as PromiseRejectedResult[];
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+    expect(rejected[0].reason.message).toBe('CLIENT_ATTEMPT_CONFLICT');
+
+    // Sequential reuse on another lesson of the SAME student who owns sharedAttemptUuid -> ConflictException (NOT P2002!)
+    const ownerIsA1 = settled[0].status === 'fulfilled';
+    if (ownerIsA1) {
+      await expect(
+        quizServiceA.submitQuiz(schoolA.id, studentA1User.uuid, lessonA1.uuid, {
+          clientAttemptUuid: sharedAttemptUuid,
+          answers: [{ questionUuid: qA1_mcq.uuid, answerValue: { selectedOptionUuid: qA1_mcq_rightOpt.uuid } }],
+        }),
+      ).rejects.toThrow(ConflictException);
+    }
+
+    // 3. B-3: submitQuiz on questionless lesson must fail with LESSON_HAS_NO_QUESTIONS and leave markLessonRead clean
+    const noQTpl = await prismaA.lessonTemplate.create({
+      data: {
+        schoolId: schoolA.id,
+        subjectId: subjectA.id,
+        unitId: unitA.id,
+        title: 'درس قرائي رفض submitQuiz',
+        orderIndex: 21,
+        status: 'READY',
+      },
+    });
+    const lessonNoQGuard = await prismaA.lesson.create({
+      data: {
+        templateId: noQTpl.id,
+        schoolId: schoolA.id,
+        teacherId: teacherAUser.id,
+        subjectId: subjectA.id,
+        yearId: yearA.id,
+        termId: termA.id,
+        status: 'PUBLISHED',
+        publishedAt: new Date('2026-10-15T10:00:00Z'),
+      },
+    });
+    await prismaA.lessonTarget.create({
+      data: {
+        lessonId: lessonNoQGuard.id,
+        sectionId: secA1.id,
+        publishedAt: new Date('2026-10-15T10:00:00Z'),
+      },
+    });
+
+    await expect(
+      quizServiceA.submitQuiz(schoolA.id, studentA1User.uuid, lessonNoQGuard.uuid, {
+        answers: [],
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(
+      await prismaA.studentLessonResult.count({
+        where: { studentId: studentA1User.id, lessonId: lessonNoQGuard.id },
+      }),
+    ).toBe(0);
+
+    const readRes = await quizServiceA.markLessonRead(
+      schoolA.id,
+      studentA1User.uuid,
+      lessonNoQGuard.uuid,
+    );
+    expect(readRes.alreadyCompleted).toBe(false);
+    const readRow = await prismaA.studentLessonResult.findFirstOrThrow({
+      where: { studentId: studentA1User.id, lessonId: lessonNoQGuard.id },
+    });
+    expect(readRow.percent).toBe(100);
+    expect(readRow.gradeLabel).toBe('تمت القراءة');
+  });
+
+  it('T7 (B-4, Mixed-Batch Expired Sync, NB-1): deterministic shared-template subscription enforcement, mixed offline batch preservation, and DROPPED child review block', async () => {
+    const subjectA = await prismaA.subject.findFirstOrThrow({ where: { schoolId: schoolA.id } });
+    const unitA = await prismaA.unit.findFirstOrThrow({ where: { schoolId: schoolA.id } });
+    const gradeA = await prismaA.schoolGrade.findFirstOrThrow({ where: { schoolId: schoolA.id } });
+
+    // 1. B-4: Shared template across older pre-expiry lesson (Oct 15) and newer post-expiry lesson (Nov 15)
+    const sharedTpl = await prismaA.lessonTemplate.create({
+      data: {
+        schoolId: schoolA.id,
+        subjectId: subjectA.id,
+        unitId: unitA.id,
+        title: 'قالب مشترك زمنياً',
+        orderIndex: 30,
+        status: 'READY',
+      },
+    });
+    const qShared = await prismaA.question.create({
+      data: { templateId: sharedTpl.id, type: 'MCQ', orderIndex: 1, questionText: 'س مشترك', score: 5 },
+    });
+    const qSharedRight = await prismaA.questionOption.create({
+      data: { questionId: qShared.id, optionText: 'صح', isCorrect: true, orderIndex: 1 },
+    });
+
+    const lessonSharedOld = await prismaA.lesson.create({
+      data: {
+        templateId: sharedTpl.id,
+        schoolId: schoolA.id,
+        teacherId: teacherAUser.id,
+        subjectId: subjectA.id,
+        yearId: yearA.id,
+        termId: termA.id,
+        status: 'PUBLISHED',
+        publishedAt: new Date('2026-10-15T10:00:00Z'),
+      },
+    });
+    await prismaA.lessonTarget.create({
+      data: {
+        lessonId: lessonSharedOld.id,
+        sectionId: secA1.id,
+        publishedAt: new Date('2026-10-15T10:00:00Z'),
+      },
+    });
+
+    const lessonSharedNew = await prismaA.lesson.create({
+      data: {
+        templateId: sharedTpl.id,
+        schoolId: schoolA.id,
+        teacherId: teacherAUser.id,
+        subjectId: subjectA.id,
+        yearId: yearA.id,
+        termId: termA.id,
+        status: 'PUBLISHED',
+        publishedAt: new Date('2026-11-15T10:00:00Z'),
+      },
+    });
+    await prismaA.lessonTarget.create({
+      data: {
+        lessonId: lessonSharedNew.id,
+        sectionId: secA1.id,
+        publishedAt: new Date('2026-11-15T10:00:00Z'),
+      },
+    });
+
+    // Omitted lessonUuid resolves deterministically to newest published (lessonSharedNew) -> SUBSCRIPTION_EXPIRED
+    // Empty-string lessonUuid fails strictly with QUESTION_NOT_ACCESSIBLE (no silent fallback)
+    const chgOmit = `b4-omit-${crypto.randomUUID()}`;
+    const chgEmpty = `b4-empty-${crypto.randomUUID()}`;
+    const b4Push = await syncServiceA.push(schoolA.id, studentA_expiredUser.uuid, {
+      changes: [
+        {
+          clientChangeUuid: chgOmit,
+          entityType: 'student_answer',
+          entityUuid: qShared.uuid,
+          operation: 'upsert',
+          payload: {
+            questionUuid: qShared.uuid,
+            answerValue: { selectedOptionUuid: qSharedRight.uuid },
+          },
+        },
+        {
+          clientChangeUuid: chgEmpty,
+          entityType: 'student_answer',
+          entityUuid: qShared.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: '',
+            questionUuid: qShared.uuid,
+            answerValue: { selectedOptionUuid: qSharedRight.uuid },
+          },
+        },
+      ],
+    });
+    expect(b4Push.results[0]).toEqual({
+      clientChangeUuid: chgOmit,
+      status: 'ERROR',
+      error: 'SUBSCRIPTION_EXPIRED',
+    });
+    expect(b4Push.results[1]).toEqual({
+      clientChangeUuid: chgEmpty,
+      status: 'ERROR',
+      error: 'QUESTION_NOT_ACCESSIBLE',
+    });
+
+    // Explicit pre-expiry lessonUuid on the shared template -> ALLOWED
+    const explicitOldPush = await syncServiceA.push(schoolA.id, studentA_expiredUser.uuid, {
+      changes: [
+        {
+          clientChangeUuid: `b4-old-${crypto.randomUUID()}`,
+          entityType: 'student_answer',
+          entityUuid: qShared.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: lessonSharedOld.uuid,
+            questionUuid: qShared.uuid,
+            answerValue: { selectedOptionUuid: qSharedRight.uuid },
+          },
+        },
+      ],
+    });
+    expect(explicitOldPush.results[0].status).toBe('OK');
+
+    // 2. Mixed-batch expired subscription: pre-expiry quiz answers + COMPLETED accepted alongside rejected post-expiry item
+    const preExpMcq = `mix-mcq-${crypto.randomUUID()}`;
+    const preExpFill = `mix-fill-${crypto.randomUUID()}`;
+    const preExpProg = `mix-prog-${crypto.randomUUID()}`;
+    const postExpProg = `mix-post-${crypto.randomUUID()}`;
+
+    const mixedRes = await syncServiceA.push(schoolA.id, studentA_expiredUser.uuid, {
+      changes: [
+        {
+          clientChangeUuid: preExpMcq,
+          entityType: 'student_answer',
+          entityUuid: qA1_mcq.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: lessonA1.uuid,
+            questionUuid: qA1_mcq.uuid,
+            answerValue: JSON.stringify({ selectedOptionUuid: qA1_mcq_rightOpt.uuid }),
+          },
+        },
+        {
+          clientChangeUuid: preExpFill,
+          entityType: 'student_answer',
+          entityUuid: qA1_fill.uuid,
+          operation: 'upsert',
+          payload: {
+            lessonUuid: lessonA1.uuid,
+            questionUuid: qA1_fill.uuid,
+            answerValue: JSON.stringify({ blanks: [{ blankKey: 'b1', answer: 'عمّان' }] }),
+          },
+        },
+        {
+          clientChangeUuid: preExpProg,
+          entityType: 'lesson_progress',
+          entityUuid: 'prog-mix-pre',
+          operation: 'upsert',
+          payload: { lessonUuid: lessonA1.uuid, status: 'COMPLETED' },
+        },
+        {
+          clientChangeUuid: postExpProg,
+          entityType: 'lesson_progress',
+          entityUuid: 'prog-mix-post',
+          operation: 'upsert',
+          payload: { lessonUuid: lessonA_postExpiry.uuid, status: 'COMPLETED' },
+        },
+      ],
+    });
+    expect(mixedRes.results[0].status).toBe('OK');
+    expect(mixedRes.results[1].status).toBe('OK');
+    expect(mixedRes.results[2].status).toBe('OK');
+    expect(mixedRes.results[3]).toEqual({
+      clientChangeUuid: postExpProg,
+      status: 'ERROR',
+      error: 'SUBSCRIPTION_EXPIRED',
+    });
+
+    const expA1Result = await prismaA.studentLessonResult.findFirstOrThrow({
+      where: { studentId: studentA_expiredUser.id, lessonId: lessonA1.id },
+    });
+    expect(expA1Result.percent).toBe(100);
+    expect(
+      await prismaA.studentLessonProgress.count({
+        where: { studentId: studentA_expiredUser.id, lessonId: lessonA_postExpiry.id },
+      }),
+    ).toBe(0);
+
+    // 3. NB-1: ParentChildrenService.getChildLessonReview rejects child with non-ACTIVE (DROPPED) enrollment
+    const droppedUser = await prismaA.user.create({
+      data: {
+        schoolId: schoolA.id,
+        userType: UserType.STUDENT,
+        code: 2302099,
+        name: 'طالب منسحب',
+        passwordHash: await bcrypt.hash('Wave2Pass#1', 10),
+        isActive: true,
+      },
+    });
+    await prismaA.student.create({ data: { userId: droppedUser.id } });
+    await prismaA.studentEnrollment.create({
+      data: {
+        studentId: droppedUser.id,
+        yearId: yearA.id,
+        gradeId: gradeA.id,
+        sectionId: secA1.id,
+        isCurrent: true,
+        status: EnrollmentStatus.DROPPED,
+      },
+    });
+    await prismaA.studentAccessPeriod.create({
+      data: {
+        schoolId: schoolA.id,
+        studentUserId: droppedUser.id,
+        periodType: AccessPeriodType.TRIAL,
+        startedAt: new Date('2026-09-01T00:00:00Z'),
+        expiresAt: new Date('2027-06-01T00:00:00Z'),
+      },
+    });
+    await prismaA.parentStudent.create({
+      data: { parentId: parentAUser.id, studentId: droppedUser.id },
+    });
+    await prismaA.studentLessonResult.create({
+      data: {
+        studentId: droppedUser.id,
+        lessonId: lessonA1.id,
+        totalQuestions: 2,
+        correctQuestions: 2,
+        totalPoints: 10,
+        earnedPoints: 10,
+        percent: 100,
+        gradeLabel: 'ممتاز',
+        calculatedAt: new Date(),
+        version: 1,
+        questionsRevisionAtSubmit: 1,
+      },
+    });
+
+    await expect(
+      parentChildrenService.getChildLessonReview(
+        schoolA.id,
+        parentAUser.uuid,
+        droppedUser.uuid,
+        lessonA1.uuid,
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
 });

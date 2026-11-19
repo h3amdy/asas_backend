@@ -150,4 +150,41 @@ describe('answer-evaluator (Wave 2 — SEC-QUIZ-02 / SEC-R3-12)', () => {
     expect(getGradeLabel(65)).toBe('مقبول');
     expect(getGradeLabel(40)).toBe('ضعيف');
   });
+
+  it('defends against prototype-pollution keys, unknown blankKeys, and non-string items', () => {
+    const ordering = {
+      type: 'ORDERING',
+      orderingItems: [
+        { uuid: 'step-1', correctIndex: 1 },
+        { uuid: 'step-2', correctIndex: 2 },
+      ],
+    };
+    expect(evaluateQuestionAnswer(ordering, { orderedItemUuids: [null, 'step-2'] })).toBe(false);
+    expect(evaluateQuestionAnswer(ordering, { orderedItemUuids: [1, 2] })).toBe(false);
+
+    const fill = {
+      type: 'FILL',
+      fillBlanks: [{ blankKey: 'b1' }, { blankKey: 'constructor' }],
+      fillAnswers: [
+        { blankKey: 'b1', answerText: 'أ' },
+        { blankKey: 'b1', answerText: 'ا' },
+        { blankKey: 'constructor', answerText: 'ب' },
+      ],
+    };
+    // Multiple accepted answers for b1 + safe Map key 'constructor'
+    expect(
+      evaluateQuestionAnswer(fill, {
+        blanks: [
+          { blankKey: 'b1', answer: 'ا' },
+          { blankKey: 'constructor', answer: 'ب' },
+        ],
+      }),
+    ).toBe(true);
+
+    // Same length as fillBlanks (2) but unknown blankKey / __proto__ injection attempt -> false
+    const pollutedPayload = JSON.parse(
+      '{"blanks":[{"blankKey":"__proto__","answer":"أ"},{"blankKey":"constructor","answer":"ب"}]}',
+    );
+    expect(evaluateQuestionAnswer(fill, pollutedPayload)).toBe(false);
+  });
 });

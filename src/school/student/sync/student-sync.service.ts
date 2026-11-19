@@ -2,6 +2,7 @@
 import {
     BadRequestException,
     ForbiddenException,
+    HttpException,
     Injectable,
     Logger,
     NotFoundException,
@@ -29,6 +30,7 @@ type PullEntity = typeof VALID_PULL_ENTITIES[number];
  */
 const VALID_PUSH_ENTITY_TYPES = ['student_answer', 'lesson_progress'] as const;
 const VALID_PROGRESS_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'] as const;
+const MAX_SYNC_ATTEMPTS = 999;
 
 interface StudentSubscriptionWindow {
     allowed: boolean;
@@ -793,12 +795,17 @@ export class StudentSyncService {
         sectionId: number,
         questionUuid: unknown,
         lessonUuid?: unknown,
+        yearId?: number,
     ) {
         if (typeof questionUuid !== 'string' || questionUuid.trim().length === 0) {
             throw new ForbiddenException('QUESTION_NOT_ACCESSIBLE');
         }
 
-        if (typeof lessonUuid === 'string' && lessonUuid.trim().length > 0) {
+        // B-4: إذا أرسل العميل lessonUuid (حتى كسلسلة فارغة أو نوع خاطئ)، نتحقق منه بصرامة بلا تراجع صامت
+        if (lessonUuid !== undefined && lessonUuid !== null) {
+            if (typeof lessonUuid !== 'string' || lessonUuid.trim().length === 0) {
+                throw new ForbiddenException('QUESTION_NOT_ACCESSIBLE');
+            }
             const lesson = await this.resolveAccessibleLessonTx(tx, schoolId, sectionId, lessonUuid);
             const question = await tx.question.findFirst({
                 where: {
@@ -847,25 +854,39 @@ export class StudentSyncService {
                             select: {
                                 id: true,
                                 uuid: true,
+                                yearId: true,
                                 templateId: true,
                                 template: { select: { questionsRevision: true } },
                                 targets: {
                                     where: { sectionId, publishedAt: { not: null } },
                                     select: { publishedAt: true },
+                                    orderBy: { publishedAt: 'desc' },
                                     take: 1,
                                 },
                             },
-                            take: 1,
                         },
                     },
                 },
             },
         });
 
-        const lesson = question?.template?.lessons?.[0];
-        if (!question || !lesson) {
+        const accessibleLessons = question?.template?.lessons ?? [];
+        if (!question || accessibleLessons.length === 0) {
             throw new ForbiddenException('QUESTION_NOT_ACCESSIBLE');
         }
+
+        // B-4: اختيار حتمي للدرس المطابق لسنة الطالب الحالية وأحدث تاريخ نشر
+        const currentYearMatches =
+            yearId !== undefined
+                ? accessibleLessons.filter((l) => l.yearId === yearId)
+                : [];
+        const pool = currentYearMatches.length > 0 ? currentYearMatches : accessibleLessons;
+        const lesson = [...pool].sort((a, b) => {
+            const diff =
+                (b.targets[0]?.publishedAt?.getTime() ?? 0) -
+                (a.targets[0]?.publishedAt?.getTime() ?? 0);
+            return diff !== 0 ? diff : b.id - a.id;
+        })[0];
 
         return { lesson, question };
     }
@@ -937,8 +958,20 @@ export class StudentSyncService {
                     error?.code === 'P2002' ||
                     (typeof error?.message === 'string' &&
                         error.message.includes('Unique constraint'));
+                const metaTarget = error?.meta?.target;
+                const targetsClientChangeUuid =
+                    !metaTarget ||
+                    (Array.isArray(metaTarget) &&
+                        metaTarget.some(
+                            (t: unknown) =>
+                                String(t).includes('client_change_uuid') ||
+                                String(t).includes('clientChangeUuid'),
+                        )) ||
+                    (typeof metaTarget === 'string' &&
+                        (metaTarget.includes('client_change_uuid') ||
+                            metaTarget.includes('clientChangeUuid')));
 
-                if (isPrismaUniqueError) {
+                if (isPrismaUniqueError && targetsClientChangeUuid) {
                     const existingRow = await this.prisma.processedClientChange.findUnique({
                         where: { clientChangeUuid: change.clientChangeUuid },
                         select: { studentId: true },
@@ -959,13 +992,14 @@ export class StudentSyncService {
                 }
 
                 this.logger.error(
-                    `Failed to process change ${change.clientChangeUuid}: ${error.message}`,
-                    error.stack,
+                    `Failed to process change ${change.clientChangeUuid}: ${error?.message ?? 'Unknown error'}`,
+                    error?.stack,
                 );
                 results.push({
                     clientChangeUuid: change.clientChangeUuid,
                     status: 'ERROR',
-                    error: error.message,
+                    error:
+                        error instanceof HttpException ? error.message : 'INTERNAL_SYNC_ERROR',
                 });
             }
         }
@@ -1091,7 +1125,7 @@ export class StudentSyncService {
 
     private async processAnswerChangeTx(
         tx: Prisma.TransactionClient,
-        ctx: { studentId: number; sectionId: number },
+        ctx: { studentId: number; sectionId: number; yearId?: number },
         schoolId: number,
         subWindow: StudentSubscriptionWindow,
         change: ClientChange,
@@ -1104,6 +1138,7 @@ export class StudentSyncService {
             ctx.sectionId,
             questionUuid,
             lessonUuid,
+            ctx.yearId,
         );
 
         this.assertLessonSubscriptionAccess(subWindow, lesson.targets[0]?.publishedAt ?? null);
@@ -1170,27 +1205,28 @@ export class StudentSyncService {
             template?: { questionsRevision: number } | null;
         },
     ) {
-        const existingResult = await tx.studentLessonResult.findFirst({
+        const latestResult = await tx.studentLessonResult.findFirst({
             where: { studentId, lessonId: lesson.id, isDeleted: false },
-            select: { id: true },
+            orderBy: [{ calculatedAt: 'desc' }, { version: 'desc' }],
         });
-        if (existingResult) {
-            return;
-        }
 
         const questions = await tx.question.findMany({
             where: { templateId: lesson.templateId, isDeleted: false },
             include: QUESTION_EVALUATION_INCLUDE,
         });
 
-        const versionAgg = await tx.studentLessonResult.aggregate({
-            where: { studentId, lessonId: lesson.id },
-            _max: { version: true },
-        });
-        const nextVersion = (versionAgg._max.version ?? 0) + 1;
         const serverQuestionsRevision = lesson.template?.questionsRevision ?? 1;
 
         if (questions.length === 0) {
+            if (latestResult) {
+                return;
+            }
+            const versionAgg = await tx.studentLessonResult.aggregate({
+                where: { studentId, lessonId: lesson.id },
+                _max: { version: true },
+            });
+            const nextVersion = (versionAgg._max.version ?? 0) + 1;
+
             // قرار المنتج #5: درس قرائي متاح بدون أسئلة → نتيجة 100%
             await tx.studentLessonResult.create({
                 data: {
@@ -1244,8 +1280,52 @@ export class StudentSyncService {
         }
 
         const percent =
-            totalPoints > 0 ? Math.min(100, (earnedPoints / totalPoints) * 100) : 0;
+            totalPoints > 0
+                ? Math.max(0, Math.min(100, (earnedPoints / totalPoints) * 100))
+                : 0;
         const gradeLabel = getGradeLabel(percent);
+
+        // B-1 (OBS-W2-01 + إعادة المحاولة أوفلاين): إذا تغيّرت الدرجة أو معطيات التقييم عن آخر نتيجة
+        // نشتق إصدار نتيجة جديد ونربط الإجابات به بدلاً من تجميد النتيجة على القيمة القديمة
+        if (latestResult) {
+            const scoreChanged =
+                latestResult.totalQuestions !== totalQuestions ||
+                latestResult.correctQuestions !== correctQuestions ||
+                latestResult.totalPoints !== totalPoints ||
+                latestResult.earnedPoints !== earnedPoints ||
+                latestResult.questionsRevisionAtSubmit !== serverQuestionsRevision;
+
+            if (!scoreChanged) {
+                await tx.studentAnswer.updateMany({
+                    where: {
+                        studentId,
+                        questionId: { in: questionIds },
+                        isDeleted: false,
+                        OR: [
+                            { resultId: null },
+                            { resultId: { not: latestResult.id } },
+                        ],
+                    },
+                    data: {
+                        resultId: latestResult.id,
+                    },
+                });
+                return;
+            }
+
+            const attemptCount = await tx.studentLessonResult.count({
+                where: { studentId, lessonId: lesson.id, isDeleted: false },
+            });
+            if (attemptCount >= MAX_SYNC_ATTEMPTS) {
+                return;
+            }
+        }
+
+        const versionAgg = await tx.studentLessonResult.aggregate({
+            where: { studentId, lessonId: lesson.id },
+            _max: { version: true },
+        });
+        const nextVersion = (versionAgg._max.version ?? 0) + 1;
 
         const result = await tx.studentLessonResult.create({
             data: {

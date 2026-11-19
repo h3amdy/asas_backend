@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { StudentQuizService } from './student-quiz.service';
 
 describe('StudentQuizService Security (Wave 2 — SEC-QUIZ-01 / SEC-QUIZ-02 / SEC-R3-01 / SEC-R3-02 / SEC-R3-07)', () => {
@@ -213,5 +213,46 @@ describe('StudentQuizService Security (Wave 2 — SEC-QUIZ-01 / SEC-QUIZ-02 / SE
     expect(upsertedProgress[0].where).toEqual({
       studentId_lessonId: { studentId: 10, lessonId: 20 },
     });
+  });
+
+  it('rejects questionless submitQuiz (B-3) and cross-lesson/non-quiz clientAttemptUuid reuse without fall-through (B-2)', async () => {
+    // B-3: Questionless lesson must fail with LESSON_HAS_NO_QUESTIONS
+    const m1 = createMockService();
+    m1.tx.question.findMany = jest.fn().mockResolvedValue([]);
+    await expect(
+      m1.service.submitQuiz(1, 'stu-uuid', 'lesson-uuid', { answers: [] }),
+    ).rejects.toThrow(BadRequestException);
+    expect(m1.tx.studentLessonResult.create).not.toHaveBeenCalled();
+
+    // B-2 (a): Reusing sync clientChangeUuid (non-'quiz_submission') in submitQuiz -> ConflictException
+    const m2 = createMockService();
+    m2.tx.processedClientChange.findUnique = jest.fn().mockResolvedValue({
+      studentId: 10,
+      entityType: 'student_answer',
+      entityUuid: 'q-1',
+    });
+    await expect(
+      m2.service.submitQuiz(1, 'stu-uuid', 'lesson-uuid', {
+        clientAttemptUuid: 'reused-sync-uuid',
+        answers: [],
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(m2.tx.studentLessonResult.create).not.toHaveBeenCalled();
+
+    // B-2 (b): Reusing quiz_submission clientAttemptUuid on a DIFFERENT lesson (priorResult == null) -> ConflictException
+    const m3 = createMockService();
+    m3.tx.processedClientChange.findUnique = jest.fn().mockResolvedValue({
+      studentId: 10,
+      entityType: 'quiz_submission',
+      entityUuid: 'other-lesson-result-uuid',
+    });
+    m3.tx.studentLessonResult.findFirst = jest.fn().mockResolvedValue(null);
+    await expect(
+      m3.service.submitQuiz(1, 'stu-uuid', 'lesson-uuid', {
+        clientAttemptUuid: 'other-lesson-attempt-uuid',
+        answers: [],
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(m3.tx.studentLessonResult.create).not.toHaveBeenCalled();
   });
 });

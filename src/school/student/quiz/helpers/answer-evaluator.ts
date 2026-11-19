@@ -117,7 +117,11 @@ export function evaluateQuestionAnswer(question: any, rawAnswerValue: unknown): 
                 .map((i) => i.uuid);
 
             for (let i = 0; i < correctOrder.length; i++) {
-                if (answerValue.orderedItemUuids[i] !== correctOrder[i]) {
+                if (
+                    typeof answerValue.orderedItemUuids[i] !== 'string' ||
+                    typeof correctOrder[i] !== 'string' ||
+                    answerValue.orderedItemUuids[i] !== correctOrder[i]
+                ) {
                     return false;
                 }
             }

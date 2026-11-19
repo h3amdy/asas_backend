@@ -485,7 +485,7 @@ export class ReportsService {
         // ── آخر نتيجة ──
         const result = await this.prisma.studentLessonResult.findFirst({
             where: { studentId: studentUser.student.userId, lessonId: lesson.id, isDeleted: false },
-            orderBy: { calculatedAt: 'desc' },
+            orderBy: [{ calculatedAt: 'desc' }, { version: 'desc' }],
         });
         if (!result) throw new NotFoundException('RESULT_NOT_FOUND');
 
