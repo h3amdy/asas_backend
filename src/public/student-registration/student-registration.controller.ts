@@ -50,18 +50,30 @@ export class StudentRegistrationController {
 
   /**
    * طلب رمز OTP لرقم الهاتف
+   * 🛡️ SEC-OTP-03: Rate Limiting لمنع استنزاف رصيد الرسائل: 5/دقيقة + 20/ساعة لكل IP
    */
   @Post('request-otp')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    short: { ttl: 60000, limit: 5 },
+    long: { ttl: 3600000, limit: 20 },
+  })
   async requestOtp(@Body() dto: RequestOtpDto) {
     return this.otpService.requestOtp(dto.phone);
   }
 
   /**
    * التحقق من رمز OTP
+   * 🛡️ SEC-OTP-03: Rate Limiting لمنع تخمين الرمز: 5/دقيقة + 20/ساعة لكل IP
    */
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    short: { ttl: 60000, limit: 5 },
+    long: { ttl: 3600000, limit: 20 },
+  })
   async verifyOtp(@Body() dto: VerifyOtpDto) {
     return this.otpService.verifyOtp(dto.registrationRequestId, dto.code);
   }

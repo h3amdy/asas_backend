@@ -2,6 +2,7 @@
 import {
     Injectable, NotFoundException, BadRequestException, Logger,
 } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PreviewStudentsImportDto, PreviewTeachersImportDto } from './dto/import.dto';
@@ -39,7 +40,7 @@ export class ImportsService {
         private readonly prisma: PrismaService,
         private readonly trialService: SubscriptionTrialService,
         private readonly userCodeGenerator: UserCodeGeneratorService,
-    ) {}
+    ) { }
 
     // ─── Password Mode ──────────────────────────────────────────
     // true = كلمة مرور عشوائية (6 أرقام)، false = الرقم المدرسي
@@ -47,8 +48,8 @@ export class ImportsService {
 
     private generatePassword(schoolCode: number): string {
         if (this.useRandomPassword) {
-            // توليد 6 أرقام عشوائية
-            return String(Math.floor(100000 + Math.random() * 900000));
+            // توليد 6 أرقام عشوائية (CSPRNG)
+            return String(randomInt(100000, 1000000));
         }
         return String(schoolCode);
     }

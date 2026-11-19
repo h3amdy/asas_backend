@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlatformSessionsService } from '../sessions/platform-sessions.service';
@@ -29,7 +30,7 @@ export class PlatformUsersService {
   constructor(
     private prisma: PrismaService,
     private sessions: PlatformSessionsService,
-  ) {}
+  ) { }
 
   /**
    * قائمة معلمي المنصة (PLT-010)
@@ -206,11 +207,11 @@ export class PlatformUsersService {
       throw new NotFoundException('المستخدم غير موجود');
     }
 
-    // استخدام كلمة المرور المُرسلة أو توليد عشوائية
+    // استخدام كلمة المرور المُرسلة أو توليد عشوائية (CSPRNG)
     const password =
       newPassword && newPassword.length >= 6
         ? newPassword
-        : Math.floor(10000000 + Math.random() * 90000000).toString();
+        : randomInt(10000000, 100000000).toString();
 
     const passwordHash = await bcrypt.hash(password, 10);
 

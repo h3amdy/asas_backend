@@ -7,6 +7,7 @@ import { PlatformBooksService } from './platform-books.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { PlatformJwtAuthGuard } from '../auth/guards/platform-jwt-auth.guard';
+import { PlatformAdminGuard } from '../auth/guards/platform-admin.guard';
 
 @Controller('platform/books')
 @UseGuards(PlatformJwtAuthGuard)
@@ -36,21 +37,25 @@ export class PlatformBooksController {
     }
 
     @Post()
+    @UseGuards(PlatformAdminGuard)
     create(@Body() dto: CreateBookDto) {
         return this.service.create(dto);
     }
 
     @Patch(':id')
+    @UseGuards(PlatformAdminGuard)
     update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateBookDto) {
         return this.service.update(id, dto);
     }
 
     @Patch(':id/toggle')
+    @UseGuards(PlatformAdminGuard)
     toggle(@Param('id', ParseIntPipe) id: number) {
         return this.service.toggle(id);
     }
 
     @Delete(':id')
+    @UseGuards(PlatformAdminGuard)
     delete(@Param('id', ParseIntPipe) id: number) {
         return this.service.softDelete(id);
     }

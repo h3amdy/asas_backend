@@ -1,5 +1,6 @@
 // src/school/manager/teachers/teachers.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
@@ -285,7 +286,7 @@ export class TeachersService {
     private generatePassword(): string {
         const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
         return Array.from({ length: 8 }, () =>
-            chars.charAt(Math.floor(Math.random() * chars.length)),
+            chars.charAt(randomInt(0, chars.length)),
         ).join('');
     }
 }

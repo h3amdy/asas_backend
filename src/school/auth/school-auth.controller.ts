@@ -34,8 +34,14 @@ export class SchoolAuthController {
   }
   /**
       * تجديد التوكن باستخدام refresh token
+      * 🛡️ SEC-AUTH-01: حماية مسار التجديد بـ ThrottlerGuard
       */
   @Post('refresh')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    short: { ttl: 60000, limit: 20 },
+    long: { ttl: 3600000, limit: 200 },
+  })
   refresh(@Body() dto: RefreshDto) {
     return this.auth.refresh(dto);
   }
