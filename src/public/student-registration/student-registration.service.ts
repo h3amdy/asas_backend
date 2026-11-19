@@ -92,6 +92,7 @@ export class StudentRegistrationService {
     const mafhoomSchool = await this.prisma.school.findFirst({
       where: {
         schoolCode: REGISTRATION_CONFIG.mafhoomSchoolCode,
+        isActive: true,
         isDeleted: false,
       },
     });
@@ -208,6 +209,7 @@ export class StudentRegistrationService {
     const mafhoomSchool = await this.prisma.school.findFirst({
       where: {
         schoolCode: REGISTRATION_CONFIG.mafhoomSchoolCode,
+        isActive: true,
         isDeleted: false,
       },
     });
@@ -248,6 +250,35 @@ export class StudentRegistrationService {
         `SELECT pg_advisory_xact_lock(hashtext($1))`,
         `reg:${mafhoomSchool.id}:${payload.phone}`,
       );
+
+      // 1.2 إعادة التحقق من نشاط مدرسة مفهوم داخل المعاملة لإغلاق نافذة سباق TOCTOU (SEC-R3-08)
+      const activeMafhoomSchool = await tx.school.findFirst({
+        where: { id: mafhoomSchool.id, isActive: true, isDeleted: false },
+        select: { id: true },
+      });
+      if (!activeMafhoomSchool) {
+        throw new InternalServerErrorException(REGISTRATION_ERRORS.MAFHOOM_SCHOOL_NOT_FOUND);
+      }
+
+      // 1.5 استهلاك سجل OTP ذرياً داخل المعاملة لمنع سباق إعادة الاستخدام (SEC-OTP-02)
+      // في حال فشل أي تحقق لاحق داخل المعاملة يتراجع PostgreSQL تلقائياً (ROLLBACK) عن الاستهلاك.
+      if (otpId !== null) {
+        const now = new Date();
+        const consumed = await tx.otpVerification.updateMany({
+          where: {
+            id: otpId,
+            status: OtpStatus.VERIFIED,
+            registrationTokenExpiresAt: { gt: now },
+          },
+          data: {
+            status: OtpStatus.CONSUMED,
+            consumedAt: now,
+          },
+        });
+        if (consumed.count !== 1) {
+          throw new BadRequestException(REGISTRATION_ERRORS.TOKEN_INVALID);
+        }
+      }
 
       // 2. Re-validate current year (inside transaction per chat155 requirement)
       const currentYear = await tx.year.findFirst({
@@ -365,14 +396,6 @@ export class StudentRegistrationService {
       //     صف المدرسة مقفل مسبقاً (tx.school.update في الخطوة 6).
       //     لا يفعل شيئاً إن لم تفعّل المدرسة الاشتراك أو كانت التجربة معطّلة.
       await this.trialService.createTrialForNewStudentTx(tx, mafhoomSchool.id, user.id, new Date());
-
-      // 10. Consume OTP if applicable (mark as CONSUMED)
-      if (otpId !== null) {
-        await tx.otpVerification.updateMany({
-          where: { id: otpId, status: OtpStatus.VERIFIED },
-          data: { status: OtpStatus.CONSUMED, consumedAt: new Date() },
-        });
-      }
 
       this.logger.log(
         `Student registered: ${user.uuid} [code=${code}] phone=${payload.phone} via=${otpId !== null ? 'otp' : 'direct'}`,

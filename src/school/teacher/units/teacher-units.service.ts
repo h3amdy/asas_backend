@@ -219,26 +219,37 @@ export class TeacherUnitsService {
             subjectUuid,
         );
 
-        const unit = await this.prisma.unit.findFirst({
-            where: { uuid: unitUuid, subjectId, isDeleted: false },
-        });
+        await this.prisma.$transaction(async (tx) => {
+            const unit = await tx.unit.findFirst({
+                where: { uuid: unitUuid, subjectId, isDeleted: false },
+            });
 
-        if (!unit) {
-            throw new NotFoundException('الوحدة غير موجودة');
-        }
+            if (!unit) {
+                throw new NotFoundException('الوحدة غير موجودة');
+            }
 
-        // TODO: عند إضافة LessonTemplate في المرحلة 2
-        // const lessonsCount = await this.prisma.lessonTemplate.count({
-        //     where: { unitId: unit.id, isDeleted: false },
-        // });
-        // if (lessonsCount > 0) {
-        //     throw new ConflictException('لا يمكن حذف وحدة تحتوي على دروس.');
-        // }
+            // SEC-TCH-04: منع حذف وحدة تحتوي على قوالب دروس أو دروس فعلية غير محذوفة
+            const [templatesCount, activeLessonsCount] = await Promise.all([
+                tx.lessonTemplate.count({
+                    where: { unitId: unit.id, isDeleted: false },
+                }),
+                tx.lesson.count({
+                    where: {
+                        isDeleted: false,
+                        template: { unitId: unit.id },
+                    },
+                }),
+            ]);
 
-        // Soft delete
-        await this.prisma.unit.update({
-            where: { id: unit.id },
-            data: { isDeleted: true, deletedAt: new Date() },
+            if (templatesCount > 0 || activeLessonsCount > 0) {
+                throw new ConflictException('لا يمكن حذف وحدة تحتوي على دروس.');
+            }
+
+            // Soft delete
+            await tx.unit.update({
+                where: { id: unit.id },
+                data: { isDeleted: true, deletedAt: new Date() },
+            });
         });
 
         return { message: 'تم حذف الوحدة بنجاح' };

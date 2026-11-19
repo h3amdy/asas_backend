@@ -51,7 +51,7 @@ export class ParentStudentContextGuard implements CanActivate {
         // Verify the parent is linked to this student
         // Step 1: Find parent userId
         const parentUser = await this.prisma.user.findFirst({
-            where: { uuid: parentUserUuid, schoolId, userType: 'PARENT', isDeleted: false },
+            where: { uuid: parentUserUuid, schoolId, userType: 'PARENT', isActive: true, isDeleted: false },
             include: { parent: { select: { userId: true } } },
         });
 
@@ -61,7 +61,7 @@ export class ParentStudentContextGuard implements CanActivate {
 
         // Step 2: Find student userId
         const studentUser = await this.prisma.user.findFirst({
-            where: { uuid: studentUuid, schoolId, isDeleted: false },
+            where: { uuid: studentUuid, schoolId, userType: 'STUDENT', isActive: true, isDeleted: false },
             include: { student: { select: { userId: true } } },
         });
 

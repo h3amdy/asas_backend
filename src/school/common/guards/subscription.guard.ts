@@ -33,15 +33,26 @@ export class SubscriptionGuard implements CanActivate {
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const req = context.switchToHttp().getRequest<any>();
 
-        // ── 1. فقط الطلاب يُفحصون ──
+        // ── 1. فقط الطلاب يُفحصون (مع Fail-Closed عند غياب السياق) ──
         // ut قد يكون STUDENT (مباشر) أو أن ParentStudentContextGuard
         // حوّلته إلى STUDENT (ولي أمر يتصفح كطالب).
         const userType = req.user?.ut ?? req.user?.originalUt;
+        if (!userType) {
+            this.logger.warn(
+                '🔒 [FAIL_CLOSED] Missing authenticated user context in SubscriptionGuard',
+            );
+            throw new ForbiddenException(SUB_ERROR.SUBSCRIPTION_REQUIRED);
+        }
         if (userType !== 'STUDENT') return true;
 
         const schoolId: number | undefined = req.schoolContext?.id;
         const studentUuid: string | undefined = req.user?.sub;
-        if (!schoolId || !studentUuid) return true; // حراس سابقة ستمنع هذا
+        if (!schoolId || !studentUuid) {
+            this.logger.warn(
+                '🔒 [FAIL_CLOSED] Missing schoolId or studentUuid in SubscriptionGuard',
+            );
+            throw new ForbiddenException(SUB_ERROR.SUBSCRIPTION_REQUIRED);
+        }
 
         // ── 2. هل الاشتراكات مفعّلة؟ ──
         const settings = await this.prisma.schoolSubscriptionSettings.findUnique({
@@ -57,7 +68,7 @@ export class SubscriptionGuard implements CanActivate {
         // ── 3. هل يملك فترة وصول سارية؟ ──
         const now = new Date();
         const student = await this.prisma.user.findFirst({
-            where: { uuid: studentUuid, schoolId, userType: 'STUDENT', isDeleted: false },
+            where: { uuid: studentUuid, schoolId, userType: 'STUDENT', isActive: true, isDeleted: false },
             select: { id: true },
         });
 

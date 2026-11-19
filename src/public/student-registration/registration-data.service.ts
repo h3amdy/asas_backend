@@ -51,6 +51,7 @@ export class RegistrationDataService {
     const mafhoomSchool = await this.prisma.school.findFirst({
       where: {
         schoolCode: REGISTRATION_CONFIG.mafhoomSchoolCode,
+        isActive: true,
         isDeleted: false,
       },
       select: { id: true },
