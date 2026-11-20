@@ -1,6 +1,7 @@
 // src/platform/sessions/platform-sessions.service.ts
 
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { sha256, randomToken } from '../../school/auth/utils/crypto.util';
 import { PLATFORM_AUTH_JWT, PLATFORM_AUTH_ERRORS } from '../auth/constants';
@@ -134,11 +135,15 @@ export class PlatformSessionsService {
     /**
      * إبطال كل جلسات المستخدم (مثلاً عند تغيير كلمة المرور)
      */
-    async revokeAllUserSessions(params: {
-        platformUserId: number;
-        reason: 'LOGOUT' | 'PASSWORD_CHANGED' | 'ADMIN_REVOKE';
-    }) {
-        await this.prisma.platformAuthSession.updateMany({
+    async revokeAllUserSessions(
+        params: {
+            platformUserId: number;
+            reason: 'LOGOUT' | 'PASSWORD_CHANGED' | 'ADMIN_REVOKE';
+        },
+        tx?: Prisma.TransactionClient,
+    ) {
+        const db = tx ?? this.prisma;
+        await db.platformAuthSession.updateMany({
             where: {
                 platformUserId: params.platformUserId,
                 revokedAt: null,

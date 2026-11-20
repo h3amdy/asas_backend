@@ -22,7 +22,7 @@ export class PlatformProfileService {
    */
   async getProfile(userUuid: string) {
     const user = await this.prisma.platformUser.findFirst({
-      where: { uuid: userUuid, isDeleted: false },
+      where: { uuid: userUuid, isActive: true, isDeleted: false },
       select: {
         uuid: true,
         username: true,
@@ -66,7 +66,7 @@ export class PlatformProfileService {
    */
   async updateProfile(userUuid: string, dto: UpdateProfileDto) {
     const user = await this.prisma.platformUser.findFirst({
-      where: { uuid: userUuid, isDeleted: false },
+      where: { uuid: userUuid, isActive: true, isDeleted: false },
     });
     if (!user) {
       throw new NotFoundException(PLATFORM_AUTH_ERRORS.USER_NOT_FOUND);
@@ -96,7 +96,7 @@ export class PlatformProfileService {
    */
   async changePassword(userUuid: string, dto: ChangePasswordDto) {
     const user = await this.prisma.platformUser.findFirst({
-      where: { uuid: userUuid, isDeleted: false },
+      where: { uuid: userUuid, isActive: true, isDeleted: false },
     });
     if (!user) {
       throw new NotFoundException(PLATFORM_AUTH_ERRORS.USER_NOT_FOUND);
@@ -108,18 +108,23 @@ export class PlatformProfileService {
       throw new UnauthorizedException(PLATFORM_AUTH_ERRORS.WRONG_PASSWORD);
     }
 
-    // تشفير كلمة المرور الجديدة
+    // تشفير كلمة المرور الجديدة (خارج المعاملة لتفادي حجز اتصال DB أثناء bcrypt)
     const newHash = await bcrypt.hash(dto.newPassword, 10);
 
-    await this.prisma.platformUser.update({
-      where: { id: user.id },
-      data: { passwordHash: newHash },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.platformUser.update({
+        where: { id: user.id },
+        data: { passwordHash: newHash },
+      });
 
-    // إبطال جميع الجلسات بعد تغيير كلمة المرور
-    await this.sessions.revokeAllUserSessions({
-      platformUserId: user.id,
-      reason: 'PASSWORD_CHANGED',
+      // إبطال جميع الجلسات ذرياً داخل نفس معاملة تحديث كلمة المرور (SEC-OWN-01)
+      await this.sessions.revokeAllUserSessions(
+        {
+          platformUserId: user.id,
+          reason: 'PASSWORD_CHANGED',
+        },
+        tx,
+      );
     });
 
     return { message: 'تم تحديث كلمة المرور بنجاح — يرجى تسجيل الدخول مرة أخرى' };

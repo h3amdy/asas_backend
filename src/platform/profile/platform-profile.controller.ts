@@ -7,6 +7,7 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { PlatformProfileService } from './platform-profile.service';
 import { UpdateProfileDto, ChangePasswordDto } from './dto/update-profile.dto';
 import { PlatformJwtAuthGuard } from '../auth/guards/platform-jwt-auth.guard';
@@ -37,8 +38,14 @@ export class PlatformProfileController {
   /**
    * PATCH /platform/profile/password
    * تغيير كلمة المرور (PLT-002)
+   * 🛡️ SEC-OWN-01: حماية بتحديد المعدل (5/دقيقة + 20/ساعة) لمنع تخمين oldPassword
    */
   @Patch('password')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({
+    short: { ttl: 60000, limit: 5 },
+    long: { ttl: 3600000, limit: 20 },
+  })
   async changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
     return this.profileService.changePassword(req.user.sub, dto);
   }
