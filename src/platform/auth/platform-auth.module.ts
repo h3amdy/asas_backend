@@ -7,6 +7,7 @@ import { PlatformAuthService } from './platform-auth.service';
 import { PlatformAuthController } from './platform-auth.controller';
 import { PlatformJwtStrategy } from './platform-jwt.strategy';
 import { PlatformSessionsModule } from '../sessions/platform-sessions.module';
+import { LoginLockoutModule } from '../../common/auth/login-lockout.module';
 import { PLATFORM_AUTH_JWT } from './constants';
 
 @Module({
@@ -14,6 +15,7 @@ import { PLATFORM_AUTH_JWT } from './constants';
     PrismaModule,
     PassportModule,
     PlatformSessionsModule,
+    LoginLockoutModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'SUPER_SECRET_ASAS',
       signOptions: {

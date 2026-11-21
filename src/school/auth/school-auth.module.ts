@@ -13,12 +13,13 @@ import { SchoolAuthController } from './school-auth.controller';
 import { SchoolAuthService } from './school-auth.service';
 import { SCHOOL_AUTH_JWT } from './constants';
 import { SchoolJwtStrategy } from './strategies/school-jwt.strategy';
-import { LoginLockoutService } from './login-lockout.service';
+import { LoginLockoutModule } from '../../common/auth/login-lockout.module';
 
 @Module({
     imports: [
         PrismaModule,
         SessionsModule,
+        LoginLockoutModule,
         JwtModule.register({
             secret: process.env.JWT_SECRET,
             signOptions: {
@@ -28,8 +29,8 @@ import { LoginLockoutService } from './login-lockout.service';
         }),
     ],
     controllers: [SchoolAuthController],
-    providers: [SchoolAuthService, SchoolJwtStrategy, LoginLockoutService],
-    exports: [SchoolAuthService, LoginLockoutService],
+    providers: [SchoolAuthService, SchoolJwtStrategy],
+    exports: [SchoolAuthService, LoginLockoutModule],
 })
 export class SchoolAuthModule { }
 

@@ -1,14 +1,28 @@
 // src/platform/sessions/platform-sessions.service.ts
 
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+    ForbiddenException,
+    Injectable,
+    Logger,
+    NotFoundException,
+    UnauthorizedException,
+} from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { sha256, randomToken } from '../../school/auth/utils/crypto.util';
 import { PLATFORM_AUTH_JWT, PLATFORM_AUTH_ERRORS } from '../auth/constants';
 
+function timingSafeEqualHex(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
+}
+
 @Injectable()
 export class PlatformSessionsService {
-    constructor(private readonly prisma: PrismaService) {}
+    private readonly logger = new Logger(PlatformSessionsService.name);
+
+    constructor(private readonly prisma: PrismaService) { }
 
     /**
      * إنشاء جلسة جديدة لمستخدم المنصة
@@ -44,64 +58,159 @@ export class PlatformSessionsService {
     }
 
     /**
-     * تحقق من صلاحية الجلسة + تدوير الـ refresh token
-     * بحث O(1) باستخدام session UUID + SHA256 مقارنة
+     * تحقق ذري من صلاحية الجلسة وحالة المستخدم + تدوير الـ refresh token
+     * 🛡️ SEC-AUTH-08:
+     * - قفل صف الجلسة (`FOR UPDATE OF s`) يمنع TOCTOU عند الطلبات المتزامنة.
+     * - مقارنة constant-time للبصمة + إبطال الجلسة فوراً (COMMITTED) عند إعادة الاستخدام أو عدم التطابق.
+     * - فحص `is_active` و`is_deleted` قبل التدوير أو تمديد `expires_at`.
      */
     async validateAndRotateRefresh(params: {
         sessionUuid: string;
         refreshTokenPlain: string;
     }) {
-        const session = await this.prisma.platformAuthSession.findUnique({
-            where: { uuid: params.sessionUuid },
-            select: {
-                id: true,
-                uuid: true,
-                platformUserId: true,
-                refreshTokenHash: true,
-                expiresAt: true,
-                revokedAt: true,
-            },
-        });
-
-        if (!session) {
-            throw new NotFoundException(PLATFORM_AUTH_ERRORS.SESSION_NOT_FOUND);
-        }
-        if (session.revokedAt) {
-            throw new ForbiddenException(PLATFORM_AUTH_ERRORS.SESSION_REVOKED);
-        }
-        if (session.expiresAt.getTime() <= Date.now()) {
-            throw new ForbiddenException(PLATFORM_AUTH_ERRORS.SESSION_EXPIRED);
-        }
-
-        // مقارنة SHA256 — سريعة O(1)
-        const incomingHash = sha256(params.refreshTokenPlain);
-        if (incomingHash !== session.refreshTokenHash) {
-            throw new ForbiddenException(PLATFORM_AUTH_ERRORS.INVALID_REFRESH_TOKEN);
-        }
-
-        // تدوير الـ refresh token
         const now = new Date();
+        const incomingHash = sha256(params.refreshTokenPlain);
         const newRefreshPlain = randomToken(48);
         const newRefreshHash = sha256(newRefreshPlain);
         const newExpiresAt = new Date(
             now.getTime() + PLATFORM_AUTH_JWT.refreshTokenTtlSec * 1000,
         );
 
-        await this.prisma.platformAuthSession.update({
-            where: { uuid: session.uuid },
-            data: {
-                refreshTokenHash: newRefreshHash,
-                expiresAt: newExpiresAt,
-                lastSeenAt: now,
-            },
+        const outcome = await this.prisma.$transaction(async (tx) => {
+            const rows = await tx.$queryRaw<
+                Array<{
+                    id: number;
+                    uuid: string;
+                    platform_user_id: number;
+                    refresh_token_hash: string;
+                    expires_at: Date;
+                    revoked_at: Date | null;
+                    user_uuid: string | null;
+                    user_role: string | null;
+                    user_is_active: boolean | null;
+                    user_is_deleted: boolean | null;
+                }>
+            >`
+                SELECT
+                    s."id",
+                    s."uuid",
+                    s."platform_user_id",
+                    s."refresh_token_hash",
+                    s."expires_at",
+                    s."revoked_at",
+                    u."uuid" AS "user_uuid",
+                    u."role"::text AS "user_role",
+                    u."is_active" AS "user_is_active",
+                    u."is_deleted" AS "user_is_deleted"
+                FROM "platform_auth_sessions" s
+                LEFT JOIN "platform_users" u ON u."id" = s."platform_user_id"
+                WHERE s."uuid" = ${params.sessionUuid}
+                FOR UPDATE OF s
+            `;
+
+            const row = rows[0];
+            if (!row) {
+                return { status: 'NOT_FOUND' as const };
+            }
+
+            if (row.revoked_at) {
+                return {
+                    status: 'REVOKED' as const,
+                    sessionUuid: row.uuid,
+                    platformUserId: row.platform_user_id,
+                };
+            }
+
+            if (new Date(row.expires_at).getTime() <= now.getTime()) {
+                return { status: 'EXPIRED' as const };
+            }
+
+            if (!timingSafeEqualHex(incomingHash, row.refresh_token_hash)) {
+                await tx.$executeRaw`
+                    UPDATE "platform_auth_sessions"
+                    SET "revoked_at" = ${now},
+                        "revoke_reason" = 'ADMIN_REVOKE'::"RevokeReason"
+                    WHERE "id" = ${row.id}
+                      AND "revoked_at" IS NULL
+                `;
+                return {
+                    status: 'REUSE_REVOKED' as const,
+                    sessionUuid: row.uuid,
+                    platformUserId: row.platform_user_id,
+                };
+            }
+
+            if (
+                !row.user_uuid ||
+                !row.user_role ||
+                row.user_is_deleted !== false ||
+                row.user_is_active !== true
+            ) {
+                await tx.$executeRaw`
+                    UPDATE "platform_auth_sessions"
+                    SET "revoked_at" = ${now},
+                        "revoke_reason" = 'ADMIN_REVOKE'::"RevokeReason"
+                    WHERE "id" = ${row.id}
+                      AND "revoked_at" IS NULL
+                `;
+                return {
+                    status: 'ACCOUNT_DISABLED' as const,
+                    sessionUuid: row.uuid,
+                    platformUserId: row.platform_user_id,
+                };
+            }
+
+            const updatedCount = await tx.$executeRaw`
+                UPDATE "platform_auth_sessions"
+                SET "refresh_token_hash" = ${newRefreshHash},
+                    "expires_at" = ${newExpiresAt},
+                    "last_seen_at" = ${now}
+                WHERE "id" = ${row.id}
+                  AND "refresh_token_hash" = ${incomingHash}
+                  AND "revoked_at" IS NULL
+            `;
+
+            if (updatedCount !== 1) {
+                return {
+                    status: 'REVOKED' as const,
+                    sessionUuid: row.uuid,
+                    platformUserId: row.platform_user_id,
+                };
+            }
+
+            return {
+                status: 'OK' as const,
+                sessionUuid: row.uuid,
+                platformUserId: row.platform_user_id,
+                userUuid: row.user_uuid,
+                userRole: row.user_role,
+            };
         });
 
-        return {
-            sessionUuid: session.uuid,
-            platformUserId: session.platformUserId,
-            refreshToken: newRefreshPlain,
-            refreshExpiresAt: newExpiresAt,
-        };
+        switch (outcome.status) {
+            case 'NOT_FOUND':
+                throw new NotFoundException(PLATFORM_AUTH_ERRORS.SESSION_NOT_FOUND);
+            case 'REVOKED':
+                throw new ForbiddenException(PLATFORM_AUTH_ERRORS.SESSION_REVOKED);
+            case 'EXPIRED':
+                throw new ForbiddenException(PLATFORM_AUTH_ERRORS.SESSION_EXPIRED);
+            case 'REUSE_REVOKED':
+                this.logger.warn(
+                    `SEC-AUTH-08: Refresh token reuse or mismatch detected; revoked platform session ${outcome.sessionUuid} (userId=${outcome.platformUserId}).`,
+                );
+                throw new ForbiddenException(PLATFORM_AUTH_ERRORS.SESSION_REVOKED);
+            case 'ACCOUNT_DISABLED':
+                throw new UnauthorizedException(PLATFORM_AUTH_ERRORS.ACCOUNT_DISABLED);
+            case 'OK':
+                return {
+                    sessionUuid: outcome.sessionUuid,
+                    platformUserId: outcome.platformUserId,
+                    userUuid: outcome.userUuid,
+                    userRole: outcome.userRole,
+                    refreshToken: newRefreshPlain,
+                    refreshExpiresAt: newExpiresAt,
+                };
+        }
     }
 
     /**

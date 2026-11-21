@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { createHmac, hkdfSync } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SCHOOL_AUTH_ERRORS } from './constants';
+import { PLATFORM_AUTH_ERRORS } from '../../platform/auth/constants';
 
 export const LOCKOUT_DECAY_WINDOW_SECONDS = 60 * 60; // 60 دقيقة (Full Idle Reset)
 
@@ -56,6 +57,14 @@ const IP_HASH_HKDF_INFO = Buffer.from(
   'asas:sec-num-01:login-lockout:ip_hash:v1',
   'utf8',
 );
+const PLATFORM_LOGIN_HKDF_INFO = Buffer.from(
+  'asas:platform-auth:login-lockout:login_hash:v1',
+  'utf8',
+);
+const PLATFORM_ACCOUNT_HKDF_INFO = Buffer.from(
+  'asas:platform-auth:login-lockout:account_hash:v1',
+  'utf8',
+);
 const LOCAL_DEV_FALLBACK_IKM =
   'asas-local-dev-lockout-fallback-not-for-production';
 
@@ -86,16 +95,27 @@ export interface LockoutCleanupResult {
  * بدون كشف أي معلومة عن وجود الرقم المدرسي أو حالة الحساب.
  */
 export class LoginLockoutException extends HttpException {
-  constructor(public readonly retryAfterSeconds: number) {
+  constructor(
+    public readonly retryAfterSeconds: number,
+    message: string = SCHOOL_AUTH_ERRORS.RATE_LIMITED,
+  ) {
     super(
       {
         statusCode: HttpStatus.TOO_MANY_REQUESTS,
         code: SCHOOL_AUTH_ERRORS.RATE_LIMITED,
-        message: SCHOOL_AUTH_ERRORS.RATE_LIMITED,
+        message,
       },
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }
+}
+
+/**
+ * تطبيع معرّف دخول منصة المحتوى (البريد أو اسم المستخدم) قبل HMAC
+ * لمنع تجاوز القفل بتغيير حالة الأحرف أو إضافة فراغات.
+ */
+export function normalizePlatformLogin(rawLogin: string): string {
+  return rawLogin.trim().toLowerCase();
 }
 
 /**
@@ -112,12 +132,15 @@ export function normalizeClientIp(rawIp: string | undefined | null): string {
 }
 
 /**
- * يشتق مفتاحَي HMAC مستقلين بطول 256 بت بنطاقين مختلفين كلياً لـ `code_hash` و`ip_hash`.
+ * يشتق مفاتيح HMAC مستقلة بطول 256 بت بنطاقات مختلفة كلياً لـ `code_hash` و`ip_hash`
+ * و`platform_login_hash` و`platform_account_hash`.
  * يضمن عدم استخدام `JWT_SECRET` مباشرةً كمفتاح HMAC حتى عند التطوير أو الانتقال.
  */
 export function deriveLockoutHmacKeys(ikm: string | Buffer): {
   codeKey: Buffer;
   ipKey: Buffer;
+  platformLoginKey: Buffer;
+  platformAccountKey: Buffer;
 } {
   const ikmBuf = Buffer.isBuffer(ikm) ? ikm : Buffer.from(ikm, 'utf8');
   if (ikmBuf.length === 0) {
@@ -129,7 +152,25 @@ export function deriveLockoutHmacKeys(ikm: string | Buffer): {
   const ipKey = Buffer.from(
     hkdfSync('sha256', ikmBuf, LOCKOUT_HKDF_SALT, IP_HASH_HKDF_INFO, 32),
   );
-  return { codeKey, ipKey };
+  const platformLoginKey = Buffer.from(
+    hkdfSync(
+      'sha256',
+      ikmBuf,
+      LOCKOUT_HKDF_SALT,
+      PLATFORM_LOGIN_HKDF_INFO,
+      32,
+    ),
+  );
+  const platformAccountKey = Buffer.from(
+    hkdfSync(
+      'sha256',
+      ikmBuf,
+      LOCKOUT_HKDF_SALT,
+      PLATFORM_ACCOUNT_HKDF_INFO,
+      32,
+    ),
+  );
+  return { codeKey, ipKey, platformLoginKey, platformAccountKey };
 }
 
 @Injectable()
@@ -139,6 +180,8 @@ export class LoginLockoutService {
   private cachedKeys: {
     codeKey: Buffer;
     ipKey: Buffer;
+    platformLoginKey: Buffer;
+    platformAccountKey: Buffer;
     source: 'LOGIN_LOCKOUT_HMAC_KEY' | 'JWT_SECRET_HKDF' | 'LOCAL_DEV_FALLBACK';
   } | null = null;
 
@@ -199,6 +242,27 @@ export class LoginLockoutService {
   }
 
   /**
+   * بصمة HMAC-SHA256 غير قابلة للعكس لمعرّف دخول منصة المحتوى بعد التطبيع (منفصل تماماً عن أكواد المدارس).
+   */
+  hashPlatformLogin(login: string): string {
+    const { platformLoginKey } = this.resolveKeys();
+    return createHmac('sha256', platformLoginKey)
+      .update(normalizePlatformLogin(login), 'utf8')
+      .digest('hex');
+  }
+
+  /**
+   * بصمة HMAC-SHA256 غير قابلة للعكس لهوية حساب مستخدم المنصة (معرّف الصف الدائم)
+   * لمنع تجاوز القفل بتبديل البريد الإلكتروني إلى اسم المستخدم أو العكس.
+   */
+  hashPlatformAccount(platformUserId: number): string {
+    const { platformAccountKey } = this.resolveKeys();
+    return createHmac('sha256', platformAccountKey)
+      .update(String(platformUserId), 'utf8')
+      .digest('hex');
+  }
+
+  /**
    * بصمة HMAC-SHA256 غير قابلة للعكس لعنوان IP العميل بعد التطبيع.
    */
   hashIp(clientIp: string): string {
@@ -208,20 +272,17 @@ export class LoginLockoutService {
       .digest('hex');
   }
 
-  /**
-   * فحص القفل المسبق قبل أي استعلام user أو bcrypt (سواء وُجد الرقم أم لا).
-   * يرمي `LoginLockoutException` (429 RATE_LIMITED) مع `retryAfterSeconds`.
-   */
-  async assertNotLocked(code: number, clientIp: string): Promise<void> {
-    const codeHash = this.hashCode(code);
-    const ipHash = this.hashIp(clientIp);
-
+  private async assertNotLockedByHashes(
+    subjectHash: string,
+    ipHash: string,
+    message: string = SCHOOL_AUTH_ERRORS.RATE_LIMITED,
+  ): Promise<void> {
     const rows = await this.prisma.$queryRaw<
       Array<{ retry_after_seconds: number | null }>
     >`
       SELECT MAX(GREATEST(1, CEIL(EXTRACT(EPOCH FROM ("locked_until" - NOW())))))::int AS "retry_after_seconds"
       FROM "login_attempt_states"
-      WHERE "code_hash" = ${codeHash}
+      WHERE "code_hash" = ${subjectHash}
         AND "ip_hash" IN ('', ${ipHash})
         AND "locked_until" IS NOT NULL
         AND "locked_until" > NOW()
@@ -229,8 +290,82 @@ export class LoginLockoutService {
 
     const retryAfter = rows[0]?.retry_after_seconds;
     if (retryAfter !== null && retryAfter !== undefined && Number(retryAfter) > 0) {
-      throw new LoginLockoutException(Number(retryAfter));
+      throw new LoginLockoutException(Number(retryAfter), message);
     }
+  }
+
+  private async recordFailedAttemptInTx(
+    tx: Prisma.TransactionClient,
+    subjectHash: string,
+    ipHash: string,
+  ): Promise<{ codeIpCounted: boolean; codeGlobalCounted: boolean }> {
+    const codeIpRows = await this.upsertScopeFailure(
+      tx,
+      subjectHash,
+      ipHash,
+      CODE_IP_THRESHOLDS,
+      null,
+    );
+
+    if (codeIpRows.length === 0) {
+      return { codeIpCounted: false, codeGlobalCounted: false };
+    }
+
+    const codeGlobalRows = await this.upsertScopeFailure(
+      tx,
+      subjectHash,
+      '',
+      CODE_GLOBAL_THRESHOLDS,
+      CODE_GLOBAL_REARM_STEP,
+    );
+
+    return {
+      codeIpCounted: true,
+      codeGlobalCounted: codeGlobalRows.length > 0,
+    };
+  }
+
+  private async recordFailedAttemptByHashes(
+    subjectHash: string,
+    ipHash: string,
+  ): Promise<{ codeIpCounted: boolean; codeGlobalCounted: boolean }> {
+    return this.prisma.$transaction((tx) =>
+      this.recordFailedAttemptInTx(tx, subjectHash, ipHash),
+    );
+  }
+
+  private async clearSubjectHashesInTx(
+    tx: Prisma.TransactionClient,
+    subjectHash: string,
+    ipHash: string,
+  ): Promise<void> {
+    await tx.$executeRaw`
+      DELETE FROM "login_attempt_states"
+      WHERE "code_hash" = ${subjectHash}
+        AND "ip_hash" = ${ipHash}
+    `;
+    await tx.$executeRaw`
+      DELETE FROM "login_attempt_states"
+      WHERE "code_hash" = ${subjectHash}
+        AND "ip_hash" = ''
+    `;
+  }
+
+  private async clearOnSuccessByHashes(
+    subjectHash: string,
+    ipHash: string,
+  ): Promise<void> {
+    await this.prisma.$transaction((tx) =>
+      this.clearSubjectHashesInTx(tx, subjectHash, ipHash),
+    );
+  }
+
+  /**
+   * فحص القفل المسبق قبل أي استعلام user أو bcrypt (سواء وُجد الرقم أم لا).
+   * يرمي `LoginLockoutException` (429 RATE_LIMITED) مع `retryAfterSeconds`.
+   */
+  async assertNotLocked(code: number, clientIp: string): Promise<void> {
+    await this.assertNotLockedByHashes(this.hashCode(code), this.hashIp(clientIp));
   }
 
   /**
@@ -242,35 +377,10 @@ export class LoginLockoutService {
     code: number,
     clientIp: string,
   ): Promise<{ codeIpCounted: boolean; codeGlobalCounted: boolean }> {
-    const codeHash = this.hashCode(code);
-    const ipHash = this.hashIp(clientIp);
-
-    return this.prisma.$transaction(async (tx) => {
-      const codeIpRows = await this.upsertScopeFailure(
-        tx,
-        codeHash,
-        ipHash,
-        CODE_IP_THRESHOLDS,
-        null,
-      );
-
-      if (codeIpRows.length === 0) {
-        return { codeIpCounted: false, codeGlobalCounted: false };
-      }
-
-      const codeGlobalRows = await this.upsertScopeFailure(
-        tx,
-        codeHash,
-        '',
-        CODE_GLOBAL_THRESHOLDS,
-        CODE_GLOBAL_REARM_STEP,
-      );
-
-      return {
-        codeIpCounted: true,
-        codeGlobalCounted: codeGlobalRows.length > 0,
-      };
-    });
+    return this.recordFailedAttemptByHashes(
+      this.hashCode(code),
+      this.hashIp(clientIp),
+    );
   }
 
   /**
@@ -278,20 +388,100 @@ export class LoginLockoutService {
    * مع الإبقاء على أقفال `CODE_IP` الخاصة بعناوين IP أخرى (المحتمل أنها لمهاجمين).
    */
   async clearOnSuccess(code: number, clientIp: string): Promise<void> {
-    const codeHash = this.hashCode(code);
+    await this.clearOnSuccessByHashes(this.hashCode(code), this.hashIp(clientIp));
+  }
+
+  /**
+   * فحص القفل المسبق لتسجيل دخول منصة المحتوى قبل أي استعلام أو bcrypt.
+   */
+  async assertPlatformNotLocked(login: string, clientIp: string): Promise<void> {
+    await this.assertNotLockedByHashes(
+      this.hashPlatformLogin(login),
+      this.hashIp(clientIp),
+      PLATFORM_AUTH_ERRORS.RATE_LIMITED,
+    );
+  }
+
+  /**
+   * فحص قفل الحساب الموحّد بعد جلب المستخدم وقبل bcrypt لمنع التبديل بين البريد واسم المستخدم.
+   */
+  async assertPlatformAccountNotLocked(
+    platformUserId: number,
+    clientIp: string,
+  ): Promise<void> {
+    await this.assertNotLockedByHashes(
+      this.hashPlatformAccount(platformUserId),
+      this.hashIp(clientIp),
+      PLATFORM_AUTH_ERRORS.RATE_LIMITED,
+    );
+  }
+
+  /**
+   * تسجيل محاولة فاشلة ذرياً في PostgreSQL لمعرّف منصة المحتوى وحسابه (إن وُجد) ضمن معاملة واحدة.
+   * الترتيب الصارم (`loginHash` ثم `accountHash`) يمنع Deadlocks تماماً.
+   */
+  async recordPlatformFailedAttempt(
+    login: string,
+    clientIp: string,
+    platformUserId?: number,
+  ): Promise<{ codeIpCounted: boolean; codeGlobalCounted: boolean }> {
+    const loginHash = this.hashPlatformLogin(login);
     const ipHash = this.hashIp(clientIp);
+    const accountHash =
+      platformUserId !== undefined
+        ? this.hashPlatformAccount(platformUserId)
+        : null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const loginRes = await this.recordFailedAttemptInTx(tx, loginHash, ipHash);
+      if (!accountHash) {
+        return loginRes;
+      }
+      const accountRes = await this.recordFailedAttemptInTx(
+        tx,
+        accountHash,
+        ipHash,
+      );
+      return {
+        codeIpCounted: loginRes.codeIpCounted || accountRes.codeIpCounted,
+        codeGlobalCounted:
+          loginRes.codeGlobalCounted || accountRes.codeGlobalCounted,
+      };
+    });
+  }
+
+  /**
+   * تصفير عدادات القفل للـ IP الحالي والنطاق العام لمعرّف منصة المحتوى (وكل معرّفات الحساب المرتبطة)
+   * عند نجاح المصادقة، مع الإبقاء على أقفال `CODE_IP` الخاصة بعناوين IP أخرى.
+   */
+  async clearPlatformOnSuccess(
+    login: string,
+    clientIp: string,
+    account?: {
+      platformUserId: number;
+      email?: string | null;
+      username?: string | null;
+    },
+  ): Promise<void> {
+    const ipHash = this.hashIp(clientIp);
+    const loginHashes = new Set<string>([this.hashPlatformLogin(login)]);
+    if (account) {
+      if (account.email && account.email.trim()) {
+        loginHashes.add(this.hashPlatformLogin(account.email));
+      }
+      if (account.username && account.username.trim()) {
+        loginHashes.add(this.hashPlatformLogin(account.username));
+      }
+    }
+    const orderedHashes = [...loginHashes].sort();
+    if (account) {
+      orderedHashes.push(this.hashPlatformAccount(account.platformUserId));
+    }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        DELETE FROM "login_attempt_states"
-        WHERE "code_hash" = ${codeHash}
-          AND "ip_hash" = ${ipHash}
-      `;
-      await tx.$executeRaw`
-        DELETE FROM "login_attempt_states"
-        WHERE "code_hash" = ${codeHash}
-          AND "ip_hash" = ''
-      `;
+      for (const subjectHash of orderedHashes) {
+        await this.clearSubjectHashesInTx(tx, subjectHash, ipHash);
+      }
     });
   }
 

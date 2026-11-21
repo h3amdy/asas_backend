@@ -26,4 +26,5 @@ export const PLATFORM_AUTH_ERRORS = {
   SESSION_EXPIRED: 'الجلسة منتهية الصلاحية',
   SESSION_REVOKED: 'الجلسة ملغاة — يرجى تسجيل الدخول مرة أخرى',
   NOT_YOUR_SESSION: 'لا تملك صلاحية على هذه الجلسة',
+  RATE_LIMITED: 'تم تجاوز عدد المحاولات المسموح — حاول لاحقاً',
 };

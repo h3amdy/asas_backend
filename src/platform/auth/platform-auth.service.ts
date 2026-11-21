@@ -11,6 +11,16 @@ import { PlatformLoginDto } from './dto/platform-login.dto';
 import { PlatformRefreshDto } from './dto/platform-refresh.dto';
 import { PLATFORM_AUTH_ERRORS, PLATFORM_AUTH_JWT } from './constants';
 import { randomToken } from '../../school/auth/utils/crypto.util';
+import { LoginLockoutService } from '../../school/auth/login-lockout.service';
+
+/**
+ * hash ثابت (cost=10 مثل حسابات المنصة) لتوحيد زمن bcrypt عند عدم وجود الحساب
+ * ومنع كشف وجود البريد/اسم المستخدم أو حالة تعطيل الحساب عبر التوقيت.
+ */
+const PLATFORM_TIMING_DUMMY_HASH = bcrypt.hashSync(
+  'asas-platform-timing-equalizer',
+  10,
+);
 
 @Injectable()
 export class PlatformAuthService {
@@ -18,6 +28,7 @@ export class PlatformAuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private sessions: PlatformSessionsService,
+    private readonly lockout: LoginLockoutService,
   ) {}
 
   /**
@@ -25,37 +36,56 @@ export class PlatformAuthService {
    * يدعم تسجيل الدخول بالبريد الإلكتروني أو اسم المستخدم
    * يرجع accessToken + refreshToken + sessionId
    */
-  async login(dto: PlatformLoginDto) {
-    const { login, password } = dto;
+  async login(dto: PlatformLoginDto, context: { clientIp?: string } = {}) {
+    const { password } = dto;
+    const lookupLogin = dto.login.trim();
+    const clientIp = context.clientIp ?? 'unknown';
 
-    // 1) البحث بالبريد أو اسم المستخدم
+    // 1) فحص القفل المؤقت من PostgreSQL قبل أي استعلام أو bcrypt
+    await this.lockout.assertPlatformNotLocked(lookupLogin, clientIp);
+
+    // 2) البحث بالبريد أو اسم المستخدم (متطابق بدون حساسية حالة الأحرف مع تطبيع القفل)
     const user = await this.prisma.platformUser.findFirst({
       where: {
         isDeleted: false,
         OR: [
-          { email: login },
-          { username: login },
+          { email: { equals: lookupLogin, mode: 'insensitive' } },
+          { username: { equals: lookupLogin, mode: 'insensitive' } },
         ],
       },
     });
 
-    // 2) التحقق من وجود المستخدم
-    if (!user) {
+    // 2b) فحص القفل الموحّد على مستوى الحساب (يمنع تبديل البريد/اسم المستخدم لتجاوز القفل) قبل bcrypt
+    if (user) {
+      await this.lockout.assertPlatformAccountNotLocked(user.id, clientIp);
+    }
+
+    // 3) التحقق من كلمة المرور دائماً (حتى مع حساب غير موجود) لمنع تسريب التوقيت
+    const hashToVerify = user?.passwordHash ?? PLATFORM_TIMING_DUMMY_HASH;
+    const isMatch = await bcrypt.compare(password, hashToVerify);
+
+    if (!user || !isMatch) {
+      await this.lockout.recordPlatformFailedAttempt(
+        lookupLogin,
+        clientIp,
+        user?.id,
+      );
       throw new UnauthorizedException(PLATFORM_AUTH_ERRORS.INVALID_CREDENTIALS);
     }
 
-    // 3) التحقق من أن الحساب نشط
+    // 4) التحقق من أن الحساب نشط بعد نجاح كلمة المرور فقط (عدم كشف التعطيل بكلمة مرور خاطئة)
     if (!user.isActive) {
       throw new UnauthorizedException(PLATFORM_AUTH_ERRORS.ACCOUNT_DISABLED);
     }
 
-    // 4) التحقق من كلمة المرور
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) {
-      throw new UnauthorizedException(PLATFORM_AUTH_ERRORS.INVALID_CREDENTIALS);
-    }
+    // 5) تصفير عدادات القفل للـ IP الحالي والنطاق العام للمعرّف والحساب عند النجاح
+    await this.lockout.clearPlatformOnSuccess(lookupLogin, clientIp, {
+      platformUserId: user.id,
+      email: user.email,
+      username: user.username,
+    });
 
-    // 5) إنشاء جلسة + refresh token
+    // 6) إنشاء جلسة + refresh token
     const refreshPlain = randomToken(48);
     const session = await this.sessions.createSession({
       platformUserId: user.id,
@@ -83,35 +113,25 @@ export class PlatformAuthService {
 
   /**
    * تجديد التوكن باستخدام sessionId + refresh token
-   * بحث O(1) بدلاً من O(n)
+   * بحث O(1) ذري مع فحص حالة الحساب قبل التدوير وكشف إعادة الاستخدام (SEC-AUTH-08)
    */
   async refresh(dto: PlatformRefreshDto) {
     const { sessionId, refreshToken } = dto;
 
-    // 1) تحقق + تدوير الـ refresh token
+    // 1) تحقق ذري + فحص حالة الحساب + تدوير الـ refresh token مع كشف إعادة الاستخدام
     const rotated = await this.sessions.validateAndRotateRefresh({
       sessionUuid: sessionId,
       refreshTokenPlain: refreshToken,
     });
 
-    // 2) التأكد من أن المستخدم لا يزال نشطاً
-    const user = await this.prisma.platformUser.findFirst({
-      where: {
-        id: rotated.platformUserId,
-        isDeleted: false,
-        isActive: true,
-      },
-      select: { uuid: true, role: true },
-    });
+    // 2) توليد access token جديد
+    const accessToken = this.buildAccessToken(
+      rotated.userUuid,
+      rotated.userRole,
+      rotated.sessionUuid,
+    );
 
-    if (!user) {
-      throw new UnauthorizedException(PLATFORM_AUTH_ERRORS.ACCOUNT_DISABLED);
-    }
-
-    // 3) توليد access token جديد
-    const accessToken = this.buildAccessToken(user.uuid, user.role, rotated.sessionUuid);
-
-    // 4) إرجاع التوكنات الجديدة
+    // 3) إرجاع التوكنات الجديدة
     return {
       accessToken,
       refreshToken: rotated.refreshToken,
