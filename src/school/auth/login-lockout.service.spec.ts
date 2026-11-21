@@ -199,6 +199,9 @@ describe('SEC-NUM-01 — Unit Security Controls (HKDF/HMAC, UTF-8 Byte Validatio
       process.env.BACKUP_STORAGE_PATH = '/var/backups/mafhooom';
       process.env.ACTIVATION_CODE_ENC_KEY_V1 = Buffer.alloc(32, 1).toString('base64');
       process.env.ACTIVATION_CODE_HMAC_KEY_V1 = Buffer.alloc(32, 2).toString('base64');
+      process.env.IMPORT_CREDENTIALS_ENC_KEY = Buffer.from(
+        Array.from({ length: 32 }, (_, i) => i + 11),
+      ).toString('base64');
       process.env.JWT_SECRET = '   ';
       delete process.env.LOGIN_LOCKOUT_HMAC_KEY;
 

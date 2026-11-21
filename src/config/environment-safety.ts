@@ -291,5 +291,40 @@ export function runEnvironmentValidation(): EnvironmentValidationResult {
     );
   }
 
+  // ── 9. مفتاح ومهلة تشفير بيانات الاستيراد الجماعي (SEC-IMP-01) ──
+  const importEncKey = (process.env.IMPORT_CREDENTIALS_ENC_KEY || '').trim();
+  if (importEncKey) {
+    const byteLen = Buffer.byteLength(importEncKey, 'utf8');
+    const distinctChars = new Set(importEncKey).size;
+    if (byteLen < 32 || distinctChars < 8) {
+      const msg =
+        'IMPORT_CREDENTIALS_ENC_KEY ضعيف — يجب أن يكون 32 بايت على الأقل (أنشئه بـ: openssl rand -base64 32).';
+      if (appEnv === 'production' || appEnv === 'staging') {
+        errors.push(msg);
+      } else {
+        warnings.push(msg);
+      }
+    }
+  } else if (appEnv === 'production') {
+    errors.push(
+      'APP_ENV=production لكن IMPORT_CREDENTIALS_ENC_KEY غير محدد. ' +
+        'يجب تعيين مفتاح مستقل وقوي (openssl rand -base64 32)؛ لا يُسمح بالاحتياط عبر JWT_SECRET في الإنتاج.',
+    );
+  }
+
+  const importTtlRaw = (process.env.IMPORT_CREDENTIALS_TTL_HOURS || '').trim();
+  if (importTtlRaw) {
+    const ttlHours = Number(importTtlRaw);
+    if (!Number.isInteger(ttlHours) || ttlHours < 1 || ttlHours > 72) {
+      const msg =
+        'IMPORT_CREDENTIALS_TTL_HOURS يجب أن يكون عدداً صحيحاً بين 1 و72 ساعة.';
+      if (appEnv === 'production' || appEnv === 'staging') {
+        errors.push(msg);
+      } else {
+        warnings.push(msg);
+      }
+    }
+  }
+
   return { valid: errors.length === 0, errors, warnings };
 }

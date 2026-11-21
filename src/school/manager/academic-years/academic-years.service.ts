@@ -383,7 +383,7 @@ export class AcademicYearsService {
         if (shouldCopy && targetIdx > 0) {
             const prevTerm = terms[targetIdx - 1];
             try {
-                await this._copyTimetableBetweenTerms(yearId, prevTerm.id, termId);
+                await this._copyTimetableBetweenTerms(schoolId, yearId, prevTerm.id, termId);
             } catch (e) {
                 // لا نوقف العملية إذا فشل نسخ الجدول — العملية الرئيسية (بدء الفصل) أهم
                 console.warn(`[startTerm] timetable copy failed: ${e}`);
@@ -416,18 +416,50 @@ export class AcademicYearsService {
         });
         if (!targetTerm) throw new NotFoundException('TARGET_TERM_NOT_FOUND');
 
-        return this._copyTimetableBetweenTerms(yearId, dto.sourceTermId, dto.targetTermId);
+        return this._copyTimetableBetweenTerms(schoolId, yearId, dto.sourceTermId, dto.targetTermId);
     }
 
     /**
-     * 🔧 Helper: نسخ الجدول الدراسي بين فصلين
+     * 🔧 Helper: نسخ الجدول الدراسي بين فصلين (معزول بالمدرسة — SEC-ISO-05)
      */
-    private async _copyTimetableBetweenTerms(yearId: number, sourceTermId: number, targetTermId: number) {
-        // جلب جميع جداول الفصل المصدر
+    private async _copyTimetableBetweenTerms(
+        schoolId: number,
+        yearId: number,
+        sourceTermId: number,
+        targetTermId: number,
+    ) {
+        // جلب جميع جداول الفصل المصدر العائدة حصراً لهذه المدرسة
         const sourceTimetables = await this.prisma.timetable.findMany({
-            where: { yearId, termId: sourceTermId, isDeleted: false },
+            where: {
+                yearId,
+                termId: sourceTermId,
+                isDeleted: false,
+                year: { schoolId, isDeleted: false },
+                term: { yearId, isDeleted: false },
+                section: {
+                    isDeleted: false,
+                    grade: { schoolId, isDeleted: false },
+                },
+            },
             include: {
-                slots: { where: { isDeleted: false } },
+                slots: {
+                    where: {
+                        isDeleted: false,
+                        OR: [
+                            { subjectSectionId: null },
+                            {
+                                subjectSection: {
+                                    isDeleted: false,
+                                    subject: { schoolId, isDeleted: false },
+                                    section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
+                                },
+                            },
+                        ],
+                    },
+                    include: {
+                        subjectSection: { select: { sectionId: true } },
+                    },
+                },
             },
         });
 
@@ -456,17 +488,34 @@ export class AcademicYearsService {
                 continue;
             }
 
-            // إنشاء أو استخدام الجدول الموجود (فارغ)
-            const targetTimetable = existingTarget ?? await this.prisma.timetable.create({
-                data: {
+            // إنشاء أو إحياء أو استخدام الجدول الموجود (فارغ)
+            const targetTimetable = existingTarget ?? await this.prisma.timetable.upsert({
+                where: {
+                    sectionId_yearId_termId: {
+                        sectionId: srcTimetable.sectionId,
+                        yearId,
+                        termId: targetTermId,
+                    },
+                },
+                create: {
                     sectionId: srcTimetable.sectionId,
                     yearId,
                     termId: targetTermId,
                 },
+                update: {
+                    isDeleted: false,
+                    deletedAt: null,
+                },
             });
 
-            // نسخ الحصص
+            // نسخ الحصص المتوافقة مع نفس الشعبة والمدرسة فقط
             for (const slot of srcTimetable.slots) {
+                if (
+                    slot.subjectSectionId !== null &&
+                    slot.subjectSection?.sectionId !== srcTimetable.sectionId
+                ) {
+                    continue;
+                }
                 await this.prisma.timetableSlot.upsert({
                     where: {
                         timetableId_weekday_lessonNumber: {

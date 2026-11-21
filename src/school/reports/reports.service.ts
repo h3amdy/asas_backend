@@ -1051,6 +1051,7 @@ export class ReportsService {
         schoolId: number,
         studentUuid: string,
         filters: DetailFilters,
+        options?: { allowedSubjectIds?: number[] },
     ) {
         // ── جلب الطالب + قيده ──
         const studentUser = await this.prisma.user.findFirst({
@@ -1083,14 +1084,19 @@ export class ReportsService {
         const termId = yearId ? await this.resolveTermId(yearId, filters.termUuid) : null;
         const dateFilter = this.getDateFilter(filters.period);
 
-        // ── المواد المرتبطة بالصف ──
+        // ── المواد المرتبطة بالصف (مفلترة بمواد المعلم إن وُجدت — SEC-TCH-02) ──
+        const subjectWhere: any = {
+            schoolId,
+            isDeleted: false,
+            isActive: true,
+            grade: { id: enrollment.gradeId },
+        };
+        if (options?.allowedSubjectIds !== undefined) {
+            subjectWhere.id = { in: options.allowedSubjectIds };
+        }
+
         const subjects = await this.prisma.subject.findMany({
-            where: {
-                schoolId,
-                isDeleted: false,
-                isActive: true,
-                grade: { id: enrollment.gradeId },
-            },
+            where: subjectWhere,
             select: { id: true, uuid: true, displayName: true, coverMediaAsset: { select: { uuid: true } } },
             orderBy: { displayName: 'asc' },
         });

@@ -1,7 +1,14 @@
 // src/owner/imports/imports.service.ts
 import {
-    Injectable, NotFoundException, BadRequestException, Logger,
+    Injectable,
+    NotFoundException,
+    BadRequestException,
+    GoneException,
+    InternalServerErrorException,
+    Logger,
+    Optional,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,6 +19,11 @@ import { normalizeSection, normalizeAssignmentSections } from './utils/import-se
 import { PERSON } from '../../shared/validation/person';
 import { SubscriptionTrialService } from '../../school/common/subscription/subscription-trial.service';
 import { UserCodeGeneratorService } from '../../common/user-code/user-code-generator.service';
+import { ImportCredentialsCryptoService } from './import-credentials-crypto.service';
+
+export const DEFAULT_IMPORT_CREDENTIALS_TTL_HOURS = 24;
+export const MIN_IMPORT_CREDENTIALS_TTL_HOURS = 1;
+export const MAX_IMPORT_CREDENTIALS_TTL_HOURS = 72;
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -40,7 +52,32 @@ export class ImportsService {
         private readonly prisma: PrismaService,
         private readonly trialService: SubscriptionTrialService,
         private readonly userCodeGenerator: UserCodeGeneratorService,
+        @Optional()
+        private readonly credentialsCrypto: ImportCredentialsCryptoService = new ImportCredentialsCryptoService(),
     ) { }
+
+    getCredentialsTtlHours(): number {
+        const raw = (process.env.IMPORT_CREDENTIALS_TTL_HOURS || '').trim();
+        if (!raw) return DEFAULT_IMPORT_CREDENTIALS_TTL_HOURS;
+        const parsed = Number(raw);
+        if (
+            Number.isInteger(parsed) &&
+            parsed >= MIN_IMPORT_CREDENTIALS_TTL_HOURS &&
+            parsed <= MAX_IMPORT_CREDENTIALS_TTL_HOURS
+        ) {
+            return parsed;
+        }
+        return DEFAULT_IMPORT_CREDENTIALS_TTL_HOURS;
+    }
+
+    private isCredentialsExpired(
+        session: { completedAt: Date | null; createdAt: Date },
+        now: Date = new Date(),
+    ): boolean {
+        const anchor = session.completedAt ?? session.createdAt;
+        const ttlMs = this.getCredentialsTtlHours() * 60 * 60 * 1000;
+        return now.getTime() - anchor.getTime() >= ttlMs;
+    }
 
     // ─── Password Generation (SEC-NUM-01 / SEC-IMP-02) ───────────
     // أبجدية أبجدية-رقمية غير ملتبسة (بدون 0/O/1/I/L) لسهولة القراءة في تقارير PDF المطبوعة
@@ -217,6 +254,8 @@ export class ImportsService {
                 uuid: true,
                 importType: true,
                 createdAt: true,
+                completedAt: true,
+                credentialsJson: true,
                 totalRecords: true,
                 createdRecords: true,
                 status: true,
@@ -272,6 +311,9 @@ export class ImportsService {
                 totalRecords: i.totalRecords,
                 createdRecords: i.createdRecords,
                 status: i.status,
+                hasActiveCredentials:
+                    this.credentialsCrypto.isEncryptedEnvelope(i.credentialsJson) &&
+                    !this.isCredentialsExpired(i),
             })),
         };
     }
@@ -743,16 +785,22 @@ export class ImportsService {
             `[ImportExecute] Import ${session.uuid} completed: created=${createdCount}, failed=${failedCount}, total=${previewRecords.length}`,
         );
 
-        // Update session
+        const completedAt = new Date();
+        const encryptedCredentials =
+            credentials.length > 0
+                ? this.credentialsCrypto.encrypt(credentials, school.id, session.uuid)
+                : null;
+
+        // Update session (SEC-IMP-01: تشفير AES-256-GCM قبل التخزين + TTL 24h)
         await this.prisma.importSession.update({
             where: { id: session.id },
             data: {
                 status: 'COMPLETED',
-                completedAt: new Date(),
+                completedAt,
                 createdRecords: createdCount,
                 failedRecords: failedCount,
                 previewResult: JSON.stringify(previewRecords),
-                credentialsJson: JSON.stringify(credentials),
+                credentialsJson: encryptedCredentials,
             },
         });
 
@@ -1052,21 +1100,120 @@ export class ImportsService {
         });
     }
 
-    // ─── Get Credentials ────────────────────────────────────────
+    // ─── Get Credentials (SEC-IMP-01: تشفير AES-256-GCM + TTL 24h) ─
 
     async getCredentials(schoolUuid: string, importUuid: string) {
-        const { session } = await this.resolveImportSession(schoolUuid, importUuid);
+        const { school, session } = await this.resolveImportSession(schoolUuid, importUuid);
 
         if (session.status !== 'COMPLETED') {
             throw new BadRequestException('IMPORT_NOT_COMPLETED');
         }
 
+        if (!session.credentialsJson) {
+            throw new GoneException('IMPORT_CREDENTIALS_EXPIRED');
+        }
+
+        if (this.isCredentialsExpired(session)) {
+            await this.prisma.importSession.update({
+                where: { id: session.id },
+                data: { credentialsJson: null },
+            });
+            throw new GoneException('IMPORT_CREDENTIALS_EXPIRED');
+        }
+
+        if (!this.credentialsCrypto.isEncryptedEnvelope(session.credentialsJson)) {
+            this.logger.warn(
+                `[ImportCredentials] Purging legacy unencrypted credentials for session ${session.uuid}`,
+            );
+            await this.prisma.importSession.update({
+                where: { id: session.id },
+                data: { credentialsJson: null },
+            });
+            throw new GoneException('IMPORT_CREDENTIALS_EXPIRED');
+        }
+
+        let credentials: CredentialEntry[];
+        try {
+            const parsed = this.credentialsCrypto.decrypt<CredentialEntry[]>(
+                session.credentialsJson,
+                school.id,
+                session.uuid,
+            );
+            if (!Array.isArray(parsed)) {
+                throw new Error('INVALID_CREDENTIALS_PAYLOAD');
+            }
+            credentials = parsed;
+        } catch (err) {
+            this.logger.error(
+                `[ImportCredentials] Failed to decrypt credentials for session ${session.uuid}: ${err instanceof Error ? err.message : 'decrypt_error'}`,
+            );
+            throw new InternalServerErrorException('IMPORT_CREDENTIALS_DECRYPT_FAILED');
+        }
+
+        const anchor = session.completedAt ?? session.createdAt;
+        const expiresAt = new Date(
+            anchor.getTime() + this.getCredentialsTtlHours() * 60 * 60 * 1000,
+        ).toISOString();
+
         return {
             importUuid: session.uuid,
             importType: session.importType,
-            credentials: session.credentialsJson
-                ? JSON.parse(session.credentialsJson)
-                : [],
+            credentials,
+            expiresAt,
         };
+    }
+
+    // ─── Scheduled Purge (SEC-IMP-01) ──────────────────────────
+
+    @Cron('25 * * * *')
+    async handleScheduledCredentialsCleanup(): Promise<void> {
+        try {
+            await this.purgeExpiredCredentials();
+        } catch (err) {
+            this.logger.error(
+                `Scheduled import credentials cleanup failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
+
+    async purgeExpiredCredentials(
+        options: { ttlHours?: number } = {},
+    ): Promise<{ purgedCount: number; skippedDueToLock: boolean }> {
+        const rawTtl = options.ttlHours ?? this.getCredentialsTtlHours();
+        const ttlHours =
+            Number.isInteger(rawTtl) &&
+            rawTtl >= MIN_IMPORT_CREDENTIALS_TTL_HOURS &&
+            rawTtl <= MAX_IMPORT_CREDENTIALS_TTL_HOURS
+                ? rawTtl
+                : DEFAULT_IMPORT_CREDENTIALS_TTL_HOURS;
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const lockRows = await tx.$queryRaw<Array<{ acquired: boolean }>>`
+                SELECT pg_try_advisory_xact_lock(hashtext('asas:import_sessions_credentials_cleanup')) AS "acquired"
+            `;
+            if (!lockRows[0]?.acquired) {
+                return { purgedCount: 0, skippedDueToLock: true };
+            }
+
+            const purgedCount = await tx.$executeRaw`
+                UPDATE "import_sessions"
+                SET "credentials_json" = NULL, "updated_at" = NOW()
+                WHERE "credentials_json" IS NOT NULL
+                  AND (
+                    COALESCE("completed_at", "created_at") < NOW() - (${ttlHours}::int * INTERVAL '1 hour')
+                    OR "credentials_json" NOT LIKE 'enc:v1:%'
+                  )
+            `;
+
+            return { purgedCount: Number(purgedCount), skippedDueToLock: false };
+        });
+
+        if (result.purgedCount > 0) {
+            this.logger.log(
+                `[ImportCredentials] Purged ${result.purgedCount} expired/legacy credential payload(s)`,
+            );
+        }
+
+        return result;
     }
 }

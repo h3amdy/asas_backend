@@ -1,6 +1,6 @@
 // src/owner/imports/imports.controller.ts
 import {
-    Body, Controller, Get, Param, Post, Req, UseGuards,
+    Body, Controller, Get, Header, Param, Post, Req, UseGuards,
 } from '@nestjs/common';
 import { ImportsService } from './imports.service';
 import { PreviewStudentsImportDto, PreviewTeachersImportDto } from './dto/import.dto';
@@ -49,6 +49,8 @@ export class ImportsController {
 
     // ─── Execute Import ─────────────────────────────────────────
     @Post(':importUuid/execute')
+    @Header('Cache-Control', 'no-store')
+    @Header('Pragma', 'no-cache')
     executeImport(
         @Param('schoolUuid') schoolUuid: string,
         @Param('importUuid') importUuid: string,
@@ -58,6 +60,8 @@ export class ImportsController {
 
     // ─── Get Credentials ────────────────────────────────────────
     @Get(':importUuid/credentials')
+    @Header('Cache-Control', 'no-store')
+    @Header('Pragma', 'no-cache')
     getCredentials(
         @Param('schoolUuid') schoolUuid: string,
         @Param('importUuid') importUuid: string,

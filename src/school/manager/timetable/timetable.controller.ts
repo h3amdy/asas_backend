@@ -60,9 +60,10 @@ export class TimetableController {
     @Delete('slots/:slotUuid')
     deleteSlot(
         @Req() req: any,
+        @Param('sectionId', ParseIntPipe) sectionId: number,
         @Param('slotUuid') slotUuid: string,
     ) {
-        return this.service.deleteSlot(req.schoolContext.id, slotUuid);
+        return this.service.deleteSlot(req.schoolContext.id, slotUuid, sectionId);
     }
 
     /**

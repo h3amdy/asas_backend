@@ -7,6 +7,27 @@ import { SaveTimetableDto } from './dto/timetable.dto';
 export class TimetableService {
     constructor(private readonly prisma: PrismaService) { }
 
+    /**
+     * التحقق من انتماء السنة والفصل للمدرسة وعدم حذفهما
+     */
+    private async assertValidTermForSchool(
+        schoolId: number,
+        yearId: number,
+        termId: number,
+    ) {
+        const term = await this.prisma.term.findFirst({
+            where: {
+                id: termId,
+                yearId,
+                isDeleted: false,
+                year: { schoolId, isDeleted: false },
+            },
+            select: { id: true },
+        });
+        if (!term) throw new NotFoundException('TERM_NOT_FOUND');
+        return term;
+    }
+
     // ═══════ القراءة ═══════
 
     /**
@@ -21,9 +42,20 @@ export class TimetableService {
         });
         if (!section) throw new NotFoundException('SECTION_NOT_FOUND');
 
-        // جلب أو إنشاء الجدول
-        let timetable = await this.prisma.timetable.findFirst({
-            where: { sectionId, yearId, termId, isDeleted: false },
+        // 🛡️ SEC-ISO-05: التحقق من انتماء السنة والفصل للمدرسة
+        await this.assertValidTermForSchool(schoolId, yearId, termId);
+
+        // جلب الجدول فقط بدون إنشاء سجل عند القراءة (GET read-only)
+        const timetable = await this.prisma.timetable.findFirst({
+            where: {
+                sectionId,
+                yearId,
+                termId,
+                isDeleted: false,
+                section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
+                year: { schoolId, isDeleted: false },
+                term: { yearId, isDeleted: false },
+            },
             include: {
                 slots: {
                     where: { isDeleted: false },
@@ -48,22 +80,27 @@ export class TimetableService {
             },
         });
 
-        // إذا لم يوجد جدول → إنشاء فارغ
+        // إذا لم يوجد جدول → إرجاع هيكل فارغ متوافق دون كتابة في قاعدة البيانات
         if (!timetable) {
-            timetable = await this.prisma.timetable.create({
-                data: { sectionId, yearId, termId },
-                include: { slots: true },
-            }) as any;
+            return {
+                uuid: '',
+                sectionId,
+                sectionName: section.name,
+                gradeName: section.grade.displayName,
+                yearId,
+                termId,
+                slots: [],
+            };
         }
 
         return {
-            uuid: timetable!.uuid,
+            uuid: timetable.uuid,
             sectionId,
             sectionName: section.name,
             gradeName: section.grade.displayName,
             yearId,
             termId,
-            slots: (timetable!.slots || []).map((slot: any) => ({
+            slots: (timetable.slots || []).map((slot: any) => ({
                 id: slot.id,
                 uuid: slot.uuid,
                 weekday: slot.weekday,
@@ -103,62 +140,66 @@ export class TimetableService {
         if (!section) throw new NotFoundException('SECTION_NOT_FOUND');
 
         // 🛡️ التحقق من الـ year والـ term
-        const term = await this.prisma.term.findFirst({
-            where: { id: termId, yearId, year: { schoolId }, isDeleted: false },
-        });
-        if (!term) throw new NotFoundException('TERM_NOT_FOUND');
+        await this.assertValidTermForSchool(schoolId, yearId, termId);
 
-        // 🛡️ التحقق من الـ subjectSectionIds
+        // 🛡️ التحقق من الـ subjectSectionIds وانتمائها للشعبة والمدرسة
         const ssIds = dto.slots
             .filter((s) => s.subjectSectionId != null)
             .map((s) => s.subjectSectionId!);
+        const uniqueSsIds = Array.from(new Set(ssIds));
 
-        if (ssIds.length > 0) {
+        if (uniqueSsIds.length > 0) {
             const validSS = await this.prisma.subjectSection.findMany({
-                where: { id: { in: ssIds }, sectionId, isDeleted: false },
+                where: {
+                    id: { in: uniqueSsIds },
+                    sectionId,
+                    isDeleted: false,
+                    subject: { schoolId, isDeleted: false },
+                    section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
+                },
                 select: { id: true },
             });
             const validIds = new Set(validSS.map((s) => s.id));
-            const invalid = ssIds.filter((id) => !validIds.has(id));
+            const invalid = uniqueSsIds.filter((id) => !validIds.has(id));
             if (invalid.length > 0) {
                 throw new BadRequestException(`INVALID_SUBJECT_SECTIONS: ${invalid.join(',')}`);
             }
         }
 
-        // جلب أو إنشاء الجدول
-        let timetable = await this.prisma.timetable.findFirst({
-            where: { sectionId, yearId, termId, isDeleted: false },
-        });
-
-        if (!timetable) {
-            timetable = await this.prisma.timetable.create({
-                data: { sectionId, yearId, termId },
-            });
-        }
-
-        // Bulk upsert slots
-        for (const slot of dto.slots) {
-            await this.prisma.timetableSlot.upsert({
+        // جلب أو إنشاء/إحياء الجدول وحفظ الحصص داخل معاملة ذرية واحدة
+        await this.prisma.$transaction(async (tx) => {
+            const timetable = await tx.timetable.upsert({
                 where: {
-                    timetableId_weekday_lessonNumber: {
+                    sectionId_yearId_termId: { sectionId, yearId, termId },
+                },
+                create: { sectionId, yearId, termId },
+                update: { isDeleted: false, deletedAt: null },
+            });
+
+            // Bulk upsert slots
+            for (const slot of dto.slots) {
+                await tx.timetableSlot.upsert({
+                    where: {
+                        timetableId_weekday_lessonNumber: {
+                            timetableId: timetable.id,
+                            weekday: slot.weekday,
+                            lessonNumber: slot.lessonNumber,
+                        },
+                    },
+                    create: {
                         timetableId: timetable.id,
                         weekday: slot.weekday,
                         lessonNumber: slot.lessonNumber,
+                        subjectSectionId: slot.subjectSectionId ?? null,
                     },
-                },
-                create: {
-                    timetableId: timetable.id,
-                    weekday: slot.weekday,
-                    lessonNumber: slot.lessonNumber,
-                    subjectSectionId: slot.subjectSectionId ?? null,
-                },
-                update: {
-                    subjectSectionId: slot.subjectSectionId ?? null,
-                    isDeleted: false,
-                    deletedAt: null,
-                },
-            });
-        }
+                    update: {
+                        subjectSectionId: slot.subjectSectionId ?? null,
+                        isDeleted: false,
+                        deletedAt: null,
+                    },
+                });
+            }
+        });
 
         // إرجاع الجدول المحدّث
         return this.getTimetable(schoolId, sectionId, yearId, termId);
@@ -166,18 +207,34 @@ export class TimetableService {
 
     // ═══════ حذف حصة ═══════
 
-    async deleteSlot(schoolId: number, slotUuid: string) {
+    async deleteSlot(schoolId: number, slotUuid: string, sectionId?: number) {
         const slot = await this.prisma.timetableSlot.findFirst({
             where: { uuid: slotUuid, isDeleted: false },
             include: {
                 timetable: {
-                    include: { section: { include: { grade: { select: { schoolId: true } } } } },
+                    select: {
+                        id: true,
+                        sectionId: true,
+                        isDeleted: true,
+                        section: {
+                            select: {
+                                isDeleted: true,
+                                grade: { select: { schoolId: true, isDeleted: true } },
+                            },
+                        },
+                    },
                 },
             },
         });
 
-        if (!slot) throw new NotFoundException('SLOT_NOT_FOUND');
-        if (slot.timetable.section.grade.schoolId !== schoolId) {
+        if (
+            !slot ||
+            slot.timetable.isDeleted ||
+            slot.timetable.section.isDeleted ||
+            slot.timetable.section.grade.isDeleted ||
+            slot.timetable.section.grade.schoolId !== schoolId ||
+            (sectionId !== undefined && slot.timetable.sectionId !== sectionId)
+        ) {
             throw new NotFoundException('SLOT_NOT_FOUND');
         }
 
@@ -350,7 +407,12 @@ export class TimetableService {
         if (!section) throw new NotFoundException('SECTION_NOT_FOUND');
 
         const subjectSections = await this.prisma.subjectSection.findMany({
-            where: { sectionId, isDeleted: false },
+            where: {
+                sectionId,
+                isDeleted: false,
+                subject: { schoolId, isDeleted: false },
+                section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
+            },
             include: {
                 subject: { select: { id: true, uuid: true, displayName: true, shortName: true } },
                 teachers: {
@@ -394,6 +456,27 @@ export class TimetableService {
         lessonNumber: number,
         subjectSectionId: number,
     ) {
+        // 0. التحقق من انتماء الشعبة والفصل والمادة للمدرسة (SEC-ISO-05)
+        const section = await this.prisma.section.findFirst({
+            where: { id: sectionId, isDeleted: false, grade: { schoolId, isDeleted: false } },
+            select: { id: true },
+        });
+        if (!section) throw new NotFoundException('SECTION_NOT_FOUND');
+
+        await this.assertValidTermForSchool(schoolId, yearId, termId);
+
+        const subjectSection = await this.prisma.subjectSection.findFirst({
+            where: {
+                id: subjectSectionId,
+                sectionId,
+                isDeleted: false,
+                subject: { schoolId, isDeleted: false },
+                section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
+            },
+            select: { id: true },
+        });
+        if (!subjectSection) throw new NotFoundException('SUBJECT_SECTION_NOT_FOUND');
+
         // 1. إيجاد المعلم المسند لهذه المادة+الشعبة
         const assignment = await this.prisma.subjectSectionTeacher.findFirst({
             where: { subjectSectionId, isDeleted: false, isActive: true },
@@ -415,7 +498,9 @@ export class TimetableService {
                     termId,
                     isDeleted: false,
                     sectionId: { not: sectionId }, // شعبة مختلفة
-                    section: { grade: { schoolId } },
+                    year: { schoolId, isDeleted: false },
+                    term: { yearId, isDeleted: false },
+                    section: { isDeleted: false, grade: { schoolId, isDeleted: false } },
                 },
                 subjectSection: {
                     isDeleted: false,
@@ -466,10 +551,13 @@ export class TimetableService {
         yearId: number,
         termId: number,
     ) {
+        // 0. التحقق من انتماء السنة والفصل للمدرسة (SEC-ISO-05)
+        await this.assertValidTermForSchool(schoolId, yearId, termId);
+
         // 1. التحقق من المعلم (schoolId على User وليس Teacher)
         const teacher = await this.prisma.teacher.findFirst({
             where: {
-                user: { uuid: teacherUuid, schoolId, isActive: true },
+                user: { uuid: teacherUuid, schoolId, isActive: true, isDeleted: false },
             },
             include: {
                 user: { select: { uuid: true, name: true, code: true } },
@@ -485,6 +573,8 @@ export class TimetableService {
                     yearId,
                     termId,
                     isDeleted: false,
+                    year: { schoolId, isDeleted: false },
+                    term: { yearId, isDeleted: false },
                     section: {
                         isDeleted: false,
                         grade: { schoolId, isDeleted: false },
