@@ -33,7 +33,7 @@ const PRODUCTION_PATH_PATTERNS = [
 
 // ─────────────────────────────────────────────────
 
-interface ValidationResult {
+export interface EnvironmentValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
@@ -95,7 +95,7 @@ function looksLikeProductionHost(host: string): boolean {
  * @throws Error إذا كان الـ configuration خطيرًا
  */
 export function validateEnvironment(): void {
-  const result = runValidation();
+  const result = runEnvironmentValidation();
 
   // عرض التحذيرات
   for (const warning of result.warnings) {
@@ -127,7 +127,7 @@ export function validateEnvironment(): void {
 
 // ─────────────────────────────────────────────────
 
-function runValidation(): ValidationResult {
+export function runEnvironmentValidation(): EnvironmentValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -162,6 +162,9 @@ function runValidation(): ValidationResult {
 
   // ── 3. قواعد Staging ──
   if (appEnv === 'staging') {
+    if (!jwtSecret.trim()) {
+      errors.push('APP_ENV=staging لكن JWT_SECRET فارغ أو غير محدد.');
+    }
     // DB يجب أن يكون localhost
     if (dbHost && dbHost !== 'localhost' && dbHost !== '127.0.0.1') {
       errors.push(
@@ -217,14 +220,15 @@ function runValidation(): ValidationResult {
       );
     }
 
-    // JWT يجب ألا يكون القيمة الافتراضية
+    // JWT يجب ألا يكون فارغاً أو القيمة الافتراضية
     if (
+      !jwtSecret.trim() ||
       jwtSecret === 'SUPER_SECRET_ASAS' ||
       jwtSecret === 'change-me-in-production' ||
       jwtSecret === 'staging-jwt-secret-not-for-production'
     ) {
       errors.push(
-        'APP_ENV=production لكن JWT_SECRET يحتوي قيمة افتراضية/اختبارية. ' +
+        'APP_ENV=production لكن JWT_SECRET يحتوي قيمة فارغة أو افتراضية/اختبارية. ' +
           'يجب استخدام مفتاح قوي وفريد في Production.',
       );
     }
@@ -264,6 +268,27 @@ function runValidation(): ValidationResult {
     } else if (Buffer.from(raw, 'base64').length !== 32) {
       warnings.push(`${name} يجب أن يكون 32 بايت بترميز base64 (openssl rand -base64 32).`);
     }
+  }
+
+  // ── 8. مفتاح قفل محاولات الدخول (SEC-NUM-01 — LOGIN_LOCKOUT_HMAC_KEY) ──
+  const lockoutKey = (process.env.LOGIN_LOCKOUT_HMAC_KEY || '').trim();
+  if (lockoutKey) {
+    const byteLen = Buffer.byteLength(lockoutKey, 'utf8');
+    const distinctChars = new Set(lockoutKey).size;
+    if (byteLen < 32 || distinctChars < 8) {
+      const msg =
+        'LOGIN_LOCKOUT_HMAC_KEY ضعيف — يجب أن يكون 32 بايت على الأقل (أنشئه بـ: openssl rand -base64 32).';
+      if (appEnv === 'production' || appEnv === 'staging') {
+        errors.push(msg);
+      } else {
+        warnings.push(msg);
+      }
+    }
+  } else if (appEnv === 'production') {
+    warnings.push(
+      'LOGIN_LOCKOUT_HMAC_KEY غير محدد — يُشتق مفتاحا HMAC لقفل الدخول حالياً من JWT_SECRET عبر HKDF-SHA256. ' +
+        'يُوصى بتعيين LOGIN_LOCKOUT_HMAC_KEY مستقلاً (openssl rand -base64 32) حتى لا يؤثر تدوير JWT_SECRET على الأقفال القائمة.',
+    );
   }
 
   return { valid: errors.length === 0, errors, warnings };

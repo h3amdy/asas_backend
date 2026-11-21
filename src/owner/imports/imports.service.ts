@@ -42,16 +42,25 @@ export class ImportsService {
         private readonly userCodeGenerator: UserCodeGeneratorService,
     ) { }
 
-    // ─── Password Mode ──────────────────────────────────────────
-    // true = كلمة مرور عشوائية (6 أرقام)، false = الرقم المدرسي
-    private readonly useRandomPassword = true;
+    // ─── Password Generation (SEC-NUM-01 / SEC-IMP-02) ───────────
+    // أبجدية أبجدية-رقمية غير ملتبسة (بدون 0/O/1/I/L) لسهولة القراءة في تقارير PDF المطبوعة
+    private static readonly IMPORT_STAFF_PASSWORD_ALPHABET =
+        'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    private static readonly IMPORT_STAFF_PASSWORD_LENGTH = 12;
 
-    private generatePassword(schoolCode: number): string {
-        if (this.useRandomPassword) {
-            // توليد 6 أرقام عشوائية (CSPRNG)
-            return String(randomInt(100000, 1000000));
+    /**
+     * توليد كلمات مرور الاستيراد الجماعي باستخدام CSPRNG حصراً ودون أي اشتقاق من الأكواد/العدادات:
+     * - STUDENT: 8 أرقام عشوائية [10000000..99999999] (كلمات مرور مؤقتة محمية بقفل الحساب).
+     * - TEACHER / PARENT: 12 محرفاً أبجدياً رقمياً عشوائياً.
+     */
+    private generateImportPassword(role: 'STUDENT' | 'PARENT' | 'TEACHER'): string {
+        if (role === 'STUDENT') {
+            return String(randomInt(10_000_000, 100_000_000));
         }
-        return String(schoolCode);
+        const alphabet = ImportsService.IMPORT_STAFF_PASSWORD_ALPHABET;
+        return Array.from({ length: ImportsService.IMPORT_STAFF_PASSWORD_LENGTH }, () =>
+            alphabet.charAt(randomInt(0, alphabet.length)),
+        ).join('');
     }
 
     // ─── Helpers ────────────────────────────────────────────────
@@ -784,7 +793,7 @@ export class ImportsService {
             this.userCodeGenerator.allocateCodes(reserveParentCode ? 2 : 1, tx),
         );
 
-        const password = this.generatePassword(code);
+        const password = this.generateImportPassword('STUDENT');
         const passwordHash = await bcrypt.hash(password, 10);
 
         await this.prisma.$transaction(async (tx) => {
@@ -871,7 +880,7 @@ export class ImportsService {
                     const parentCode =
                         reservedParentCode ??
                         (await this.userCodeGenerator.generateUserCode(tx, 'PARENT'));
-                    const parentPassword = this.generatePassword(parentCode);
+                    const parentPassword = this.generateImportPassword('PARENT');
                     const parentHash = await bcrypt.hash(parentPassword, 10);
 
                     const parentUser = await tx.user.create({
@@ -934,7 +943,7 @@ export class ImportsService {
                 this.userCodeGenerator.generateUserCode(tx, 'TEACHER'),
             )
             : null;
-        const password = code !== null ? this.generatePassword(code) : null;
+        const password = code !== null ? this.generateImportPassword('TEACHER') : null;
         const passwordHash = password !== null ? await bcrypt.hash(password, 10) : null;
 
         await this.prisma.$transaction(async (tx) => {

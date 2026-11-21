@@ -358,8 +358,14 @@ describe('Quick Wins Batch 1 (SEC-AUTH-01, SEC-OTP-03, SEC-PLT-01, SEC-IMP-02)',
         {} as any,
       );
       for (let i = 0; i < 20; i++) {
-        const pwd = (importsService as any).generatePassword(1001);
-        expect(pwd).toMatch(/^\d{6}$/);
+        const studentPwd = (importsService as any).generateImportPassword('STUDENT');
+        expect(studentPwd).toMatch(/^[1-9]\d{7}$/);
+
+        const teacherPwd = (importsService as any).generateImportPassword('TEACHER');
+        expect(teacherPwd).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{12}$/);
+
+        const parentPwd = (importsService as any).generateImportPassword('PARENT');
+        expect(parentPwd).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{12}$/);
       }
 
       const teachersService = new TeachersService({} as any, {} as any);

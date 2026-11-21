@@ -5,13 +5,15 @@
  * يدير endpoints تسجيل الدخول والخروج وتجديد التوكن
  */
 
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { SchoolAuthService } from './school-auth.service';
 import { SchoolLoginDto } from './dto/school-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { SchoolJwtAuthGuard } from './guards/school-jwt-auth.guard';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { LoginLockoutException } from './login-lockout.service';
 
 @Controller('school/auth')
 export class SchoolAuthController {
@@ -29,8 +31,20 @@ export class SchoolAuthController {
     short: { ttl: 60000, limit: 10 },
     long: { ttl: 3600000, limit: 100 },
   })
-  login(@Body() dto: SchoolLoginDto) {
-    return this.auth.login(dto);
+  async login(
+    @Body() dto: SchoolLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const clientIp = req?.ip ?? req?.socket?.remoteAddress ?? 'unknown';
+    try {
+      return await this.auth.login(dto, { clientIp });
+    } catch (err) {
+      if (err instanceof LoginLockoutException) {
+        res.setHeader('Retry-After', String(err.retryAfterSeconds));
+      }
+      throw err;
+    }
   }
   /**
       * تجديد التوكن باستخدام refresh token

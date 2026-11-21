@@ -2044,3 +2044,25 @@ enum IdempotencyStatus {
   FAILED_TRANSIENT
   EXPIRED
 }
+
+/// حالة محاولات تسجيل الدخول الفاشلة وقفل الحساب المؤقت — SEC-NUM-01
+/// النطاق العالمي للحساب يستخدم ipHash = ""؛ ونطاق (الحساب + الـ IP) يستخدم HMAC-SHA256 للـ IP.
+model LoginAttemptState {
+  id              Int       @id @default(autoincrement())
+  codeHash        String    @map("code_hash") @db.VarChar(64)
+  ipHash          String    @default("") @map("ip_hash") @db.VarChar(64)
+  failedCount     Int       @default(0) @map("failed_count")
+  lockTier        Int       @default(0) @map("lock_tier")
+  windowStartedAt DateTime  @default(now()) @map("window_started_at") @db.Timestamptz(3)
+  firstFailedAt   DateTime  @default(now()) @map("first_failed_at") @db.Timestamptz(3)
+  lastFailedAt    DateTime  @default(now()) @map("last_failed_at") @db.Timestamptz(3)
+  lockedUntil     DateTime? @map("locked_until") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([codeHash, ipHash], map: "login_attempt_states_code_hash_ip_hash_key")
+  @@index([lockedUntil], map: "login_attempt_states_locked_until_idx")
+  @@index([lastFailedAt], map: "login_attempt_states_last_failed_at_idx")
+  @@index([updatedAt], map: "login_attempt_states_updated_at_idx")
+  @@map("login_attempt_states")
+}

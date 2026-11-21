@@ -1,6 +1,7 @@
 // src/school/auth/dto/school-login.dto.ts
 import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { MaxUtf8Bytes } from '../../../common/validation/max-utf8-bytes.decorator';
 
 /**
  * DTO لتسجيل دخول مستخدمي المدرسة (SRS-SCH-NUM-001 §4.3)
@@ -24,6 +25,8 @@ export class SchoolLoginDto {
 
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @MaxLength(72)
+  @MaxUtf8Bytes(72)
   password!: string;
 
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))

@@ -9,6 +9,7 @@ import { SessionsService } from '../sessions/sessions.service';
 import { SCHOOL_AUTH_JWT, SCHOOL_AUTH_ERRORS } from './constants';
 import { randomToken } from './utils/crypto.util';
 import { SCHOOL_LOGIN_ROLES, parseUserCode } from '../../common/user-code/user-code.policy';
+import { LoginLockoutService } from './login-lockout.service';
 
 /**
  * hash ثابت يُقارن به عند عدم وجود المستخدم، حتى يستغرق الرد نفس زمن bcrypt تقريباً
@@ -85,6 +86,7 @@ export class SchoolAuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly sessions: SessionsService,
+    private readonly lockout: LoginLockoutService,
   ) { }
 
   private buildAccessToken(payload: SafeUserPayload): string {
@@ -105,15 +107,24 @@ export class SchoolAuthService {
    *   و bcrypt يُنفَّذ دائماً (حتى عند عدم وجود المستخدم) لتقليل فرق التوقيت الكاشف.
    *   حالات الحساب/المدرسة (موقوف) لا تُكشف إلا بعد نجاح كلمة المرور.
    */
-  async login(input: {
-    schoolUuid?: string;
-    identifier: string;
-    password: string;
-    deviceFingerprint: string;
-    deviceType: 'ANDROID' | 'IOS' | 'WEB';
-    pushToken?: string;
-  }) {
+  async login(
+    input: {
+      schoolUuid?: string;
+      identifier: string;
+      password: string;
+      deviceFingerprint: string;
+      deviceType: 'ANDROID' | 'IOS' | 'WEB';
+      pushToken?: string;
+    },
+    context?: { clientIp?: string },
+  ) {
     const code = parseUserCode(input.identifier);
+    const clientIp = context?.clientIp ?? 'unknown';
+
+    // 🛡️ SEC-NUM-01: فحص القفل المؤقت قبل استعلام user أو bcrypt (مطبّق بالتساوي للموجود وغير الموجود)
+    if (code !== null) {
+      await this.lockout.assertNotLocked(code, clientIp);
+    }
 
     const user = code === null
       ? null
@@ -141,12 +152,19 @@ export class SchoolAuthService {
     const schoolScopeOk = !input.schoolUuid || school?.uuid === input.schoolUuid;
 
     if (!user || !school || !passwordOk || !schoolScopeOk) {
+      // تسجيل الفشل الذري حتى لغير الموجود أو عند عدم تطابق مدرسة التطبيق الخاص (SR-NUM-002)
+      if (code !== null) {
+        await this.lockout.recordFailedAttempt(code, clientIp);
+      }
       throw new UnauthorizedException(SCHOOL_AUTH_ERRORS.INVALID_CREDENTIALS);
     }
 
     // بعد نجاح كلمة المرور فقط — رسائل حالة واضحة (UX)
     if (!school.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.SCHOOL_INACTIVE);
     if (!user.isActive) throw new ForbiddenException(SCHOOL_AUTH_ERRORS.USER_INACTIVE);
+
+    // تصفير عداد المحاولات الفاشلة للـ IP الحالي والنطاق العالمي (مع إبقاء حظر IPs مهاجمة أخرى)
+    await this.lockout.clearOnSuccess(code!, clientIp);
 
     // device upsert
     const device = await this.sessions.upsertDevice({
