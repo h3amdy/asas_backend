@@ -52,11 +52,16 @@ export class PlatformQuestionsService {
             throw new NotFoundException('الدرس غير موجود');
         }
 
-        if (platformUser.role !== 'PLATFORM_ADMIN' && lesson.subjectDictionaryId) {
+        if (platformUser.role !== 'PLATFORM_ADMIN') {
+            if (!lesson.subjectDictionaryId) {
+                throw new ForbiddenException('ليس لديك صلاحية لهذا الدرس');
+            }
             const assignment = await this.prisma.platformUserSubject.findFirst({
                 where: {
                     platformUserId: platformUser.id,
                     subjectDictionaryId: lesson.subjectDictionaryId,
+                    isDeleted: false,
+                    subjectDictionary: { isDeleted: false, isActive: true },
                 },
             });
             if (!assignment) {
@@ -84,10 +89,19 @@ export class PlatformQuestionsService {
 
         const question = await this.prisma.question.findFirst({
             where: { uuid: questionUuid, isDeleted: false },
-            include: { template: { select: { id: true, subjectDictionaryId: true, ownerType: true } } },
+            include: {
+                template: {
+                    select: {
+                        id: true,
+                        subjectDictionaryId: true,
+                        ownerType: true,
+                        isDeleted: true,
+                    },
+                },
+            },
         });
 
-        if (!question) {
+        if (!question || question.template.isDeleted) {
             throw new NotFoundException('السؤال غير موجود');
         }
 
@@ -95,11 +109,16 @@ export class PlatformQuestionsService {
             throw new ForbiddenException('هذا السؤال لا يتبع لمنصة المحتوى');
         }
 
-        if (platformUser.role !== 'PLATFORM_ADMIN' && question.template.subjectDictionaryId) {
+        if (platformUser.role !== 'PLATFORM_ADMIN') {
+            if (!question.template.subjectDictionaryId) {
+                throw new ForbiddenException('ليس لديك صلاحية لهذا السؤال');
+            }
             const assignment = await this.prisma.platformUserSubject.findFirst({
                 where: {
                     platformUserId: platformUser.id,
                     subjectDictionaryId: question.template.subjectDictionaryId,
+                    isDeleted: false,
+                    subjectDictionary: { isDeleted: false, isActive: true },
                 },
             });
             if (!assignment) {

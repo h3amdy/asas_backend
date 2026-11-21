@@ -29,15 +29,27 @@ export class UpdateCheckService {
     });
 
     if (!app || app.isDeleted || app.status !== 'ACTIVE') {
-      // تطبيق غير مسجل — لا يوجد تحديث
-      await this._upsertDevice(dto, null, null);
+      // SEC-PUB-01: تطبيق غير مسجل أو معطل — نعيد عدم توفر تحديث بدون كتابة أي سجل في device_installations
       return this._noUpdate();
     }
 
-    // 2. البحث عن تعيين مدرسة محدد (SchoolReleaseAssignment)
-    let targetRelease = await this._findSchoolAssignment(dto.schoolCode, dto.platform);
+    // 2. حل معرف المدرسة مرة واحدة عند إرسال schoolCode لتجنب تكرار الاستعلام
+    let resolvedSchoolId: number | null = null;
+    if (dto.schoolCode) {
+      const school = await this.prisma.school.findUnique({
+        where: { schoolCode: dto.schoolCode },
+        select: { id: true },
+      });
+      resolvedSchoolId = school?.id ?? null;
+    }
 
-    // 3. إذا لم يُوجد تعيين — جلب آخر إصدار منشور
+    // 3. البحث عن تعيين مدرسة محدد (SchoolReleaseAssignment)
+    let targetRelease = await this._findSchoolAssignment(
+      resolvedSchoolId,
+      dto.platform,
+    );
+
+    // 4. إذا لم يُوجد تعيين — جلب آخر إصدار منشور
     if (!targetRelease) {
       targetRelease = await this.prisma.release.findFirst({
         where: {
@@ -59,14 +71,14 @@ export class UpdateCheckService {
       });
     }
 
-    // 4. لا يوجد إصدار منشور
+    // 5. لا يوجد إصدار منشور
     if (!targetRelease) {
-      await this._upsertDevice(dto, app.id, null);
+      await this._upsertDevice(dto, app.id, null, resolvedSchoolId);
       return this._noUpdate();
     }
 
-    // 5. Upsert الجهاز
-    await this._upsertDevice(dto, app.id, targetRelease.id);
+    // 6. Upsert الجهاز
+    await this._upsertDevice(dto, app.id, targetRelease.id, resolvedSchoolId);
 
     // 6. المقارنة وتحديد سياسة التحديث
     const currentBuild = dto.currentBuild;
@@ -111,18 +123,15 @@ export class UpdateCheckService {
   }
 
   // ── إيجاد تعيين مدرسة محدد ────────────────────────────────────────────
-  private async _findSchoolAssignment(schoolCode?: number, platform?: string) {
-    if (!schoolCode) return null;
-
-    const school = await this.prisma.school.findUnique({
-      where: { schoolCode },
-      select: { id: true },
-    });
-    if (!school) return null;
+  private async _findSchoolAssignment(
+    schoolId: number | null,
+    platform?: string,
+  ) {
+    if (!schoolId) return null;
 
     const assignment = await this.prisma.schoolReleaseAssignment.findFirst({
       where: {
-        schoolId: school.id,
+        schoolId,
         isActive: true,
         release: {
           isDeleted: false,
@@ -150,18 +159,13 @@ export class UpdateCheckService {
   }
 
   // ── تسجيل/تحديث الجهاز (Heartbeat ضمني) ──────────────────────────────
-  private async _upsertDevice(dto: CheckUpdateDto, appId: number | null, releaseId: number | null) {
+  private async _upsertDevice(
+    dto: CheckUpdateDto,
+    appId: number | null,
+    releaseId: number | null,
+    schoolId: number | null,
+  ) {
     try {
-      // البحث عن المدرسة بالكود
-      let schoolId: number | null = null;
-      if (dto.schoolCode) {
-        const school = await this.prisma.school.findUnique({
-          where: { schoolCode: dto.schoolCode },
-          select: { id: true },
-        });
-        schoolId = school?.id || null;
-      }
-
       await this.prisma.deviceInstallation.upsert({
         where: { installationId: dto.installationId },
         create: {

@@ -262,6 +262,65 @@ export class StorageService {
     await fs.promises.rename(tempPath, finalPath);
   }
 
+  /**
+   * استعادة الملف المؤقت من المسار النهائي عند تراجع معاملة completeSession
+   * قبل التزام قاعدة البيانات، لإتاحة إعادة المحاولة بأمان دون ترك ملفات يتيمة.
+   */
+  async restoreFromFinal(
+    sessionUuid: string,
+    storageKey: string,
+  ): Promise<void> {
+    try {
+      const finalPath = this.resolvePath(storageKey);
+      const tempPath = this.getTempPath(sessionUuid);
+      this.ensureDir(path.dirname(tempPath));
+      await fs.promises.rename(finalPath, tempPath);
+    } catch (e: unknown) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') return;
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.error(
+        `تعذّر استعادة الملف المؤقت للجلسة ${sessionUuid} من ${storageKey}: ${msg}`,
+      );
+    }
+  }
+
+  /**
+   * استعادة تلقائية بعد انهيار العملية (SIGKILL) بين moveToFinal وتثبيت معاملة PostgreSQL:
+   * إذا اختفى tmp/{sessionUuid}.part وكان الملف النهائي المتوقّع موجوداً على القرص بالحجم
+   * الملتزم به بالضبط بينما الجلسة لا تزال UPLOADING في القاعدة، يُعاد نقله إلى tmp/
+   * لتتمكن إعادة محاولة completeSession من إكمال التحقق والتثبيت بأمان ودون فقدان.
+   */
+  async recoverOrphanFinalToTempIfNeeded(
+    sessionUuid: string,
+    storageKey: string,
+    expectedBytes: number,
+  ): Promise<boolean> {
+    if (expectedBytes <= 0) return false;
+    const tempPath = this.getTempPath(sessionUuid);
+    try {
+      await fs.promises.access(tempPath);
+      return false; // temp file still exists; normal path
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') throw e;
+    }
+
+    const finalPath = this.resolvePath(storageKey);
+    try {
+      const stat = await fs.promises.stat(finalPath);
+      if (stat.size !== expectedBytes) return false;
+      this.ensureDir(path.dirname(tempPath));
+      await fs.promises.rename(finalPath, tempPath);
+      this.logger.warn(
+        `استعادة ملف يتيم بعد انقطاع العملية للجلسة ${sessionUuid} من ${storageKey} (${expectedBytes} بايت)`,
+      );
+      return true;
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
+      throw e;
+    }
+  }
+
   /** Save buffer to a storage key directly (for processed variants) */
   async saveBuffer(storageKey: string, buffer: Buffer): Promise<void> {
     const finalPath = this.resolvePath(storageKey);

@@ -166,20 +166,14 @@ export class SchoolAuthService {
     // تصفير عداد المحاولات الفاشلة للـ IP الحالي والنطاق العالمي (مع إبقاء حظر IPs مهاجمة أخرى)
     await this.lockout.clearOnSuccess(code!, clientIp);
 
-    // device upsert
-    const device = await this.sessions.upsertDevice({
+    // device upsert + session creation بشكل ذري لمنع سباق تعطيل الجهاز أثناء الدخول (SEC-AUTH-06)
+    const refreshPlain = randomToken(48);
+    const { session } = await this.sessions.upsertDeviceAndCreateSession({
       userId: user.id,
+      schoolId: school.id,
       deviceFingerprint: input.deviceFingerprint,
       deviceType: input.deviceType,
       pushToken: input.pushToken,
-    });
-
-    // session + refresh token — schoolId من حساب المستخدم وليس من العميل
-    const refreshPlain = randomToken(48);
-    const session = await this.sessions.createSession({
-      userId: user.id,
-      schoolId: school.id,
-      deviceId: device.id,
       refreshTokenPlain: refreshPlain,
     });
 

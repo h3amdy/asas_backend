@@ -1,10 +1,12 @@
 // src/school/profile/profile.service.ts
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { MediaUploadStatus, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SCHOOL_AUTH_ERRORS } from '../auth/constants';
@@ -66,65 +68,172 @@ export class ProfileService {
    * تعديل الملف الشخصي (الحقول المسموحة فقط)
    */
   async updateMe(userUuid: string, dto: UpdateProfileDto) {
-    const user = await this.prisma.user.findFirst({
-      where: { uuid: userUuid, isDeleted: false },
-      select: { id: true, schoolId: true },
-    });
+    const runInTx = async (tx: Prisma.TransactionClient) => {
+      const user = await tx.user.findFirst({
+        where: { uuid: userUuid, isDeleted: false },
+        select: { id: true, schoolId: true, avatarMediaAssetId: true },
+      });
 
-    if (!user) throw new NotFoundException(SCHOOL_AUTH_ERRORS.USER_NOT_FOUND);
+      if (!user) throw new NotFoundException(SCHOOL_AUTH_ERRORS.USER_NOT_FOUND);
 
-    // بناء كائن التحديث فقط من الحقول المُرسلة
-    const data: Record<string, any> = {};
-    if (dto.displayName !== undefined) data.displayName = dto.displayName;
-    if (dto.gender !== undefined) data.gender = dto.gender;
-    if (dto.email !== undefined) data.email = dto.email;
-    if (dto.province !== undefined) data.province = dto.province;
-    if (dto.district !== undefined) data.district = dto.district;
-    if (dto.addressArea !== undefined) data.addressArea = dto.addressArea;
-    if (dto.addressDetails !== undefined)
-      data.addressDetails = dto.addressDetails;
+      // بناء كائن التحديث فقط من الحقول المُرسلة
+      const data: Record<string, any> = {};
+      if (dto.displayName !== undefined) data.displayName = dto.displayName;
+      if (dto.gender !== undefined) data.gender = dto.gender;
+      if (dto.email !== undefined) data.email = dto.email;
+      if (dto.province !== undefined) data.province = dto.province;
+      if (dto.district !== undefined) data.district = dto.district;
+      if (dto.addressArea !== undefined) data.addressArea = dto.addressArea;
+      if (dto.addressDetails !== undefined)
+        data.addressDetails = dto.addressDetails;
 
-    // معالجة الصورة الشخصية
-    if (dto.avatarMediaAssetUuid !== undefined) {
-      if (dto.avatarMediaAssetUuid === null) {
-        // حذف الصورة
-        data.avatarMediaAssetId = null;
-      } else {
-        // تعيين صورة جديدة — resolve UUID → ID
-        const asset = await this.prisma.mediaAsset.findFirst({
-          where: {
-            uuid: dto.avatarMediaAssetUuid,
-            schoolId: user.schoolId!,
-            isDeleted: false,
-          },
-          select: { id: true, kind: true, processingStatus: true },
-        });
-        if (!asset) {
-          throw new BadRequestException(
-            'Media asset not found or does not belong to this school',
-          );
-        }
-        if (asset.kind === 'VIDEO') {
-          throw new BadRequestException({
-            code: 'VIDEO_NOT_ALLOWED_HERE',
-            message: 'VIDEO assets can only be linked to lesson_block_items',
+      // معالجة الصورة الشخصية
+      if (dto.avatarMediaAssetUuid !== undefined) {
+        if (dto.avatarMediaAssetUuid === null) {
+          // حذف الصورة
+          data.avatarMediaAssetId = null;
+        } else {
+          if (!user.schoolId) {
+            throw new BadRequestException('User does not belong to a school');
+          }
+
+          // قفل صف الأصل بـ FOR UPDATE قبل فحص المراجع والملكية لمنع سباق TOCTOU
+          if (typeof tx.$queryRaw === 'function') {
+            await tx.$queryRaw`
+              SELECT id
+              FROM media_assets
+              WHERE uuid = ${dto.avatarMediaAssetUuid}
+              FOR UPDATE
+            `;
+          }
+
+          // تعيين صورة جديدة — resolve UUID → ID + فحص الملكية وجميع العلاقات الـ 21 في Schema
+          const asset = await tx.mediaAsset.findFirst({
+            where: {
+              uuid: dto.avatarMediaAssetUuid,
+              schoolId: user.schoolId,
+              ownerType: 'SCHOOL',
+              isDeleted: false,
+            },
+            select: {
+              id: true,
+              kind: true,
+              processingStatus: true,
+              uploadSessions: {
+                where: {
+                  uploaderUserId: user.id,
+                  schoolId: user.schoolId,
+                  ownerType: 'SCHOOL',
+                  status: MediaUploadStatus.COMPLETED,
+                },
+                select: { id: true },
+                take: 1,
+              },
+              _count: {
+                select: {
+                  schoolsAsLogo: true,
+                  blockItemsAsMedia: true,
+                  lessonContentsAsMedia: true,
+                  lessonTemplatesAsCover: true,
+                  matchingPairsAsLeftAudio: true,
+                  matchingPairsAsLeftImage: true,
+                  matchingPairsAsRightAudio: true,
+                  matchingPairsAsRightImage: true,
+                  questionOptionsAsAudio: true,
+                  questionOptionsAsImage: true,
+                  orderingItemsAsAudio: true,
+                  orderingItemsAsImage: true,
+                  questionsAsExplanationAudio: true,
+                  questionsAsExplanationImage: true,
+                  questionsAsAudio: true,
+                  questionsAsImage: true,
+                  booksAsCover: true,
+                  booksAsPdf: true,
+                  subjectDictsAsCover: true,
+                  subjectsAsCover: true,
+                  usersAsAvatar: { where: { id: { not: user.id } } },
+                },
+              },
+            },
           });
+          if (!asset) {
+            throw new BadRequestException(
+              'Media asset not found or does not belong to this school',
+            );
+          }
+          if (asset.kind === 'VIDEO') {
+            throw new BadRequestException({
+              code: 'VIDEO_NOT_ALLOWED_HERE',
+              message: 'VIDEO assets can only be linked to lesson_block_items',
+            });
+          }
+          // SEC-MEDIA-03: الصورة الشخصية صورة فقط، ولا تُربط بأصل فشلت معالجته
+          if (asset.kind !== 'IMAGE' || asset.processingStatus === 'ERROR') {
+            throw new BadRequestException({
+              code: 'IMAGE_REQUIRED',
+              message: 'Avatar must be a valid IMAGE asset',
+            });
+          }
+          if (asset.id !== user.avatarMediaAssetId) {
+            // SEC-PRF-01: التحقق أن الصورة مرفوعة من المستخدم نفسه وليست مرتبطة بأي من علاقات الـ 21 في Schema
+            const uploadedByUser =
+              Array.isArray(asset.uploadSessions) &&
+              asset.uploadSessions.length > 0;
+            if (!uploadedByUser) {
+              throw new ForbiddenException({
+                code: 'AVATAR_ASSET_NOT_OWNED',
+                message: 'You can only set an avatar image that you uploaded',
+              });
+            }
+            const refCounts = asset._count;
+            const externalRefs = refCounts
+              ? refCounts.schoolsAsLogo +
+                refCounts.blockItemsAsMedia +
+                refCounts.lessonContentsAsMedia +
+                refCounts.lessonTemplatesAsCover +
+                refCounts.matchingPairsAsLeftAudio +
+                refCounts.matchingPairsAsLeftImage +
+                refCounts.matchingPairsAsRightAudio +
+                refCounts.matchingPairsAsRightImage +
+                refCounts.questionOptionsAsAudio +
+                refCounts.questionOptionsAsImage +
+                refCounts.orderingItemsAsAudio +
+                refCounts.orderingItemsAsImage +
+                refCounts.questionsAsExplanationAudio +
+                refCounts.questionsAsExplanationImage +
+                refCounts.questionsAsAudio +
+                refCounts.questionsAsImage +
+                refCounts.booksAsCover +
+                refCounts.booksAsPdf +
+                refCounts.subjectDictsAsCover +
+                refCounts.subjectsAsCover +
+                refCounts.usersAsAvatar
+              : 0;
+            if (externalRefs > 0) {
+              throw new BadRequestException({
+                code: 'AVATAR_ASSET_IN_USE',
+                message: 'Media asset is already linked to another resource',
+              });
+            }
+          }
+          data.avatarMediaAssetId = asset.id;
         }
-        // SEC-MEDIA-03: الصورة الشخصية صورة فقط، ولا تُربط بأصل فشلت معالجته
-        if (asset.kind !== 'IMAGE' || asset.processingStatus === 'ERROR') {
-          throw new BadRequestException({
-            code: 'IMAGE_REQUIRED',
-            message: 'Avatar must be a valid IMAGE asset',
-          });
-        }
-        data.avatarMediaAssetId = asset.id;
       }
-    }
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data,
-    });
+      await tx.user.update({
+        where: { id: user.id },
+        data,
+      });
+    };
+
+    if (typeof this.prisma.$transaction === 'function') {
+      await this.prisma.$transaction(runInTx, {
+        timeout: 15_000,
+        maxWait: 10_000,
+      });
+    } else {
+      await runInTx(this.prisma as unknown as Prisma.TransactionClient);
+    }
 
     // إرجاع البيانات المحدّثة
     return this.getMe(userUuid);

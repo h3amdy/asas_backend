@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UpdateSchoolInfoDto } from './dto/update-school-info.dto';
 
@@ -51,34 +52,82 @@ export class SchoolInfoService {
     if (dto.deliveryPolicy !== undefined)
       data.deliveryPolicy = dto.deliveryPolicy;
 
-    // Logo: resolve UUID → ID, or null to remove
-    if (dto.logoMediaAssetUuid !== undefined) {
-      if (dto.logoMediaAssetUuid) {
-        const asset = await this.prisma.mediaAsset.findFirst({
-          where: { uuid: dto.logoMediaAssetUuid, schoolId, isDeleted: false },
-        });
-        if (!asset) throw new NotFoundException('LOGO_ASSET_NOT_FOUND');
-        if (asset.kind === 'VIDEO') {
-          throw new BadRequestException({
-            code: 'VIDEO_NOT_ALLOWED_HERE',
-            message: 'VIDEO assets can only be linked to lesson_block_items',
+    // Logo: resolve UUID → ID, or null to remove — داخل معاملة مع قفل FOR UPDATE لمنع سباق الصور الشخصية (SEC-PRF-01)
+    const runInTx = async (tx: Prisma.TransactionClient) => {
+      if (dto.logoMediaAssetUuid !== undefined) {
+        if (dto.logoMediaAssetUuid) {
+          if (typeof tx.$queryRaw === 'function') {
+            await tx.$queryRaw`
+              SELECT id
+              FROM media_assets
+              WHERE uuid = ${dto.logoMediaAssetUuid}
+              FOR UPDATE
+            `;
+          }
+
+          const asset = await tx.mediaAsset.findFirst({
+            where: {
+              uuid: dto.logoMediaAssetUuid,
+              schoolId,
+              ownerType: 'SCHOOL',
+              isDeleted: false,
+            },
           });
+          if (!asset) throw new NotFoundException('LOGO_ASSET_NOT_FOUND');
+          if (asset.kind === 'VIDEO') {
+            throw new BadRequestException({
+              code: 'VIDEO_NOT_ALLOWED_HERE',
+              message: 'VIDEO assets can only be linked to lesson_block_items',
+            });
+          }
+          // SEC-MEDIA-03: الشعار يُنشر للعامة ← صورة فقط، ولا يُربط بأصل فشلت معالجته
+          if (asset.kind !== 'IMAGE' || asset.processingStatus === 'ERROR') {
+            throw new BadRequestException({
+              code: 'IMAGE_REQUIRED',
+              message: 'School logo must be a valid IMAGE asset',
+            });
+          }
+
+          // SEC-PRF-01: منع ربط الصورة الشخصية لمستخدم كشعار مدرسة
+          const txWithUser = tx as unknown as {
+            user?: {
+              count?: (args: {
+                where: { avatarMediaAssetId: number };
+              }) => Promise<number>;
+            };
+          };
+          if (typeof txWithUser.user?.count === 'function') {
+            const avatarUsageCount = await txWithUser.user.count({
+              where: { avatarMediaAssetId: asset.id },
+            });
+            if (avatarUsageCount > 0) {
+              throw new BadRequestException({
+                code: 'AVATAR_ASSET_IN_USE',
+                error: 'AVATAR_ASSET_IN_USE',
+                message: 'Cannot link a user profile avatar as the school logo',
+              });
+            }
+          }
+
+          data.logoMediaAssetId = asset.id;
+        } else {
+          // null → remove logo
+          data.logoMediaAssetId = null;
         }
-        // SEC-MEDIA-03: الشعار يُنشر للعامة ← صورة فقط، ولا يُربط بأصل فشلت معالجته
-        if (asset.kind !== 'IMAGE' || asset.processingStatus === 'ERROR') {
-          throw new BadRequestException({
-            code: 'IMAGE_REQUIRED',
-            message: 'School logo must be a valid IMAGE asset',
-          });
-        }
-        data.logoMediaAssetId = asset.id;
-      } else {
-        // null → remove logo
-        data.logoMediaAssetId = null;
       }
+
+      await tx.school.update({ where: { id: schoolId }, data });
+    };
+
+    if (typeof this.prisma.$transaction === 'function') {
+      await this.prisma.$transaction(runInTx, {
+        timeout: 15_000,
+        maxWait: 10_000,
+      });
+    } else {
+      await runInTx(this.prisma as unknown as Prisma.TransactionClient);
     }
 
-    await this.prisma.school.update({ where: { id: schoolId }, data });
     return this.getSchoolInfo(schoolId);
   }
 }

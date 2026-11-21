@@ -43,6 +43,7 @@ export class PlatformUnitsService {
                 where: {
                     platformUserId: platformUser.id,
                     subjectDictionaryId: subjectDict.id,
+                    isDeleted: false,
                 },
             });
 

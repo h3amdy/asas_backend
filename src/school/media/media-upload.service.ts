@@ -10,11 +10,19 @@
 
 import {
   BadRequestException,
+  ConflictException,
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
-import { MediaKind, MediaUploadStatus, ProcessingStatus } from '@prisma/client';
+import {
+  MediaKind,
+  MediaUploadStatus,
+  Prisma,
+  ProcessingStatus,
+} from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MediaAccessPolicyService } from '../../shared/media/media-access-policy.service';
@@ -217,9 +225,9 @@ export class MediaUploadService {
   }
 
   /**
-   * ④ Complete Session — محمية بـ W-063
+   * ④ Complete Session — محمية بـ W-063 وقفل تزامني كامل (withSessionLock + FOR UPDATE + File Recovery)
    * - VIDEO: VideoUploadService (FOR UPDATE + ffprobe + staging + TRANSCODE_VIDEO) → 202
-   * - IMAGE/AUDIO: السلوك الأصلي (move + processing)
+   * - IMAGE/AUDIO: قفل ذرّي + فحص انتهاء الصلاحية + استعادة الملف المؤقت عند تراجع DB
    */
   async completeSession(
     sessionUuid: string,
@@ -227,129 +235,18 @@ export class MediaUploadService {
     schoolUuid: string,
     currentUserId: number,
   ) {
-    const session = await this.getOwnedSession(
-      sessionUuid,
-      schoolId,
-      currentUserId,
-    );
+    return this.validation.withSessionLock(sessionUuid, async () => {
+      const session = await this.getOwnedSession(
+        sessionUuid,
+        schoolId,
+        currentUserId,
+      );
 
-    return this.validation.withSessionLock(session.uuid, async () => {
       if (session.kind === MediaKind.VIDEO) {
         return this.video.completeVideoSession(session.id);
       }
 
-      if (session.status === MediaUploadStatus.COMPLETED) {
-        return {
-          media_asset_uuid: session.mediaAsset.uuid,
-          processing_status: session.processingStatus || ProcessingStatus.DONE,
-        };
-      }
-
-      // Validate bytes
-      const expected = session.totalSizeBytes
-        ? Number(session.totalSizeBytes)
-        : 0;
-      const received = Number(session.bytesReceived);
-
-      if (expected > 0 && received < expected) {
-        throw new BadRequestException({
-          error: 'INCOMPLETE_UPLOAD',
-          bytes_received: received,
-          total_size_bytes: expected,
-        });
-      }
-
-      if (
-        expected > 0 &&
-        typeof this.storage.reconcileTempFile === 'function'
-      ) {
-        await this.storage.reconcileTempFile(session.uuid, expected);
-      }
-
-      // SEC-MEDIA-04: التحقق من المحتوى الحقيقي قبل النقل والمعالجة
-      await this.validation.assertUploadedContentMatchesKind(
-        this.prisma,
-        this.storage,
-        {
-          id: session.id,
-          uuid: session.uuid,
-          mediaAssetId: session.mediaAssetId,
-          kind: session.kind,
-        },
-      );
-
-      // Determine extension and move temp → original
-      const ext = this.validation.getExtFromContentType(session.contentType);
-      const originalStorageKey = this.storage.buildStorageKey(
-        schoolUuid,
-        session.mediaAsset.uuid,
-        'original',
-        ext,
-      );
-
-      await this.storage.moveToFinal(session.uuid, originalStorageKey);
-
-      // Update session
-      await this.prisma.mediaUploadSession.update({
-        where: { id: session.id },
-        data: {
-          status: MediaUploadStatus.COMPLETED,
-          completedAt: new Date(),
-          processingStatus: ProcessingStatus.PROCESSING,
-        },
-      });
-
-      // Update asset storage key
-      await this.prisma.mediaAsset.update({
-        where: { id: session.mediaAssetId },
-        data: {
-          storageKey: originalStorageKey,
-          updatedAt: new Date(),
-        },
-      });
-
-      // Trigger processing pipeline (async — don't block response)
-      this.processing
-        .processAsset(
-          session.mediaAssetId,
-          schoolUuid,
-          session.mediaAsset.uuid,
-          originalStorageKey,
-          session.kind,
-          session.contentType,
-        )
-        .catch((err) => {
-          this.logger.error(
-            `Background processing failed for ${session.mediaAsset.uuid}:`,
-            err,
-          );
-        });
-
-      return {
-        media_asset_uuid: session.mediaAsset.uuid,
-        processing_status: 'PROCESSING',
-      };
-    });
-  }
-
-  /**
-   * ⑤ Cancel Session — محمية بـ W-063 + تسلسل قفل الجلسة
-   */
-  async cancelSession(
-    sessionUuid: string,
-    schoolId: number,
-    currentUserId: number,
-  ) {
-    const session = await this.getOwnedSession(
-      sessionUuid,
-      schoolId,
-      currentUserId,
-    );
-
-    return this.validation.executeSerializedCancelSession(
-      this.prisma,
-      this.storage,
-      {
+      const initialSnapshot = {
         id: session.id,
         uuid: session.uuid,
         mediaAssetId: session.mediaAssetId,
@@ -360,6 +257,298 @@ export class MediaUploadService {
         totalSizeBytes: session.totalSizeBytes,
         chunkSizeBytes: session.chunkSizeBytes,
         processingStatus: session.processingStatus,
+      };
+
+      type SchoolCompleteOutcome =
+        | {
+            kind: 'already_completed';
+            response: { media_asset_uuid: string; processing_status: string };
+          }
+        | { kind: 'invalid_content'; detected: string | null }
+        | {
+            kind: 'completed';
+            originalStorageKey: string;
+            assetId: number;
+            assetUuid: string;
+            kindValue: MediaKind;
+            contentType: string;
+          };
+
+      let movedToFinalKey: string | null = null;
+
+      const runInTx = async (
+        tx: Prisma.TransactionClient,
+      ): Promise<SchoolCompleteOutcome> => {
+        const locked =
+          typeof this.validation.lockSessionRow === 'function'
+            ? await this.validation.lockSessionRow(tx, initialSnapshot)
+            : initialSnapshot;
+
+        if (locked.status === MediaUploadStatus.COMPLETED) {
+          let processingStatus =
+            locked.processingStatus || ProcessingStatus.DONE;
+          if (typeof tx.mediaAsset?.findUnique === 'function') {
+            const freshAsset = await tx.mediaAsset.findUnique({
+              where: { id: locked.mediaAssetId },
+              select: { processingStatus: true },
+            });
+            if (freshAsset?.processingStatus) {
+              processingStatus = freshAsset.processingStatus;
+            }
+          }
+          return {
+            kind: 'already_completed',
+            response: {
+              media_asset_uuid: session.mediaAsset.uuid,
+              processing_status: processingStatus,
+            },
+          };
+        }
+        if (locked.status === MediaUploadStatus.CANCELED) {
+          throw new ConflictException('SESSION_CANCELED');
+        }
+        if (locked.status === MediaUploadStatus.FAILED) {
+          throw new ConflictException('SESSION_FAILED');
+        }
+        if (locked.expiresAt < new Date()) {
+          throw new GoneException('SESSION_EXPIRED');
+        }
+
+        const expected = locked.totalSizeBytes
+          ? Number(locked.totalSizeBytes)
+          : 0;
+        const received = Number(locked.bytesReceived);
+
+        if (expected > 0 && received < expected) {
+          throw new BadRequestException({
+            error: 'INCOMPLETE_UPLOAD',
+            bytes_received: received,
+            total_size_bytes: expected,
+          });
+        }
+
+        const ext = this.validation.getExtFromContentType(session.contentType);
+        const originalStorageKey = this.storage.buildStorageKey(
+          schoolUuid,
+          session.mediaAsset.uuid,
+          'original',
+          ext,
+        );
+
+        if (
+          expected > 0 &&
+          typeof this.storage.recoverOrphanFinalToTempIfNeeded === 'function'
+        ) {
+          await this.storage.recoverOrphanFinalToTempIfNeeded(
+            locked.uuid,
+            originalStorageKey,
+            expected,
+          );
+        }
+
+        if (
+          expected > 0 &&
+          typeof this.storage.reconcileTempFile === 'function'
+        ) {
+          await this.storage.reconcileTempFile(locked.uuid, expected);
+        }
+
+        // SEC-MEDIA-04 + SEC-MED-04: التحقق من المحتوى الحقيقي تحت القفل بدون تعامل متداخل
+        if (typeof this.validation.sniffUploadedContentForKind === 'function') {
+          const sniff = await this.validation.sniffUploadedContentForKind(
+            this.storage,
+            { uuid: locked.uuid, kind: locked.kind },
+          );
+          if (!sniff.ok) {
+            await tx.mediaUploadSession.update({
+              where: { id: locked.id },
+              data: {
+                status: MediaUploadStatus.FAILED,
+                processingStatus: ProcessingStatus.ERROR,
+              },
+            });
+            await tx.mediaAsset.update({
+              where: { id: locked.mediaAssetId },
+              data: { processingStatus: ProcessingStatus.ERROR },
+            });
+            return { kind: 'invalid_content', detected: sniff.detected };
+          }
+        } else {
+          await this.validation.assertUploadedContentMatchesKind(
+            this.prisma,
+            this.storage,
+            {
+              id: locked.id,
+              uuid: locked.uuid,
+              mediaAssetId: locked.mediaAssetId,
+              kind: locked.kind,
+            },
+          );
+        }
+
+        if (locked.expiresAt < new Date()) {
+          throw new GoneException('SESSION_EXPIRED');
+        }
+
+        await this.storage.moveToFinal(locked.uuid, originalStorageKey);
+        movedToFinalKey = originalStorageKey;
+
+        try {
+          const completedAt = new Date();
+          if (typeof tx.mediaUploadSession.updateMany === 'function') {
+            const updated = await tx.mediaUploadSession.updateMany({
+              where: {
+                id: locked.id,
+                status: {
+                  in: [MediaUploadStatus.INITIATED, MediaUploadStatus.UPLOADING],
+                },
+              },
+              data: {
+                status: MediaUploadStatus.COMPLETED,
+                completedAt,
+                processingStatus: ProcessingStatus.PROCESSING,
+              },
+            });
+            if (updated.count !== 1) {
+              throw new ConflictException('CONCURRENT_SESSION_STATE_CHANGED');
+            }
+          } else {
+            await tx.mediaUploadSession.update({
+              where: { id: locked.id },
+              data: {
+                status: MediaUploadStatus.COMPLETED,
+                completedAt,
+                processingStatus: ProcessingStatus.PROCESSING,
+              },
+            });
+          }
+
+          await tx.mediaAsset.update({
+            where: { id: locked.mediaAssetId },
+            data: {
+              storageKey: originalStorageKey,
+              updatedAt: completedAt,
+            },
+          });
+        } catch (dbErr) {
+          if (typeof this.storage.restoreFromFinal === 'function') {
+            await this.storage.restoreFromFinal(locked.uuid, originalStorageKey);
+          }
+          movedToFinalKey = null;
+          throw dbErr;
+        }
+
+        return {
+          kind: 'completed',
+          originalStorageKey,
+          assetId: locked.mediaAssetId,
+          assetUuid: session.mediaAsset.uuid,
+          kindValue: locked.kind,
+          contentType: session.contentType,
+        };
+      };
+
+      let outcome: SchoolCompleteOutcome;
+      try {
+        if (typeof this.prisma.$transaction === 'function') {
+          outcome = await this.prisma.$transaction(runInTx, {
+            timeout: 30_000,
+            maxWait: 10_000,
+          });
+        } else {
+          outcome = await runInTx(
+            this.prisma as unknown as Prisma.TransactionClient,
+          );
+        }
+      } catch (err) {
+        if (
+          movedToFinalKey &&
+          typeof this.storage.restoreFromFinal === 'function'
+        ) {
+          const dbStatus =
+            typeof this.validation.readSessionStatusFromDb === 'function'
+              ? await this.validation.readSessionStatusFromDb(
+                  this.prisma,
+                  session.id,
+                )
+              : null;
+          if (dbStatus !== MediaUploadStatus.COMPLETED) {
+            await this.storage.restoreFromFinal(session.uuid, movedToFinalKey);
+          }
+        }
+        throw err;
+      }
+
+      if (outcome.kind === 'invalid_content') {
+        await this.storage.deleteTempFile(session.uuid).catch(() => undefined);
+        throw new UnprocessableEntityException({
+          error: 'UNSUPPORTED_MEDIA_CONTENT',
+          kind: session.kind,
+          detected: outcome.detected,
+          message: 'محتوى الملف لا يطابق نوعه المعلن أو أنه صيغة غير مدعومة',
+        });
+      }
+
+      if (outcome.kind === 'already_completed') {
+        return outcome.response;
+      }
+
+      // Trigger processing pipeline (async — don't block response)
+      this.processing
+        .processAsset(
+          outcome.assetId,
+          schoolUuid,
+          outcome.assetUuid,
+          outcome.originalStorageKey,
+          outcome.kindValue,
+          outcome.contentType,
+        )
+        .catch((err) => {
+          this.logger.error(
+            `Background processing failed for ${outcome.assetUuid}:`,
+            err,
+          );
+        });
+
+      return {
+        media_asset_uuid: outcome.assetUuid,
+        processing_status: 'PROCESSING',
+      };
+    });
+  }
+
+  /**
+   * ⑤ Cancel Session — محمية بـ W-063 + قفل الجلسة الكامل (withSessionLock + FOR UPDATE)
+   */
+  async cancelSession(
+    sessionUuid: string,
+    schoolId: number,
+    currentUserId: number,
+  ) {
+    return this.validation.executeSerializedCancelSession(
+      this.prisma,
+      this.storage,
+      {
+        uuid: sessionUuid,
+        load: async () => {
+          const session = await this.getOwnedSession(
+            sessionUuid,
+            schoolId,
+            currentUserId,
+          );
+          return {
+            id: session.id,
+            uuid: session.uuid,
+            mediaAssetId: session.mediaAssetId,
+            kind: session.kind,
+            status: session.status,
+            expiresAt: session.expiresAt,
+            bytesReceived: session.bytesReceived,
+            totalSizeBytes: session.totalSizeBytes,
+            chunkSizeBytes: session.chunkSizeBytes,
+            processingStatus: session.processingStatus,
+          };
+        },
       },
     );
   }

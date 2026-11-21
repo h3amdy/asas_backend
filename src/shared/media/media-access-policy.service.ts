@@ -747,6 +747,28 @@ export class MediaAccessPolicyService {
         message: `نوع الوسيط (${String(asset.kind)}) لا يطابق نوع العنصر المطلوب (${params.expectedKind})`,
       });
     }
+
+    // SEC-PRF-01: منع ربط صورة شخصية لمستخدم بأصل تعليمي (تحت قفل FOR UPDATE المتماثل)
+    const clientWithUser = client as unknown as {
+      user?: {
+        count?: (args: { where: { avatarMediaAssetId: number } }) => Promise<number>;
+      };
+    };
+    if (
+      asset.ownerType === 'SCHOOL' &&
+      typeof clientWithUser.user?.count === 'function'
+    ) {
+      const avatarUsageCount = await clientWithUser.user.count({
+        where: { avatarMediaAssetId: asset.id },
+      });
+      if (avatarUsageCount > 0) {
+        throw new BadRequestException({
+          code: 'AVATAR_ASSET_IN_USE',
+          error: 'AVATAR_ASSET_IN_USE',
+          message: 'لا يمكن ربط صورة شخصية لمستخدم بمورد آخر',
+        });
+      }
+    }
   }
 
   /**
@@ -830,6 +852,28 @@ export class MediaAccessPolicyService {
         error: 'MEDIA_KIND_MISMATCH',
         message: `نوع الوسيط (${String(asset.kind)}) غير مسموح في هذا الحقل`,
       });
+    }
+
+    // SEC-PRF-01: منع ربط صورة شخصية لمستخدم بأصل تعليمي أو شعار/غلاف آخر
+    const clientWithUser = client as unknown as {
+      user?: {
+        count?: (args: { where: { avatarMediaAssetId: number } }) => Promise<number>;
+      };
+    };
+    if (
+      asset.ownerType === 'SCHOOL' &&
+      typeof clientWithUser.user?.count === 'function'
+    ) {
+      const avatarUsageCount = await clientWithUser.user.count({
+        where: { avatarMediaAssetId: asset.id },
+      });
+      if (avatarUsageCount > 0) {
+        throw new BadRequestException({
+          code: 'AVATAR_ASSET_IN_USE',
+          error: 'AVATAR_ASSET_IN_USE',
+          message: 'لا يمكن ربط صورة شخصية لمستخدم بمورد آخر',
+        });
+      }
     }
 
     return {

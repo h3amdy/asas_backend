@@ -112,6 +112,7 @@ export class PlatformLessonsService {
                 where: {
                     platformUserId: platformUser.id,
                     subjectDictionaryId: subjectDict.id,
+                    isDeleted: false,
                 },
             });
             if (!assignment) {
@@ -151,11 +152,16 @@ export class PlatformLessonsService {
         }
 
         // تحقق من الإسناد (admin يمر مباشرة)
-        if (platformUser.role !== 'PLATFORM_ADMIN' && lesson.subjectDictionaryId) {
+        if (platformUser.role !== 'PLATFORM_ADMIN') {
+            if (!lesson.subjectDictionaryId) {
+                throw new ForbiddenException('ليس لديك صلاحية لهذا الدرس');
+            }
             const assignment = await this.prisma.platformUserSubject.findFirst({
                 where: {
                     platformUserId: platformUser.id,
                     subjectDictionaryId: lesson.subjectDictionaryId,
+                    isDeleted: false,
+                    subjectDictionary: { isDeleted: false, isActive: true },
                 },
             });
             if (!assignment) {

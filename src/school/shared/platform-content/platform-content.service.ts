@@ -42,7 +42,12 @@ export class PlatformContentService {
      */
     private async getTeacherContext(schoolId: number, userUuid: string) {
         const user = await this.prisma.user.findFirst({
-            where: { uuid: userUuid, schoolId },
+            where: {
+                uuid: userUuid,
+                schoolId,
+                isDeleted: false,
+                isActive: true,
+            },
             include: { teacher: { select: { userId: true } } },
         });
         if (!user || !user.teacher) {
@@ -52,7 +57,7 @@ export class PlatformContentService {
     }
 
     /**
-     * جلب المواد المسندة للمعلم التي لديها subjectDictionaryId
+     * جلب المواد المسندة للمعلم التي لديها subjectDictionaryId مع سلسلة النشاط والعزل الكاملة
      */
     private async getTeacherSubjectsWithDict(schoolId: number, teacherId: number) {
         const assignments = await this.prisma.subjectSectionTeacher.findMany({
@@ -62,9 +67,25 @@ export class PlatformContentService {
                 isActive: true,
                 subjectSection: {
                     isDeleted: false,
-                    subject: {
+                    isActive: true,
+                    section: {
                         isDeleted: false,
+                        isActive: true,
+                        grade: {
+                            schoolId,
+                            isDeleted: false,
+                            isActive: true,
+                        },
+                    },
+                    subject: {
+                        schoolId,
+                        isDeleted: false,
+                        isActive: true,
                         dictionaryId: { not: null },
+                        dictionary: {
+                            isDeleted: false,
+                            isActive: true,
+                        },
                     },
                 },
             },
@@ -91,6 +112,53 @@ export class PlatformContentService {
             }
         }
         return Array.from(subjectMap.values());
+    }
+
+    /**
+     * SEC-TCH-03: التحقق المشترك من إسناد نشط فعلي للمعلم على مادة مدرسية نشطة بالمدرسة
+     */
+    private async findActiveTeacherSubjectAssignment(
+        schoolId: number,
+        teacherId: number,
+        dictionaryId: number,
+    ) {
+        return this.prisma.subjectSectionTeacher.findFirst({
+            where: {
+                teacherId,
+                isDeleted: false,
+                isActive: true,
+                subjectSection: {
+                    isDeleted: false,
+                    isActive: true,
+                    section: {
+                        isDeleted: false,
+                        isActive: true,
+                        grade: {
+                            schoolId,
+                            isDeleted: false,
+                            isActive: true,
+                        },
+                    },
+                    subject: {
+                        schoolId,
+                        dictionaryId,
+                        isDeleted: false,
+                        isActive: true,
+                        dictionary: {
+                            isDeleted: false,
+                            isActive: true,
+                        },
+                    },
+                },
+            },
+            include: {
+                subjectSection: {
+                    include: {
+                        subject: true,
+                    },
+                },
+            },
+        });
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -248,7 +316,7 @@ export class PlatformContentService {
         userUuid: string,
         lessonUuid: string,
     ) {
-        await this.getTeacherContext(schoolId, userUuid);
+        const { teacherId } = await this.getTeacherContext(schoolId, userUuid);
 
         // التحقق أن الدرس موزع لهذه المدرسة
         const distribution = await this.prisma.contentDistribution.findFirst({
@@ -256,7 +324,19 @@ export class PlatformContentService {
                 schoolId,
                 status: 'ACTIVE',
                 isDeleted: false,
-                sourceLessonTemplate: { uuid: lessonUuid, isDeleted: false },
+                sourceLessonTemplate: {
+                    uuid: lessonUuid,
+                    ownerType: 'PLATFORM',
+                    isDeleted: false,
+                },
+            },
+            include: {
+                sourceLessonTemplate: {
+                    select: {
+                        id: true,
+                        subjectDictionaryId: true,
+                    },
+                },
             },
         });
 
@@ -264,9 +344,25 @@ export class PlatformContentService {
             throw new NotFoundException('هذا الدرس غير متاح لمدرستك');
         }
 
+        const sourceDictId = distribution.sourceLessonTemplate?.subjectDictionaryId;
+        if (!sourceDictId) {
+            throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
+        }
+
+        // SEC-TCH-03: التحقق أن المعلم مسند فعلياً وبشكل نشط لشعبة ومادة مدرسية نشطة مرتبطة بنفس SubjectDictionary
+        const assignment = await this.findActiveTeacherSubjectAssignment(
+            schoolId,
+            teacherId,
+            sourceDictId,
+        );
+
+        if (!assignment) {
+            throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
+        }
+
         // جلب الدرس مع كامل المحتوى
         const lesson = await this.prisma.lessonTemplate.findFirst({
-            where: { uuid: lessonUuid, isDeleted: false },
+            where: { uuid: lessonUuid, ownerType: 'PLATFORM', isDeleted: false },
             include: {
                 contentBlocks: {
                     where: { isDeleted: false },
@@ -411,7 +507,11 @@ export class PlatformContentService {
                 schoolId,
                 status: 'ACTIVE',
                 isDeleted: false,
-                sourceLessonTemplate: { uuid: lessonUuid, isDeleted: false },
+                sourceLessonTemplate: {
+                    uuid: lessonUuid,
+                    ownerType: 'PLATFORM',
+                    isDeleted: false,
+                },
             },
             include: {
                 sourceLessonTemplate: {
@@ -446,6 +546,7 @@ export class PlatformContentService {
                 schoolId,
                 dictionaryId: dictId,
                 isDeleted: false,
+                isActive: true,
             },
         });
 
@@ -453,26 +554,25 @@ export class PlatformContentService {
             throw new BadRequestException('لا توجد مادة مدرسية مرتبطة بهذه المادة الرسمية');
         }
 
-        // التحقق أن المعلم مسند لهذه المادة
-        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
-            where: {
-                teacherId,
-                isDeleted: false,
-                isActive: true,
-                subjectSection: { subjectId: schoolSubject.id, isDeleted: false },
-            },
-        });
+        // SEC-TCH-03: التحقق أن المعلم مسند فعلياً وبشكل نشط لشعبة ومادة مدرسية نشطة بالمدرسة نفسها
+        const assignment = await this.findActiveTeacherSubjectAssignment(
+            schoolId,
+            teacherId,
+            dictId,
+        );
 
         if (!assignment) {
             throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
         }
+
+        const targetSubject = assignment.subjectSection.subject;
 
         // 4. إيجاد أو إنشاء الوحدة بنفس الاسم
         let targetUnitId: number | null = null;
         if (source.unit) {
             let unit = await this.prisma.unit.findFirst({
                 where: {
-                    subjectId: schoolSubject.id,
+                    subjectId: targetSubject.id,
                     title: source.unit.title,
                     isDeleted: false,
                 },
@@ -481,13 +581,13 @@ export class PlatformContentService {
             if (!unit) {
                 // إنشاء وحدة جديدة بنفس الاسم
                 const maxOrder = await this.prisma.unit.aggregate({
-                    where: { subjectId: schoolSubject.id, isDeleted: false },
+                    where: { subjectId: targetSubject.id, isDeleted: false },
                     _max: { orderIndex: true },
                 });
 
                 unit = await this.prisma.unit.create({
                     data: {
-                        subjectId: schoolSubject.id,
+                        subjectId: targetSubject.id,
                         title: source.unit.title,
                         orderIndex: (maxOrder._max.orderIndex ?? 0) + 1,
                     },
@@ -513,7 +613,7 @@ export class PlatformContentService {
                 data: {
                     ownerType: 'SCHOOL',
                     schoolId,
-                    subjectId: schoolSubject.id,
+                    subjectId: targetSubject.id,
                     unitId: targetUnitId,
                     title: source.title,
                     orderIndex: newOrderIndex,
@@ -573,7 +673,11 @@ export class PlatformContentService {
                 schoolId,
                 status: 'ACTIVE',
                 isDeleted: false,
-                sourceLessonTemplate: { uuid: lessonUuid, isDeleted: false },
+                sourceLessonTemplate: {
+                    uuid: lessonUuid,
+                    ownerType: 'PLATFORM',
+                    isDeleted: false,
+                },
             },
             include: {
                 sourceLessonTemplate: {
@@ -603,37 +707,38 @@ export class PlatformContentService {
 
         // المادة المدرسية
         const schoolSubject = await this.prisma.subject.findFirst({
-            where: { schoolId, dictionaryId: dictId, isDeleted: false },
+            where: { schoolId, dictionaryId: dictId, isDeleted: false, isActive: true },
         });
         if (!schoolSubject) {
             throw new BadRequestException('لا توجد مادة مدرسية مرتبطة');
         }
 
-        // التحقق من الصلاحية
-        const assignment = await this.prisma.subjectSectionTeacher.findFirst({
-            where: {
-                teacherId, isDeleted: false, isActive: true,
-                subjectSection: { subjectId: schoolSubject.id, isDeleted: false },
-            },
-        });
+        // SEC-TCH-03: التحقق من الصلاحية عبر سلسلة النشاط الكاملة والعزل المدرسي
+        const assignment = await this.findActiveTeacherSubjectAssignment(
+            schoolId,
+            teacherId,
+            dictId,
+        );
         if (!assignment) {
             throw new ForbiddenException('ليس لديك صلاحية لهذه المادة');
         }
+
+        const targetSubject = assignment.subjectSection.subject;
 
         // الوحدة
         let targetUnitId: number | null = null;
         if (source.unit) {
             let unit = await this.prisma.unit.findFirst({
-                where: { subjectId: schoolSubject.id, title: source.unit.title, isDeleted: false },
+                where: { subjectId: targetSubject.id, title: source.unit.title, isDeleted: false },
             });
             if (!unit) {
                 const maxOrder = await this.prisma.unit.aggregate({
-                    where: { subjectId: schoolSubject.id, isDeleted: false },
+                    where: { subjectId: targetSubject.id, isDeleted: false },
                     _max: { orderIndex: true },
                 });
                 unit = await this.prisma.unit.create({
                     data: {
-                        subjectId: schoolSubject.id,
+                        subjectId: targetSubject.id,
                         title: source.unit.title,
                         orderIndex: (maxOrder._max.orderIndex ?? 0) + 1,
                     },
@@ -657,7 +762,7 @@ export class PlatformContentService {
                 data: {
                     ownerType: 'SCHOOL',
                     schoolId,
-                    subjectId: schoolSubject.id,
+                    subjectId: targetSubject.id,
                     unitId: targetUnitId,
                     title: source.title,
                     orderIndex: newOrderIndex,

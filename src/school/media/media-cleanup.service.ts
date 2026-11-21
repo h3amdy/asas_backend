@@ -126,37 +126,100 @@ export class MediaCleanupService implements OnModuleInit, OnModuleDestroy {
     let cleaned = 0;
     for (const session of expiredSessions) {
       try {
-        // 1) انتقال مشروط إلى CANCELED (إذا اكتملت الجلسة للتو لا نفعل شيئاً)
-        const updated = await this.prisma.mediaUploadSession.updateMany({
-          where: {
-            id: session.id,
-            status: {
-              notIn: [MediaUploadStatus.COMPLETED, MediaUploadStatus.CANCELED],
-            },
-          },
-          data: {
-            status: MediaUploadStatus.CANCELED,
-            canceledAt: now,
-          },
-        });
+        const runInTx = async (tx: Prisma.TransactionClient) => {
+          if (typeof tx.$queryRaw === 'function') {
+            const rows = await tx.$queryRaw<
+              Array<{
+                id: number;
+                status: string;
+                expires_at: Date | string;
+                media_asset_id: number;
+              }>
+            >`
+              SELECT id, status::text AS status, expires_at, media_asset_id
+              FROM media_upload_sessions
+              WHERE id = ${session.id}
+              FOR UPDATE
+            `;
+            const locked = rows[0];
+            if (
+              !locked ||
+              locked.status === MediaUploadStatus.COMPLETED ||
+              locked.status === MediaUploadStatus.CANCELED ||
+              new Date(locked.expires_at) >= now
+            ) {
+              return false;
+            }
+            await tx.mediaUploadSession.update({
+              where: { id: locked.id },
+              data: {
+                status: MediaUploadStatus.CANCELED,
+                canceledAt: now,
+              },
+            });
+            if (typeof tx.mediaAsset?.updateMany === 'function') {
+              await tx.mediaAsset.updateMany({
+                where: { id: locked.media_asset_id, isDeleted: false },
+                data: {
+                  isDeleted: true,
+                  deletedAt: now,
+                },
+              });
+            } else if (session.mediaAsset && !session.mediaAsset.isDeleted) {
+              await tx.mediaAsset.update({
+                where: { id: locked.media_asset_id },
+                data: {
+                  isDeleted: true,
+                  deletedAt: now,
+                },
+              });
+            }
+            return true;
+          }
 
-        if (updated.count === 0) {
+          // Fallback لمحاكيات الاختبار البسيطة بدون $queryRaw
+          const updated = await tx.mediaUploadSession.updateMany({
+            where: {
+              id: session.id,
+              expiresAt: { lt: now },
+              status: {
+                notIn: [MediaUploadStatus.COMPLETED, MediaUploadStatus.CANCELED],
+              },
+            },
+            data: {
+              status: MediaUploadStatus.CANCELED,
+              canceledAt: now,
+            },
+          });
+          if (updated.count === 0) {
+            return false;
+          }
+          if (session.mediaAsset && !session.mediaAsset.isDeleted) {
+            await tx.mediaAsset.update({
+              where: { id: session.mediaAsset.id },
+              data: {
+                isDeleted: true,
+                deletedAt: now,
+              },
+            });
+          }
+          return true;
+        };
+
+        const canceled =
+          typeof this.prisma.$transaction === 'function'
+            ? await this.prisma.$transaction(runInTx, {
+                timeout: 15_000,
+                maxWait: 10_000,
+              })
+            : await runInTx(this.prisma as unknown as Prisma.TransactionClient);
+
+        if (!canceled) {
           continue;
         }
 
-        // 2) حذف ملف .part المؤقت فقط (W-064: لا يُلمس video-staging أبداً)
+        // 2) حذف ملف .part المؤقت فقط بعد التزام المعاملة (W-064: لا يُلمس video-staging أبداً)
         await this.storage.deleteTempFile(session.uuid);
-
-        // 3) Soft-delete the placeholder asset (if not already)
-        if (session.mediaAsset && !session.mediaAsset.isDeleted) {
-          await this.prisma.mediaAsset.update({
-            where: { id: session.mediaAsset.id },
-            data: {
-              isDeleted: true,
-              deletedAt: now,
-            },
-          });
-        }
 
         cleaned++;
       } catch (e: unknown) {

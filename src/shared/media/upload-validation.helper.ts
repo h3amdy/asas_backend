@@ -216,6 +216,28 @@ export class UploadValidationHelper {
   }
 
   /**
+   * SEC-MED-04: فحص Magic Bytes فقط دون لمس القرص أو فتح معاملة جديدة،
+   * للاستخدام داخل معاملة مقفلة بـ FOR UPDATE ثم الالتزام بوسم FAILED إذا لزم.
+   */
+  async sniffUploadedContentForKind(
+    storage: StorageService,
+    session: { uuid: string; kind: MediaKind },
+  ): Promise<{ ok: true } | { ok: false; detected: string | null }> {
+    const tempPath = storage.getTempPath(session.uuid);
+    let sniff: Awaited<ReturnType<typeof sniffFileMediaType>> = null;
+    try {
+      sniff = await sniffFileMediaType(tempPath);
+    } catch {
+      sniff = null;
+    }
+
+    if (isSniffCompatibleWithKind(sniff, session.kind)) {
+      return { ok: true };
+    }
+    return { ok: false, detected: sniff?.contentType ?? null };
+  }
+
+  /**
    * SEC-MEDIA-04: يتحقق من المحتوى الحقيقي للملف المرفوع (Magic Bytes) قبل نقله وتخزينه.
    * لغير الفيديو فقط (الفيديو يُفحص بـ ffprobe في مساره الخاص).
    *
@@ -232,15 +254,8 @@ export class UploadValidationHelper {
       kind: MediaKind;
     },
   ): Promise<void> {
-    const tempPath = storage.getTempPath(session.uuid);
-    let sniff: Awaited<ReturnType<typeof sniffFileMediaType>> = null;
-    try {
-      sniff = await sniffFileMediaType(tempPath);
-    } catch {
-      sniff = null;
-    }
-
-    if (isSniffCompatibleWithKind(sniff, session.kind)) return;
+    const sniffResult = await this.sniffUploadedContentForKind(storage, session);
+    if (sniffResult.ok) return;
 
     await storage.deleteTempFile(session.uuid).catch(() => undefined);
     await prisma.$transaction([
@@ -260,7 +275,7 @@ export class UploadValidationHelper {
     throw new UnprocessableEntityException({
       error: 'UNSUPPORTED_MEDIA_CONTENT',
       kind: session.kind,
-      detected: sniff?.contentType ?? null,
+      detected: sniffResult.detected,
       message: 'محتوى الملف لا يطابق نوعه المعلن أو أنه صيغة غير مدعومة',
     });
   }
@@ -700,21 +715,30 @@ export class UploadValidationHelper {
   }
 
   /**
-   * إلغاء الجلسة بشكل متسلسل وذرّي تحت قفل الجلسة لمنع التداخل مع uploadChunk أو completeSession.
+   * إلغاء الجلسة بشكل متسلسل وذرّي تحت قفل الجلسة (withSessionLock + FOR UPDATE)
+   * لمنع التداخل مع uploadChunk أو completeSession.
    */
   async executeSerializedCancelSession(
     prisma: PrismaService,
     storage: StorageService,
-    initialSession: SessionSnapshotForLock,
+    sessionOrLoader:
+      | SessionSnapshotForLock
+      | { uuid: string; load: () => Promise<SessionSnapshotForLock> },
   ): Promise<{ status: 'CANCELED' }> {
-    return this.withSessionLock(initialSession.uuid, async () => {
+    return this.withSessionLock(sessionOrLoader.uuid, async () => {
+      const initialSession =
+        'load' in sessionOrLoader
+          ? await sessionOrLoader.load()
+          : sessionOrLoader;
+
       const runInTx = async (tx: Prisma.TransactionClient) => {
         const locked = await this.lockSessionRow(tx, initialSession);
-        if (
-          locked.kind === MediaKind.VIDEO &&
-          locked.status === MediaUploadStatus.COMPLETED
-        ) {
+        // SEC-MED-04: منع إلغاء أي جلسة مكتملة لجميع أنواع الوسائط (IMAGE/AUDIO/DOCUMENT/VIDEO)
+        if (locked.status === MediaUploadStatus.COMPLETED) {
           throw new ConflictException('SESSION_ALREADY_COMPLETED');
+        }
+        if (locked.status === MediaUploadStatus.CANCELED) {
+          return;
         }
 
         const now = new Date();
@@ -745,7 +769,50 @@ export class UploadValidationHelper {
     });
   }
 
-  private async lockSessionRow(
+  /**
+   * قراءة الحالة الملتزمة فعلياً للجلسة من قاعدة البيانات لحسم حالات الخطأ بعد نقل الملف.
+   */
+  async readSessionStatusFromDb(
+    prisma: PrismaService,
+    sessionId: number,
+  ): Promise<MediaUploadStatus | null> {
+    try {
+      if (typeof prisma.$queryRaw === 'function') {
+        const rows = await prisma.$queryRaw<Array<{ status: string }>>`
+          SELECT status::text AS status
+          FROM media_upload_sessions
+          WHERE id = ${sessionId}
+        `;
+        if (rows[0]?.status) {
+          return rows[0].status as MediaUploadStatus;
+        }
+      }
+      const sessionDelegate = (
+        prisma as unknown as {
+          mediaUploadSession?: {
+            findUnique?: (args: {
+              where: { id: number };
+              select: { status: true };
+            }) => Promise<{ status: MediaUploadStatus } | null>;
+          };
+        }
+      ).mediaUploadSession;
+      if (typeof sessionDelegate?.findUnique === 'function') {
+        const row = await sessionDelegate.findUnique({
+          where: { id: sessionId },
+          select: { status: true },
+        });
+        if (row?.status) {
+          return row.status;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async lockSessionRow(
     tx: Prisma.TransactionClient,
     fallback: SessionSnapshotForLock,
   ): Promise<SessionSnapshotForLock> {
