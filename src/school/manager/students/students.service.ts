@@ -64,6 +64,29 @@ export class StudentsService {
 
     // ─── SRS-STU-01: List Students ──────────────────────────────
 
+    static readonly DEFAULT_PAGE_SIZE = 20;
+    static readonly MAX_PAGE_SIZE = 100;
+    private static readonly MAX_INT32 = 2147483647;
+
+    /**
+     * تطبيع معاملات الترقيم (page/limit) بحيث تعود القيم غير الصحيحة أو ≤ 0
+     * إلى الافتراضي (page = 1, limit = 20) مع قص limit إلى السقف الأقصى (100).
+     */
+    static normalizePaging(rawPage?: number, rawLimit?: number) {
+        const page = Number.isInteger(rawPage) && rawPage! >= 1 ? rawPage! : 1;
+        const limit = Number.isInteger(rawLimit) && rawLimit! >= 1
+            ? Math.min(rawLimit!, StudentsService.MAX_PAGE_SIZE)
+            : StudentsService.DEFAULT_PAGE_SIZE;
+        return { page, limit, skip: (page - 1) * limit };
+    }
+
+    /** يُبقي الأعداد الصحيحة الموجبة ضمن نطاق INT4 فقط وإلا يرجع undefined. */
+    private static normalizePositiveInt(value?: number): number | undefined {
+        return Number.isInteger(value) && value! >= 1 && value! <= StudentsService.MAX_INT32
+            ? value
+            : undefined;
+    }
+
     async listStudents(
         schoolId: number,
         query: {
@@ -75,25 +98,32 @@ export class StudentsService {
             limit?: number;
         },
     ) {
-        const page = query.page ?? 1;
-        const limit = Math.min(query.limit ?? 20, 100);
-        const skip = (page - 1) * limit;
+        const { page, limit, skip } = StudentsService.normalizePaging(
+            query.page,
+            query.limit,
+        );
+        const gradeId = StudentsService.normalizePositiveInt(query.gradeId);
+        const sectionId = StudentsService.normalizePositiveInt(query.sectionId);
+        const yearId = StudentsService.normalizePositiveInt(query.yearId);
 
-        const yearFilter = query.yearId
-            ? { yearId: query.yearId }
+        const yearFilter = yearId
+            ? { yearId }
             : { year: { isCurrent: true, isDeleted: false } };
 
-        const searchFilter = query.search
+        const trimmedSearch = query.search?.trim();
+        const parsedCode =
+            trimmedSearch && /^\d+$/.test(trimmedSearch) ? Number(trimmedSearch) : undefined;
+        const validCode = StudentsService.normalizePositiveInt(parsedCode);
+
+        const searchFilter = trimmedSearch
             ? {
                 student: {
                     user: {
                         schoolId,
                         isDeleted: false,
                         OR: [
-                            { name: { contains: query.search, mode: 'insensitive' as const } },
-                            ...(query.search && !isNaN(+query.search)
-                                ? [{ code: +query.search }]
-                                : []),
+                            { name: { contains: trimmedSearch, mode: 'insensitive' as const } },
+                            ...(validCode !== undefined ? [{ code: validCode }] : []),
                         ],
                     },
                 },
@@ -103,8 +133,8 @@ export class StudentsService {
         const where = {
             isDeleted: false,
             ...yearFilter,
-            ...(query.gradeId ? { gradeId: query.gradeId } : {}),
-            ...(query.sectionId ? { sectionId: query.sectionId } : {}),
+            ...(gradeId !== undefined ? { gradeId } : {}),
+            ...(sectionId !== undefined ? { sectionId } : {}),
             ...searchFilter,
         };
 
@@ -129,6 +159,7 @@ export class StudentsService {
                     { grade: { sortOrder: 'asc' } },
                     { section: { orderIndex: 'asc' } },
                     { student: { user: { name: 'asc' } } },
+                    { id: 'asc' },
                 ],
                 skip,
                 take: limit,

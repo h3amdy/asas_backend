@@ -18,6 +18,14 @@ import { RolesGuard, Roles } from '../../common/guards/roles.guard';
 export class StudentsController {
     constructor(private readonly service: StudentsService) { }
 
+    private parseQueryInt(raw?: string): number | undefined {
+        if (raw === undefined) return undefined;
+        const trimmed = raw.trim();
+        if (!/^\d+$/.test(trimmed)) return undefined;
+        const parsed = Number(trimmed);
+        return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : undefined;
+    }
+
     // ─── SRS-STU-01: List Students ──────────────────────────────
 
     @Get()
@@ -31,12 +39,12 @@ export class StudentsController {
         @Query('limit') limit?: string,
     ) {
         return this.service.listStudents(req.schoolContext.id, {
-            gradeId: gradeId ? +gradeId : undefined,
-            sectionId: sectionId ? +sectionId : undefined,
-            yearId: yearId ? +yearId : undefined,
+            gradeId: this.parseQueryInt(gradeId),
+            sectionId: this.parseQueryInt(sectionId),
+            yearId: this.parseQueryInt(yearId),
             search,
-            page: page ? +page : undefined,
-            limit: limit ? +limit : undefined,
+            page: this.parseQueryInt(page),
+            limit: this.parseQueryInt(limit),
         });
     }
 
