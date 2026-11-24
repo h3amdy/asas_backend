@@ -152,9 +152,10 @@ export class ReEnrollDto {
 // ─── SRS-STU-10: Reset Password ───────────────────────────────
 
 export class ResetPasswordDto {
+    @IsOptional()
     @IsString()
     @MinLength(PERSON.PASSWORD_MIN)
-    newPassword!: string;
+    newPassword?: string;
 }
 
 // ─── SRS-STU-09: Toggle Active ────────────────────────────────

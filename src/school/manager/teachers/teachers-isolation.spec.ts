@@ -12,6 +12,7 @@ describe('SEC-ISO-01: TeachersService multi-tenant isolation', () => {
       code: 2200042,
       isDeleted: false,
       isActive: true,
+      lastLoginAt: new Date('2026-11-20T08:15:00.000Z'),
     };
 
     const prisma: any = {
@@ -32,6 +33,9 @@ describe('SEC-ISO-01: TeachersService multi-tenant isolation', () => {
       teacher: {
         update: jest.fn(),
       },
+      authSession: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       school: {
         findUnique: jest.fn().mockResolvedValue({ schoolCode: 'SCH-01' }),
       },
@@ -39,6 +43,7 @@ describe('SEC-ISO-01: TeachersService multi-tenant isolation', () => {
         cb({
           user: prisma.user,
           teacher: prisma.teacher,
+          authSession: prisma.authSession,
         }),
       ),
     };
@@ -100,5 +105,31 @@ describe('SEC-ISO-01: TeachersService multi-tenant isolation', () => {
       expect.objectContaining({ where: { id: 2 } }),
     );
     expect(res.credentials.teacherCode).toBe(teacherInSchool2.code);
+  });
+
+  it('auto-generates password and revokes active sessions when newPassword is omitted', async () => {
+    const { service, prisma, teacherInSchool2 } = createSetup();
+
+    const res = await service.resetPassword(teacherInSchool2.uuid, 2);
+
+    expect(res.credentials.password).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: teacherInSchool2.id },
+        data: { passwordHash: expect.any(String) },
+      }),
+    );
+    expect(prisma.authSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: teacherInSchool2.id, revokedAt: null },
+      data: { revokedAt: expect.any(Date), revokeReason: 'PASSWORD_CHANGED' },
+    });
+  });
+
+  it('returns hasLoggedIn and lastLoginAt in getTeacherProfile', async () => {
+    const { service, teacherInSchool2 } = createSetup();
+
+    const profile = await service.getTeacherProfile(teacherInSchool2.uuid, 2);
+    expect(profile.hasLoggedIn).toBe(true);
+    expect(profile.lastLoginAt).toEqual(teacherInSchool2.lastLoginAt);
   });
 });

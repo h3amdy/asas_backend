@@ -1,10 +1,10 @@
 // src/school/manager/parents/parents.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
 import { CreateParentDto, UpdateParentDto, LinkChildrenDto } from './dto/parents.dto';
+import { generateReadablePassword } from '../common/password-generator.util';
 
 /**
  * 👨‍👩‍👧 خدمة إدارة أولياء الأمور — SRS-PAR
@@ -63,7 +63,7 @@ export class ParentsService {
             return { existing: true, uuid: existing.uuid, name: existing.name, phone: existing.phone, code: existing.code };
         }
 
-        const password = dto.password ?? this.generatePassword();
+        const password = dto.password ?? generateReadablePassword();
         const passwordHash = await bcrypt.hash(password, 10);
 
         const result = await this.prisma.$transaction(async (tx) => {
@@ -110,7 +110,7 @@ export class ParentsService {
                 uuid: true, code: true, name: true, phone: true, email: true,
                 gender: true,
                 province: true, district: true, addressArea: true,
-                isActive: true, createdAt: true, updatedAt: true,
+                isActive: true, lastLoginAt: true, createdAt: true, updatedAt: true,
                 parent: {
                     select: {
                         childLinks: {
@@ -135,7 +135,10 @@ export class ParentsService {
             },
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
-        return user;
+        return {
+            ...user,
+            hasLoggedIn: user.lastLoginAt !== null,
+        };
     }
 
     // ─── SRS-PAR-04: Update Parent ──────────────────────────
@@ -206,9 +209,16 @@ export class ParentsService {
         });
         if (!user) throw new NotFoundException('PARENT_NOT_FOUND');
 
-        const password = newPassword ?? this.generatePassword();
+        const trimmed = newPassword?.trim();
+        const password = trimmed && trimmed.length > 0 ? trimmed : generateReadablePassword();
         const passwordHash = await bcrypt.hash(password, 10);
-        await this.prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+        await this.prisma.$transaction(async (tx) => {
+            await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+            await tx.authSession.updateMany({
+                where: { userId: user.id, revokedAt: null },
+                data: { revokedAt: new Date(), revokeReason: 'PASSWORD_CHANGED' },
+            });
+        });
 
         // جلب كود المدرسة لبيانات الدخول
         const school = await this.prisma.school.findUnique({
@@ -322,18 +332,5 @@ export class ParentsService {
             data: { isDeleted: true, deletedAt: new Date() },
         });
         return { success: true };
-    }
-
-    // ─── Helpers ─────────────────────────────────────────────
-
-    /**
-     * توليد كلمة مرور عشوائية — 8 أحرف (حروف كبيرة + أرقام، بدون ملتبسة)
-     * مشترك مع إدارة المعلمين والطلاب (نفس المنطق)
-     */
-    private generatePassword(): string {
-        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-        return Array.from({ length: 8 }, () =>
-            chars.charAt(randomInt(0, chars.length)),
-        ).join('');
     }
 }

@@ -12,6 +12,7 @@ import {
 } from './dto/students.dto';
 import { SubscriptionTrialService } from '../../common/subscription/subscription-trial.service';
 import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
+import { generateReadablePassword } from '../common/password-generator.util';
 
 @Injectable()
 export class StudentsService {
@@ -287,7 +288,7 @@ export class StudentsService {
                 uuid: true, name: true, displayName: true, code: true, gender: true,
                 phone: true, email: true, province: true, district: true,
                 addressArea: true, addressDetails: true,
-                isActive: true, createdAt: true, updatedAt: true,
+                isActive: true, lastLoginAt: true, createdAt: true, updatedAt: true,
                 student: {
                     select: {
                         birthDate: true,
@@ -333,6 +334,8 @@ export class StudentsService {
             district: user.district,
             addressArea: user.addressArea,
             addressDetails: user.addressDetails,
+            lastLoginAt: user.lastLoginAt,
+            hasLoggedIn: user.lastLoginAt !== null,
             createdAt: user.createdAt,
             updatedAt: user.updatedAt,
             currentEnrollment: currentEnrollment
@@ -525,13 +528,21 @@ export class StudentsService {
 
     // ─── SRS-STU-10: Reset Password ──────────────────────────
 
-    async resetPassword(uuid: string, schoolId: number, dto: ResetPasswordDto) {
+    async resetPassword(uuid: string, schoolId: number, dto?: ResetPasswordDto) {
         const student = await this.findStudentByUuid(uuid, schoolId);
-        const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+        const trimmed = dto?.newPassword?.trim();
+        const password = trimmed && trimmed.length > 0 ? trimmed : generateReadablePassword();
+        const passwordHash = await bcrypt.hash(password, 10);
 
-        await this.prisma.user.update({
-            where: { id: student.id },
-            data: { passwordHash },
+        await this.prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: student.id },
+                data: { passwordHash },
+            });
+            await tx.authSession.updateMany({
+                where: { userId: student.id, revokedAt: null },
+                data: { revokedAt: new Date(), revokeReason: 'PASSWORD_CHANGED' },
+            });
         });
 
         const school = await this.prisma.school.findUniqueOrThrow({
@@ -543,7 +554,7 @@ export class StudentsService {
             credentials: {
                 schoolCode: school.schoolCode,
                 studentCode: student.code,
-                password: dto.newPassword,
+                password,
             },
         };
     }

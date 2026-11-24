@@ -177,6 +177,11 @@ export class SchoolAuthService {
       refreshTokenPlain: refreshPlain,
     });
 
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
     const accessToken = this.buildAccessToken({
       sub: user.uuid,
       ut: user.userType as SafeUserPayload['ut'],

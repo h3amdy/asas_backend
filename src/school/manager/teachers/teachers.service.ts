@@ -1,10 +1,10 @@
 // src/school/manager/teachers/teachers.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { randomInt } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { UserCodeGeneratorService } from '../../../common/user-code/user-code-generator.service';
 import { CreateTeacherDto, UpdateTeacherDto } from './dto/teachers.dto';
+import { generateReadablePassword } from '../common/password-generator.util';
 
 /**
  * 🧑‍🏫 خدمة إدارة المعلمين — SRS-TCH
@@ -70,7 +70,7 @@ export class TeachersService {
 
     async createTeacher(schoolId: number, dto: CreateTeacherDto) {
         // توليد كلمة المرور إذا لم تُرسل
-        const password = dto.password ?? this.generatePassword();
+        const password = dto.password ?? generateReadablePassword();
         const passwordHash = await bcrypt.hash(password, 10);
 
         // ✅ كل شيء داخل Transaction واحدة
@@ -148,6 +148,7 @@ export class TeachersService {
                 district: true,
                 addressArea: true,
                 isActive: true,
+                lastLoginAt: true,
                 createdAt: true,
                 updatedAt: true,
                 teacher: {
@@ -162,7 +163,10 @@ export class TeachersService {
             },
         });
         if (!user) throw new NotFoundException('TEACHER_NOT_FOUND');
-        return user;
+        return {
+            ...user,
+            hasLoggedIn: user.lastLoginAt !== null,
+        };
     }
 
     // ─── SRS-TCH-04: Update Teacher ─────────────────────────
@@ -214,11 +218,18 @@ export class TeachersService {
         });
         if (!user) throw new NotFoundException('TEACHER_NOT_FOUND');
 
-        const password = newPassword ?? this.generatePassword();
+        const trimmed = newPassword?.trim();
+        const password = trimmed && trimmed.length > 0 ? trimmed : generateReadablePassword();
         const passwordHash = await bcrypt.hash(password, 10);
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: { passwordHash },
+        await this.prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: user.id },
+                data: { passwordHash },
+            });
+            await tx.authSession.updateMany({
+                where: { userId: user.id, revokedAt: null },
+                data: { revokedAt: new Date(), revokeReason: 'PASSWORD_CHANGED' },
+            });
         });
 
         // جلب كود المدرسة
@@ -275,18 +286,5 @@ export class TeachersService {
             select: { uuid: true, isActive: true, updatedAt: true },
         });
         return updated;
-    }
-
-    // ─── Helpers ─────────────────────────────────────────────
-
-    /**
-     * توليد كلمة مرور عشوائية — 8 أحرف (حروف كبيرة + أرقام، بدون ملتبسة)
-     * مشترك مع إدارة الطلاب (نفس المنطق)
-     */
-    private generatePassword(): string {
-        const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-        return Array.from({ length: 8 }, () =>
-            chars.charAt(randomInt(0, chars.length)),
-        ).join('');
     }
 }

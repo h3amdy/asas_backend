@@ -269,3 +269,84 @@ describe('StudentsService & StudentsController pagination and query hardening', 
   });
 });
 
+describe('StudentsService resetPassword & login tracking', () => {
+  function createStudentSetup(lastLoginAt: Date | null = null) {
+    const studentRow = {
+      id: 55,
+      uuid: 'stu-uuid-55',
+      name: 'سارة محمد',
+      displayName: 'سارة محمد',
+      code: 2200055,
+      gender: 'FEMALE',
+      isActive: true,
+      phone: null,
+      email: null,
+      province: null,
+      district: null,
+      addressArea: null,
+      addressDetails: null,
+      lastLoginAt,
+      createdAt: new Date('2026-10-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-11-01T00:00:00.000Z'),
+      student: {
+        birthDate: null,
+        externalSchoolName: null,
+        enrollments: [],
+        parentLinks: [],
+      },
+    };
+
+    const prisma: any = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue(studentRow),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      authSession: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      school: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ schoolCode: 'SCH-02' }),
+      },
+      $transaction: jest.fn().mockImplementation(async (cb: any) =>
+        cb({
+          user: prisma.user,
+          authSession: prisma.authSession,
+        }),
+      ),
+    };
+
+    const service = new StudentsService(prisma, {} as any, {} as any);
+    return { service, prisma, studentRow };
+  }
+
+  it('returns hasLoggedIn=false when lastLoginAt is null and true when set', async () => {
+    const first = createStudentSetup(null);
+    const p1 = await first.service.getStudentProfile('stu-uuid-55', 7);
+    expect(p1.hasLoggedIn).toBe(false);
+    expect(p1.lastLoginAt).toBeNull();
+
+    const ts = new Date('2026-11-21T10:00:00.000Z');
+    const second = createStudentSetup(ts);
+    const p2 = await second.service.getStudentProfile('stu-uuid-55', 7);
+    expect(p2.hasLoggedIn).toBe(true);
+    expect(p2.lastLoginAt).toEqual(ts);
+  });
+
+  it('auto-generates password and revokes active sessions on resetPassword', async () => {
+    const { service, prisma, studentRow } = createStudentSetup();
+
+    const res = await service.resetPassword(studentRow.uuid, 7, {});
+
+    expect(res.credentials.studentCode).toBe(studentRow.code);
+    expect(res.credentials.password).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: studentRow.id },
+      data: { passwordHash: expect.any(String) },
+    });
+    expect(prisma.authSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: studentRow.id, revokedAt: null },
+      data: { revokedAt: expect.any(Date), revokeReason: 'PASSWORD_CHANGED' },
+    });
+  });
+});
+
